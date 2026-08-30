@@ -14,7 +14,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `rm -f .data/test.json && CIJD_DATA_FILE=.data/test.json TELEGRAM_WEBHOOK_SECRET=test-secret npx next dev -p ${PORT}`,
+    command: `rm -f .data/test.json && CIJD_DATA_FILE=.data/test.json CIJD_NEXT_DIST_DIR=.next-local TELEGRAM_WEBHOOK_SECRET=test-secret npx next dev -p ${PORT}`,
     url: `http://localhost:${PORT}`,
     stdout: "pipe",
     stderr: "pipe",

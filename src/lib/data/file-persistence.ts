@@ -4,10 +4,10 @@ import path from "node:path";
 import type { Database } from "@/lib/types";
 import type { Persistence } from "./store";
 
-/** Override with CIJD_DATA_FILE to run against a throwaway store (tests). */
+/** Override with CIJD_DATA_FILE to run against a throwaway or explicit store. */
 const DATA_FILE = process.env.CIJD_DATA_FILE
   ? path.resolve(process.env.CIJD_DATA_FILE)
-  : path.join(process.cwd(), ".data", "db.json");
+  : path.join(process.cwd(), ".data", "runtime", "db.json");
 
 export const filePersistence: Persistence = {
   async read() {

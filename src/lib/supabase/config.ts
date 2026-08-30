@@ -12,7 +12,7 @@ export const supabaseEnabled = () => supabaseConfig() !== null;
 /**
  * Local JSON is intentionally available during development only. A production
  * process without Supabase credentials fails closed instead of silently using
- * `.data/db.json` or a browser-local store as an operational ledger.
+ * `.data/runtime/db.json` or a browser-local store as an operational ledger.
  */
 export function dataMode(): DataMode {
   if (supabaseEnabled()) return "supabase";

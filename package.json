@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "CIJD_NEXT_DIST_DIR=.next-local next dev",
+    "build": "CIJD_NEXT_DIST_DIR=.next-local next build",
+    "start": "CIJD_NEXT_DIST_DIR=.next-local next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "playwright test",

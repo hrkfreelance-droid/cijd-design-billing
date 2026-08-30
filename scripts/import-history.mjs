@@ -579,7 +579,7 @@ async function main() {
     return;
   }
 
-  const dataFile = process.env.CIJD_DATA_FILE ?? path.join(process.cwd(), ".data", "db.json");
+  const dataFile = process.env.CIJD_DATA_FILE ?? path.join(process.cwd(), ".data", "runtime", "db.json");
   const sqlOut = path.join(process.cwd(), "supabase", "import-history.sql");
   const records = recordsFromCsv(await readFile(csvPath, "utf8"));
   const db = JSON.parse(await readFile(dataFile, "utf8"));
