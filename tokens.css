@@ -1,0 +1,81 @@
+/* Hallmark · macrostructure: Workbench · tone: technical · anchor hue: cobalt
+ * theme: Cobalt · knobs: frame=hairline, selection=right-rail, rhythm=task-first
+ * nav: N3 side-rail · footer: Ft2 inline single line · enrichment: none
+ * audience: internal billing and accounting staff · use: reconcile work, invoices, payments
+ * Hallmark · pre-emit critique: P5 H5 E5 S4 R5 V4
+ */
+
+:root {
+  --color-paper: oklch(98.5% 0.004 250);
+  --color-paper-2: oklch(96.8% 0.006 250);
+  --color-paper-3: oklch(94.8% 0.008 250);
+  --color-panel: oklch(100% 0 0);
+  --color-ink: oklch(23% 0.02 258);
+  --color-ink-2: oklch(34% 0.018 257);
+  --color-muted: oklch(52% 0.016 257);
+  --color-faint: oklch(67% 0.012 257);
+  --color-rule: oklch(89% 0.009 250);
+  --color-rule-strong: oklch(81% 0.012 250);
+  --color-accent: oklch(57% 0.19 256);
+  --color-accent-ink: oklch(99% 0.004 250);
+  --color-accent-soft: oklch(94% 0.035 256);
+  --color-focus: oklch(45% 0.18 256);
+  --color-success: oklch(49% 0.14 152);
+  --color-success-soft: oklch(93% 0.035 152);
+  --color-warning: oklch(56% 0.14 78);
+  --color-warning-soft: oklch(94% 0.04 78);
+  --color-error: oklch(50% 0.18 25);
+  --color-error-soft: oklch(94% 0.04 25);
+  --color-graphite: oklch(22% 0.016 260);
+  --color-graphite-2: oklch(29% 0.018 258);
+  --color-on-graphite: oklch(94% 0.006 250);
+  --color-scrim: oklch(10% 0.02 258 / 0.34);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --dur-fast: 150ms;
+  --dur-base: 220ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+html[data-theme="dark"] {
+  --color-paper: oklch(18% 0.016 258);
+  --color-paper-2: oklch(21% 0.017 258);
+  --color-paper-3: oklch(24% 0.018 258);
+  --color-panel: oklch(22% 0.017 258);
+  --color-ink: oklch(95% 0.006 250);
+  --color-ink-2: oklch(82% 0.01 250);
+  --color-muted: oklch(67% 0.012 250);
+  --color-faint: oklch(52% 0.014 250);
+  --color-rule: oklch(31% 0.018 258);
+  --color-rule-strong: oklch(39% 0.02 258);
+  --color-accent: oklch(68% 0.18 256);
+  --color-accent-ink: oklch(17% 0.016 258);
+  --color-accent-soft: oklch(29% 0.06 256);
+  --color-focus: oklch(75% 0.16 256);
+  --color-success: oklch(71% 0.13 152);
+  --color-success-soft: oklch(28% 0.05 152);
+  --color-warning: oklch(76% 0.12 78);
+  --color-warning-soft: oklch(29% 0.05 78);
+  --color-error: oklch(70% 0.15 25);
+  --color-error-soft: oklch(29% 0.05 25);
+  --color-graphite: oklch(11% 0.015 260);
+  --color-graphite-2: oklch(26% 0.018 258);
+  --color-on-graphite: oklch(94% 0.006 250);
+  --color-scrim: oklch(10% 0.02 258 / 0.58);
+}
