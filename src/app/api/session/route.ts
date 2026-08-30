@@ -3,9 +3,28 @@ import { NextResponse } from "next/server";
 import { readJson, str } from "@/lib/api";
 import { SESSION_COOKIE, currentUser } from "@/lib/auth/session";
 import { getLocalRepository } from "@/lib/data";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { dataMode } from "@/lib/supabase/config";
 
 export const dynamic = "force-dynamic";
+
+function unavailable() {
+  return NextResponse.json(
+    {
+      ok: false,
+      code: "PRODUCTION_DATA_NOT_CONFIGURED",
+      message: "Supabase credentials are required in production.",
+    },
+    { status: 503 },
+  );
+}
+
+function configuredMode() {
+  try {
+    return dataMode();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * With Supabase configured, signing in happens through Supabase Auth and this
@@ -14,8 +33,10 @@ export const dynamic = "force-dynamic";
  * from the store, so it cannot be forged into extra permissions.
  */
 export async function GET() {
+  const mode = configuredMode();
+  if (!mode) return unavailable();
   const user = await currentUser();
-  if (supabaseEnabled()) {
+  if (mode === "supabase") {
     return NextResponse.json({ ok: true, data: { user, users: [], auth: "supabase" } });
   }
   const users = await getLocalRepository().rawUsers();
@@ -34,7 +55,9 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (supabaseEnabled()) {
+  const mode = configuredMode();
+  if (!mode) return unavailable();
+  if (mode === "supabase") {
     return NextResponse.json(
       { ok: false, code: "USE_SUPABASE", message: "Sign in with Supabase Auth." },
       { status: 400 },

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 
 import { getLocalRepository } from "@/lib/data";
-import { supabaseEnabled } from "@/lib/supabase/config";
+import { dataMode } from "@/lib/supabase/config";
 import { supabaseServerClient } from "@/lib/supabase/server";
 import type { Role } from "./roles";
 
@@ -19,7 +19,7 @@ export interface SessionUser {
  * read back from the store, so a tampered cookie cannot grant permissions.
  */
 export async function currentUser(): Promise<SessionUser | null> {
-  if (supabaseEnabled()) {
+  if (dataMode() === "supabase") {
     const client = await supabaseServerClient();
     if (!client) return null;
     const { data } = await client.auth.getUser();

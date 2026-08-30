@@ -90,6 +90,11 @@ npm run dev          # http://localhost:3000
 初回起動時に `.data/db.json` が作成されます。リセットは削除して再起動。
 サインイン画面で担当（Hiroki / Billing Staff / Accounting / Admin）を選ぶと、Role ごとのワークスペースに入ります。
 
+開発時にSupabase credentialsが無い場合は画面に `LOCAL MODE` と表示されます。
+`NODE_ENV=production` ではSupabase credentialsが無い場合にデータ層がfail closedし、
+localStorageや `.data/db.json` を業務DBとして使いません。接続後は開発者とAdminに
+`PRODUCTION / SUPABASE` と表示されます。
+
 | コマンド | 内容 |
 | --- | --- |
 | `npm run build` / `npm start` | 本番ビルド・起動 |
@@ -116,6 +121,34 @@ npm run dev          # http://localhost:3000
 | `SUPABASE_SERVICE_ROLE_KEY` | サーバー専用。Telegram エンドポイント（ブラウザセッションを持たない）で使用 |
 | `CIJD_DATA_FILE` | ローカル JSON ストアの保存先（既定：`.data/db.json`） |
 | `NEXT_PUBLIC_DEMO_MODE` | `1` でブラウザ内デモデータに切り替え（公開 Preview 用。API routes は無効化） |
+
+## Production setup checklist
+
+本番接続は次の順序で行います。
+
+1. Supabase Projectを作成
+2. migrationsを実行（`0001_init.sql` → `0002_rls.sql` → `0003_functions.sql`）
+3. `seed.sql`を実行
+4. Supabase Auth Userを作成
+5. `users`へRoleを割り当て
+6. `.env.local`へSupabase credentialsを設定
+7. Applicationを起動
+8. Designer loginを確認
+9. Billing loginを確認
+10. Accounting loginを確認
+11. RLSでRole別の取得範囲を確認
+
+Supabase接続後はlocalStorageや `.data/db.json` を業務データの保存先にしません。
+
+## Telegram setup checklist
+
+納品通知の外部接続設定は `TELEGRAM_BOT_TOKEN` と
+`TELEGRAM_BILLING_CHAT_ID` です。受信endpointを保護するlong-polling runnerには
+`TELEGRAM_WEBHOOK_SECRET`も必要です。Chat ID未設定時は送信せず、`SKIPPED` または
+`FAILED` を `notification_logs` に記録し、Officeから再送できます。
+
+BotはProject登録、納品、Billing handoffまで処理します。実Botの起動は
+`npm run telegram` です。
 
 ## Current MVP Scope
 

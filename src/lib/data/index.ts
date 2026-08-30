@@ -17,19 +17,19 @@ export function getLocalRepository(): Repository {
 }
 
 export async function getRepository(): Promise<Repository> {
-  const { supabaseEnabled } = await import("@/lib/supabase/config");
-  if (!supabaseEnabled()) return getLocalRepository();
+  const { dataMode } = await import("@/lib/supabase/config");
+  if (dataMode() === "local") return getLocalRepository();
   const { supabaseServerClient } = await import("@/lib/supabase/server");
   const client = await supabaseServerClient();
-  if (!client) return getLocalRepository();
+  if (!client) throw new Error("Supabase server client is unavailable.");
   const { SupabaseRepository } = await import("@/lib/supabase/repository");
   return new SupabaseRepository(client);
 }
 
 /** For entry points with no browser session, such as the Telegram bot. */
 export async function getServiceRepository(): Promise<Repository> {
-  const { supabaseEnabled } = await import("@/lib/supabase/config");
-  if (!supabaseEnabled()) return getLocalRepository();
+  const { dataMode } = await import("@/lib/supabase/config");
+  if (dataMode() === "local") return getLocalRepository();
   const { supabaseServiceClient } = await import("@/lib/supabase/server");
   const client = await supabaseServiceClient();
   if (!client) {

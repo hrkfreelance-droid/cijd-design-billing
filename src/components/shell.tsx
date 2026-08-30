@@ -70,7 +70,8 @@ export function Workspace({
   const pathname = usePathname();
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
-  const { user, ready } = useSession();
+  const { user, ready, auth } = useSession();
+  const { snapshot } = useData();
   const router = useRouter();
 
   useEffect(() => {
@@ -82,6 +83,9 @@ export function Workspace({
   if (!ready || !user || !canAny(user.role, requires)) {
     return <div className="min-h-dvh bg-bg" />;
   }
+
+  const mode = snapshot?.mode ?? (auth === "supabase" ? "supabase" : "local");
+  const showMode = process.env.NODE_ENV !== "production" || user.role === "ADMIN";
 
   return (
     <div className="min-h-dvh bg-bg">
@@ -115,6 +119,7 @@ export function Workspace({
           </nav>
 
           <div className="flex shrink-0 items-center gap-1">
+            {showMode && <ModeBadge mode={mode} className="hidden sm:inline-flex" />}
             <div className="flex items-center rounded-full bg-fill p-[2px]">
               {(["ja", "en"] as const).map((code) => (
                 <button
@@ -139,7 +144,7 @@ export function Workspace({
             >
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}
             </IconButton>
-            <UserMenu current={workspace} />
+            <UserMenu current={workspace} mode={mode} showMode={showMode} />
           </div>
         </div>
         <ClientBar canAdd={workspace === "designer"} />
@@ -173,6 +178,19 @@ export function Workspace({
   );
 }
 
+function ModeBadge({ mode, className = "" }: { mode: "local" | "supabase"; className?: string }) {
+  const label = mode === "supabase" ? "PRODUCTION / SUPABASE" : "LOCAL MODE";
+  return (
+    <span
+      data-testid="data-mode"
+      aria-label={`Data mode: ${label}`}
+      className={`items-center rounded-full border border-line px-2 py-1 text-[9px] font-medium uppercase tracking-[0.08em] text-faint ${className}`}
+    >
+      {label}
+    </span>
+  );
+}
+
 function Content({ children }: { children: ReactNode }) {
   const { t } = useI18n();
   const { snapshot, error, refresh } = useData();
@@ -195,7 +213,15 @@ function Content({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function UserMenu({ current }: { current: "designer" | "office" }) {
+function UserMenu({
+  current,
+  mode,
+  showMode,
+}: {
+  current: "designer" | "office";
+  mode: "local" | "supabase";
+  showMode: boolean;
+}) {
   const { t } = useI18n();
   const { user, signOut } = useSession();
   const router = useRouter();
@@ -233,6 +259,11 @@ function UserMenu({ current }: { current: "designer" | "office" }) {
           </div>
         }
       >
+        {showMode && (
+          <div className="mb-3">
+            <ModeBadge mode={mode} className="inline-flex" />
+          </div>
+        )}
         {spaces.length > 1 && (
           <div className="pb-2">
             <p className="mb-2 text-[12.5px] font-medium text-muted">

@@ -1,7 +1,6 @@
-/**
- * Supabase is used when it is configured, and the JSON store otherwise. One
- * check, so nothing else in the app has to care which is running.
- */
+export type DataMode = "local" | "supabase";
+
+/** Supabase is the only data source allowed by a production runtime. */
 export function supabaseConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -9,3 +8,14 @@ export function supabaseConfig() {
 }
 
 export const supabaseEnabled = () => supabaseConfig() !== null;
+
+/**
+ * Local JSON is intentionally available during development only. A production
+ * process without Supabase credentials fails closed instead of silently using
+ * `.data/db.json` or a browser-local store as an operational ledger.
+ */
+export function dataMode(): DataMode {
+  if (supabaseEnabled()) return "supabase";
+  if (process.env.NODE_ENV !== "production") return "local";
+  throw new Error("Supabase credentials are required in production.");
+}

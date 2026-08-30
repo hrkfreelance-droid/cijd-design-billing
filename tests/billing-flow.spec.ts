@@ -34,6 +34,7 @@ test("designer sees production, not invoicing", async ({ page }) => {
   await signIn(page, "u_hiroki");
   await page.goto("/designer");
   await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
+  await expect(page.getByTestId("data-mode")).toHaveText("LOCAL MODE");
   await expect(page.getByRole("link", { name: "Delivered" }).first()).toBeVisible();
   // No billing navigation anywhere on the designer side.
   await expect(page.getByRole("link", { name: "Payments" })).toHaveCount(0);

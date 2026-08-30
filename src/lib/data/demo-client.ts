@@ -9,8 +9,9 @@ import { browserPersistence, clearDemoData } from "./browser-persistence";
 import { RuleError, type Repository } from "./repository";
 import { Store } from "./store";
 
-/** True on the public preview, where there is no database behind the app. */
-export const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
+/** True only for a development/public preview, never for a production build. */
+export const DEMO_MODE =
+  process.env.NEXT_PUBLIC_DEMO_MODE === "1" && process.env.NODE_ENV !== "production";
 
 const USER_KEY = "cijd.demo.user";
 let store: Repository | null = null;
