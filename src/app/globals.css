@@ -1,0 +1,184 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------- tokens */
+:root {
+  color-scheme: light;
+
+  --c-bg: #ffffff;
+  --c-panel: #ffffff;
+  --c-fill: #f5f5f7;
+  --c-fill-strong: #ebebef;
+  --c-raise: #ffffff;
+  --c-text: #1d1d1f;
+  --c-muted: #6e6e73;
+  --c-faint: #8e8e93;
+  --c-line: rgba(0, 0, 0, 0.09);
+  --c-line-strong: rgba(0, 0, 0, 0.16);
+  --c-accent: #0066cc;
+  --c-accent-hover: #0058b0;
+  --c-on-accent: #ffffff;
+
+  --c-progress: #8e8e93;
+  --c-ready: #0066cc;
+  --c-awaiting: #a5670a;
+  --c-paid: #17803d;
+  --c-review: #c0392b;
+
+  --c-overlay: rgba(0, 0, 0, 0.28);
+  --c-header: rgba(255, 255, 255, 0.82);
+}
+
+.dark {
+  color-scheme: dark;
+
+  --c-bg: #0a0a0b;
+  --c-panel: #141416;
+  --c-fill: #1c1c1f;
+  --c-fill-strong: #26262a;
+  --c-raise: #2f2f34;
+  --c-text: #f5f5f7;
+  --c-muted: #a1a1a6;
+  --c-faint: #86868b;
+  --c-line: rgba(255, 255, 255, 0.11);
+  --c-line-strong: rgba(255, 255, 255, 0.2);
+  --c-accent: #3b90ff;
+  --c-accent-hover: #559dff;
+  --c-on-accent: #06121f;
+
+  --c-progress: #8e8e93;
+  --c-ready: #3b90ff;
+  --c-awaiting: #d9a441;
+  --c-paid: #43b96a;
+  --c-review: #ff6f61;
+
+  --c-overlay: rgba(0, 0, 0, 0.55);
+  --c-header: rgba(10, 10, 11, 0.78);
+}
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-panel: var(--c-panel);
+  --color-fill: var(--c-fill);
+  --color-fill-strong: var(--c-fill-strong);
+  --color-raise: var(--c-raise);
+  --color-text: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-faint: var(--c-faint);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-on-accent: var(--c-on-accent);
+  --color-progress: var(--c-progress);
+  --color-ready: var(--c-ready);
+  --color-awaiting: var(--c-awaiting);
+  --color-paid: var(--c-paid);
+  --color-review: var(--c-review);
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica,
+    "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
+}
+
+/* ------------------------------------------------------------------ base */
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+  overscroll-behavior-y: none;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--c-accent) 22%, transparent);
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--c-accent) 65%, transparent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+/* Numbers must line up in columns. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.hairline {
+  border-color: var(--c-line);
+}
+
+/* Hide scrollbar on the client bar without losing scrollability. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* --------------------------------------------------------------- motion */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sheet-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-rise {
+  animation: rise 0.26s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.animate-fade {
+  animation: fade 0.18s ease-out both;
+}
+.animate-sheet {
+  animation: sheet-up 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

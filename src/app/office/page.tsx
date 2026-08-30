@@ -1,0 +1,356 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+import { ChevronDown } from "@/components/icons";
+import { api, useI18n, useSession } from "@/components/providers";
+import { PageSkeleton, useScope } from "@/components/scope";
+import { useAction } from "@/components/use-action";
+import {
+  Amount,
+  Button,
+  Checkbox,
+  EmptyState,
+  Field,
+  Input,
+  PageHeader,
+  Sheet,
+} from "@/components/ui";
+import { can } from "@/lib/auth/roles";
+import { sum } from "@/lib/derive";
+import { mediumDate, money, todayIso } from "@/lib/format";
+import type { BillingItem, Client, Notification } from "@/lib/types";
+
+/** Everything here is delivered work. That is the whole rule for this screen. */
+export default function OfficeBillingPage() {
+  const scope = useScope();
+  const { t } = useI18n();
+  const { user } = useSession();
+  const router = useRouter();
+
+  const allowed = !!user && can(user.role, "billing:read");
+
+  useEffect(() => {
+    if (user && !allowed) router.replace("/office/payments");
+  }, [user, allowed, router]);
+
+  const groups = useMemo(() => {
+    if (!scope) return [];
+    const ready = scope.items.filter(
+      (item) =>
+        item.productionStatus === "DELIVERED" && item.billingStatus === "READY_TO_INVOICE",
+    );
+    const byClient = new Map<string, BillingItem[]>();
+    for (const item of ready) {
+      const clientId = scope.idx.projectById.get(item.projectId)?.clientId;
+      if (!clientId) continue;
+      const list = byClient.get(clientId);
+      if (list) list.push(item);
+      else byClient.set(clientId, [item]);
+    }
+    return Array.from(byClient)
+      .map(([clientId, items]) => ({ client: scope.idx.clientById.get(clientId)!, items }))
+      .filter((group) => group.client)
+      .sort((a, b) => sum(b.items) - sum(a.items));
+  }, [scope]);
+
+  if (!scope || !allowed) return <PageSkeleton />;
+
+  return (
+    <div className="animate-rise">
+      <PageHeader
+        title={t("billing.ready")}
+        subtitle={scope.client ? scope.client.name : t("client.all")}
+      />
+
+      <p className="px-5 pb-4 text-[12.5px] text-faint sm:px-8">{t("office.deliveredOnly")}</p>
+
+      {groups.length === 0 ? (
+        <EmptyState title={t("billing.readyEmpty")} />
+      ) : (
+        <div className="space-y-4">
+          {groups.map((group) => (
+            <ReadyGroup key={group.client.id} client={group.client} items={group.items} />
+          ))}
+        </div>
+      )}
+
+      {user && can(user.role, "notification:manage") && <Notifications />}
+    </div>
+  );
+}
+
+function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] }) {
+  const { t } = useI18n();
+  const scope = useScope();
+  const [open, setOpen] = useState(true);
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const [invoicing, setInvoicing] = useState(false);
+
+  // Work is billed per project, the way it is quoted and remembered.
+  const projects = useMemo(() => {
+    const groups = new Map<string, BillingItem[]>();
+    for (const item of items) {
+      const list = groups.get(item.projectId);
+      if (list) list.push(item);
+      else groups.set(item.projectId, [item]);
+    }
+    return Array.from(groups)
+      .map(([projectId, projectItems]) => ({
+        id: projectId,
+        name: scope?.idx.projectById.get(projectId)?.name ?? "",
+        date: scope?.idx.projectById.get(projectId)?.date ?? "",
+        deliveredAt: projectItems[0]?.deliveredAt ?? null,
+        items: projectItems,
+        total: sum(projectItems),
+      }))
+      .sort((a, b) => (a.deliveredAt ?? "").localeCompare(b.deliveredAt ?? ""));
+  }, [items, scope]);
+
+  const selectedProjects = projects.filter((project) => !skipped.has(project.id));
+  const selectedItems = selectedProjects.flatMap((project) => project.items);
+
+  const toggle = (id: string) => {
+    setSkipped((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <section className="border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-fill sm:px-6"
+      >
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-faint transition-transform duration-200 ${
+            open ? "" : "-rotate-90"
+          }`}
+        />
+        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em]">
+          {client.name}
+        </span>
+        <span className="text-[12.5px] text-faint">
+          {t("billing.items", { count: items.length })}
+        </span>
+        <Amount value={money(sum(items))} strong className="text-[15px]" />
+      </button>
+
+      {open && (
+        <>
+          <div className="divide-y divide-line border-t border-line">
+            {projects.map((project) => {
+              const checked = !skipped.has(project.id);
+              return (
+                <div key={project.id} className="flex items-center gap-3 px-5 py-3 sm:px-6">
+                  <Checkbox
+                    checked={checked}
+                    onChange={() => toggle(project.id)}
+                    label={project.name}
+                  />
+                  <button
+                    onClick={() => toggle(project.id)}
+                    className={`min-w-0 flex-1 text-left transition-opacity duration-150 ${
+                      checked ? "" : "opacity-45"
+                    }`}
+                  >
+                    <span className="block truncate text-[14.5px]">{project.name}</span>
+                    <span className="mt-0.5 block truncate text-[12.5px] text-faint">
+                      {project.items.map((item) => item.description).join(" · ")}
+                    </span>
+                  </button>
+                  <Amount
+                    value={money(project.total)}
+                    className={`text-[14.5px] transition-opacity duration-150 ${
+                      checked ? "" : "opacity-45"
+                    }`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-line px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <span className="text-[13px] text-muted">
+              {t("billing.selected", { count: selectedItems.length })} ·{" "}
+              <span className="tnum">{money(sum(selectedItems))}</span>
+            </span>
+            <Button
+              variant="primary"
+              onClick={() => setInvoicing(true)}
+              disabled={selectedItems.length === 0}
+              className="w-full sm:w-auto"
+            >
+              {t("billing.markInvoiced")}
+            </Button>
+          </div>
+        </>
+      )}
+
+      {invoicing && (
+        <CreateInvoiceSheet
+          client={client}
+          items={selectedItems}
+          onClose={() => setInvoicing(false)}
+        />
+      )}
+    </section>
+  );
+}
+
+function CreateInvoiceSheet({
+  client,
+  items,
+  onClose,
+}: {
+  client: Client;
+  items: BillingItem[];
+  onClose: () => void;
+}) {
+  const { t, locale } = useI18n();
+  const { run, busy } = useAction();
+  const [number, setNumber] = useState("");
+  const [date, setDate] = useState(todayIso());
+
+  const submit = async () => {
+    if (!number.trim()) return;
+    const ok = await run(
+      () =>
+        api("/api/invoices", {
+          method: "POST",
+          body: {
+            clientId: client.id,
+            invoiceNumber: number,
+            invoiceDate: date,
+            billingItemIds: items.map((item) => item.id),
+          },
+        }),
+      { key: "toast.invoiceCreated", vars: { number: number.trim() } },
+    );
+    if (ok) onClose();
+  };
+
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      title={t("billing.markInvoiced")}
+      description={t("billing.invoiceFor", { client: client.name })}
+      footer={
+        <div className="flex gap-2">
+          <Button variant="secondary" full onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="primary" full onClick={submit} disabled={!number.trim() || busy}>
+            {t("billing.createInvoice")}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4 pb-2">
+        <Field label={t("billing.invoiceNumber")}>
+          <Input
+            value={number}
+            onChange={(event) => setNumber(event.target.value)}
+            placeholder={t("billing.invoiceNumberPlaceholder")}
+          />
+        </Field>
+        <Field label={t("billing.invoiceDate")}>
+          <Input
+            type="date"
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+            className="tnum"
+          />
+        </Field>
+
+        <div className="rounded-xl bg-fill px-4 py-3">
+          <div className="divide-y divide-line">
+            {items.map((item) => (
+              <div key={item.id} className="flex items-center gap-3 py-2 text-[13.5px]">
+                <span className="min-w-0 flex-1 truncate">{item.description}</span>
+                <Amount value={money(item.amount)} />
+              </div>
+            ))}
+          </div>
+          <div className="mt-1 flex items-center justify-between border-t border-line-strong pt-2.5">
+            <span className="text-[13.5px] font-medium">{t("common.total")}</span>
+            <Amount value={money(sum(items))} strong className="text-[15px]" />
+          </div>
+        </div>
+
+        <p className="text-[12.5px] text-faint">
+          {mediumDate(date, locale)} · {t("billing.items", { count: items.length })}
+        </p>
+      </div>
+    </Sheet>
+  );
+}
+
+/** Delivery notices that could not be sent are visible and retryable here. */
+function Notifications() {
+  const { t } = useI18n();
+  const { run, busy } = useAction();
+  const [items, setItems] = useState<Notification[] | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void api<Notification[]>("/api/notifications")
+      .then((data) => {
+        if (live) setItems(data);
+      })
+      .catch(() => setItems([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const unsent = (items ?? []).filter((item) => item.status !== "SENT");
+  if (!unsent.length) return null;
+
+  return (
+    <section className="pt-8">
+      <div className="px-5 pb-2 sm:px-8">
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
+          {t("notifications.title")}
+        </h2>
+      </div>
+      <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
+        {unsent.map((notification) => (
+          <div key={notification.id} className="flex items-center gap-3 px-5 py-3 sm:px-6">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px]">
+                {notification.text.split("\n").slice(0, 2).join(" · ")}
+              </span>
+              <span className="mt-0.5 block text-[12px] text-faint">
+                {t(`notifications.${notification.status}`)}
+                {notification.lastError ? ` · ${notification.lastError}` : ""}
+              </span>
+            </span>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={async () => {
+                const ok = await run(
+                  () =>
+                    api(`/api/notifications/${notification.id}/resend`, { method: "POST" }),
+                  { key: "notifications.resent" },
+                );
+                if (ok) {
+                  setItems(await api<Notification[]>("/api/notifications").catch(() => []));
+                }
+              }}
+            >
+              {t("notifications.resend")}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}

@@ -1,0 +1,120 @@
+import type {
+  BillingItem,
+  Client,
+  Invoice,
+  InvoiceItem,
+  Notification,
+  Payment,
+  Project,
+  TelegramSession,
+  User,
+} from "@/lib/types";
+
+/** snake_case in Postgres, camelCase in the app. */
+
+type Row = Record<string, unknown>;
+
+const str = (value: unknown) => (value == null ? "" : String(value));
+const numeric = (value: unknown) => Number(value ?? 0);
+
+export const toClient = (row: Row): Client => ({
+  id: str(row.id),
+  name: str(row.name),
+  active: Boolean(row.active),
+  createdAt: str(row.created_at),
+});
+
+export const toUser = (row: Row): User => ({
+  id: str(row.id),
+  name: str(row.name),
+  role: row.role as User["role"],
+});
+
+export const toProject = (row: Row): Project => ({
+  id: str(row.id),
+  clientId: str(row.client_id),
+  name: str(row.name),
+  date: str(row.date),
+  note: (row.note as string) ?? undefined,
+  createdAt: str(row.created_at),
+  createdBy: str(row.created_by),
+  updatedAt: str(row.updated_at),
+  updatedBy: str(row.updated_by),
+  deletedAt: (row.deleted_at as string) ?? null,
+});
+
+export const toItem = (row: Row): BillingItem => ({
+  id: str(row.id),
+  projectId: str(row.project_id),
+  description: str(row.description),
+  type: row.type as BillingItem["type"],
+  quantity: numeric(row.quantity),
+  unitPrice: numeric(row.unit_price),
+  amount: numeric(row.amount),
+  customAmount: Boolean(row.custom_amount),
+  productionStatus: row.production_status as BillingItem["productionStatus"],
+  billingStatus: row.billing_status as BillingItem["billingStatus"],
+  deliveredAt: (row.delivered_at as string) ?? null,
+  deliveredBy: (row.delivered_by as string) ?? null,
+  invoiceId: (row.invoice_id as string) ?? null,
+  note: (row.note as string) ?? undefined,
+  createdAt: str(row.created_at),
+  createdBy: str(row.created_by),
+  updatedAt: str(row.updated_at),
+  updatedBy: str(row.updated_by),
+  deletedAt: (row.deleted_at as string) ?? null,
+});
+
+export const toInvoice = (row: Row): Invoice => ({
+  id: str(row.id),
+  clientId: str(row.client_id),
+  invoiceNumber: (row.invoice_number as string) ?? null,
+  invoiceDate: (row.invoice_date as string) ?? null,
+  amount: numeric(row.amount),
+  status: row.status as Invoice["status"],
+  paymentDate: (row.payment_date as string) ?? null,
+  paymentSlip: (row.payment_slip as string) ?? null,
+  receiptStatus: row.receipt_status as Invoice["receiptStatus"],
+  createdAt: str(row.created_at),
+  createdBy: str(row.created_by),
+  updatedAt: str(row.updated_at),
+  updatedBy: str(row.updated_by),
+});
+
+export const toInvoiceItem = (row: Row): InvoiceItem => ({
+  invoiceId: str(row.invoice_id),
+  billingItemId: str(row.billing_item_id),
+});
+
+export const toPayment = (row: Row): Payment => ({
+  id: str(row.id),
+  invoiceId: str(row.invoice_id),
+  amount: numeric(row.amount),
+  paidAt: (row.paid_at as string) ?? null,
+  slip: (row.slip as string) ?? null,
+  createdAt: str(row.created_at),
+  createdBy: str(row.created_by),
+  voidedAt: (row.voided_at as string) ?? null,
+  voidedBy: (row.voided_by as string) ?? null,
+});
+
+export const toNotification = (row: Row): Notification => ({
+  id: str(row.id),
+  kind: "DELIVERY",
+  dedupeKey: str(row.dedupe_key),
+  projectId: str(row.project_id),
+  text: str(row.text),
+  status: row.status as Notification["status"],
+  attempts: Number(row.attempts ?? 0),
+  lastError: (row.last_error as string) ?? null,
+  createdAt: str(row.created_at),
+  sentAt: (row.sent_at as string) ?? null,
+});
+
+export const toTelegramSession = (row: Row): TelegramSession => ({
+  chatId: str(row.chat_id),
+  lastProjectId: (row.last_project_id as string) ?? null,
+  candidateIds: (row.candidate_ids as string[]) ?? [],
+  pendingProjectName: (row.pending_project_name as string) ?? null,
+  updatedAt: str(row.updated_at),
+});

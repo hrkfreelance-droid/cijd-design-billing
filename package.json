@@ -6,20 +6,31 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test": "playwright test",
+    "test:import": "node --test scripts/import-history.test.mjs",
+    "shots": "node scripts/shots.mjs",
+    "telegram": "node scripts/telegram-bot.mjs",
+    "import:history": "node scripts/import-history.mjs"
   },
   "dependencies": {
-    "next": "14.2.25",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "@supabase/ssr": "^0.12.5",
+    "@supabase/supabase-js": "^2.112.4",
+    "next": "16.3.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@types/node": "20.17.30",
-    "@types/react": "18.3.18",
-    "@types/react-dom": "18.3.5",
-    "eslint": "^8.57.1",
-    "eslint-config-next": "^14.2.25",
-    "typescript": "5.8.2"
+    "@netlify/plugin-nextjs": "^5.15.13",
+    "@playwright/test": "^1.62.1",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.3",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }

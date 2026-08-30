@@ -1,0 +1,507 @@
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+
+import {
+  RuleError,
+  type ConfirmPaymentInput,
+  type CreateBillingItemInput,
+  type CreateInvoiceInput,
+  type CreateProjectInput,
+  type Repository,
+  type UpdateBillingItemInput,
+} from "@/lib/data/repository";
+import type {
+  BillingItem,
+  BillingStatus,
+  Notification,
+  ReceiptStatus,
+  Snapshot,
+  TelegramSession,
+  User,
+} from "@/lib/types";
+import {
+  toClient,
+  toInvoice,
+  toInvoiceItem,
+  toItem,
+  toNotification,
+  toProject,
+  toTelegramSession,
+  toUser,
+} from "./rows";
+
+const DEFAULT_ACTOR = "Hiroki";
+
+function money(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Database errors become the same RuleError codes the local store raises, so
+ * the API and the UI behave identically whichever store is in use. The SQL
+ * functions raise the code as their message and the sentence as the detail.
+ */
+function fail(error: PostgrestError | null): never {
+  if (!error) throw new RuleError("INTERNAL", "Unexpected error", 500);
+  const code = error.message?.trim() ?? "";
+  const known = [
+    "NOT_FOUND",
+    "ITEM_LOCKED",
+    "NO_ITEMS",
+    "INVALID",
+    "DUPLICATE_INVOICE_NUMBER",
+    "ALREADY_INVOICED",
+    "NOT_DELIVERED",
+    "NOT_READY",
+    "INVOICE_PAID",
+    "ALREADY_VOID",
+    "ALREADY_PAID",
+    "INVOICE_VOID",
+    "NOT_PAID",
+    "PROJECT_LOCKED",
+  ];
+  if (known.includes(code)) {
+    throw new RuleError(code, error.details || code, code === "NOT_FOUND" ? 404 : 409);
+  }
+  // Row level security refused the read or write.
+  if (error.code === "42501" || error.code === "PGRST301") {
+    throw new RuleError("FORBIDDEN", "You do not have access to this.", 403);
+  }
+  if (error.code === "23505") {
+    throw new RuleError("DUPLICATE_INVOICE_NUMBER", "That value is already in use.");
+  }
+  if (error.code === "23514") {
+    throw new RuleError("NOT_DELIVERED", "Mark the work delivered before billing it.");
+  }
+  throw new RuleError("INTERNAL", error.message || "Database error", 500);
+}
+
+function unwrap<T>(result: { data: T | null; error: PostgrestError | null }): T {
+  if (result.error) fail(result.error);
+  if (result.data == null) throw new RuleError("NOT_FOUND", "Not found.", 404);
+  return result.data;
+}
+
+/**
+ * Supabase implementation of the same contract as the local store.
+ *
+ * Reads rely on row level security: an office role simply cannot select
+ * undelivered work, so scoping is not something the application has to
+ * remember. Multi-table operations go through SQL functions so they are atomic.
+ */
+export class SupabaseRepository implements Repository {
+  readonly mode = "supabase" as const;
+
+  constructor(private readonly db: SupabaseClient) {}
+
+  async getSnapshot(): Promise<Snapshot> {
+    const [clients, projects, items, invoices, invoiceItems, users] = await Promise.all([
+      this.db.from("clients").select("*").order("name"),
+      this.db.from("projects").select("*").is("deleted_at", null),
+      this.db.from("billing_items").select("*").is("deleted_at", null),
+      this.db.from("invoices").select("*"),
+      this.db.from("invoice_items").select("*"),
+      this.db.from("users").select("*"),
+    ]);
+    for (const result of [clients, projects, items, invoices, invoiceItems, users]) {
+      if (result.error && result.error.code !== "42501" && result.error.code !== "PGRST301") {
+        fail(result.error);
+      }
+    }
+    const billingItems = (items.data ?? []).map(toItem);
+    return {
+      clients: (clients.data ?? []).map(toClient),
+      projects: (projects.data ?? []).map(toProject),
+      billingItems,
+      invoices: (invoices.data ?? []).map(toInvoice),
+      invoiceItems: (invoiceItems.data ?? []).map(toInvoiceItem),
+      users: (users.data ?? []).map(toUser),
+      mode: this.mode,
+      // Filled in by the guard; what came back is already what may be seen.
+      scope: { production: true, billing: true, payment: true },
+    };
+  }
+
+  async rawUsers(): Promise<User[]> {
+    const result = await this.db.from("users").select("*");
+    if (result.error) fail(result.error);
+    return (result.data ?? []).map(toUser);
+  }
+
+  async createClient({ name }: { name: string; actor?: string }) {
+    const trimmed = name.trim();
+    if (!trimmed) throw new RuleError("INVALID", "Client name is required.", 400);
+    const result = await this.db
+      .from("clients")
+      .insert({ name: trimmed })
+      .select()
+      .single();
+    if (result.error?.code === "23505") {
+      throw new RuleError("DUPLICATE_CLIENT", `${trimmed} already exists.`);
+    }
+    return toClient(unwrap(result));
+  }
+
+  async updateClient(id: string, patch: { name?: string; active?: boolean }) {
+    const changes: Record<string, unknown> = {};
+    if (patch.name !== undefined) {
+      const trimmed = patch.name.trim();
+      if (!trimmed) throw new RuleError("INVALID", "Client name is required.", 400);
+      changes.name = trimmed;
+    }
+    if (patch.active !== undefined) changes.active = patch.active;
+    const result = await this.db.from("clients").update(changes).eq("id", id).select().single();
+    if (result.error?.code === "23505") {
+      throw new RuleError("DUPLICATE_CLIENT", "That client already exists.");
+    }
+    return toClient(unwrap(result));
+  }
+
+  async createProject(input: CreateProjectInput) {
+    const name = input.name?.trim();
+    if (!name) throw new RuleError("INVALID", "Project name is required.", 400);
+    const actor = input.createdBy?.trim() || DEFAULT_ACTOR;
+    const result = await this.db
+      .from("projects")
+      .insert({
+        client_id: input.clientId,
+        name,
+        date: input.date ?? today(),
+        note: input.note ?? null,
+        created_by: actor,
+        updated_by: actor,
+      })
+      .select()
+      .single();
+    return toProject(unwrap(result));
+  }
+
+  async updateProject(
+    id: string,
+    patch: { name?: string; date?: string; note?: string; clientId?: string; actor?: string },
+  ) {
+    if (patch.clientId) {
+      const locked = await this.db
+        .from("billing_items")
+        .select("id")
+        .eq("project_id", id)
+        .in("billing_status", ["INVOICED", "PAID"])
+        .limit(1);
+      if ((locked.data ?? []).length) {
+        throw new RuleError(
+          "PROJECT_LOCKED",
+          "This project already has invoiced work, so its client cannot be changed.",
+        );
+      }
+    }
+    const changes: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+      updated_by: patch.actor ?? DEFAULT_ACTOR,
+    };
+    if (patch.name !== undefined) {
+      const trimmed = patch.name.trim();
+      if (!trimmed) throw new RuleError("INVALID", "Project name is required.", 400);
+      changes.name = trimmed;
+    }
+    if (patch.date !== undefined) changes.date = patch.date;
+    if (patch.note !== undefined) changes.note = patch.note;
+    if (patch.clientId !== undefined) changes.client_id = patch.clientId;
+    const result = await this.db.from("projects").update(changes).eq("id", id).select().single();
+    return toProject(unwrap(result));
+  }
+
+  async createBillingItem(input: CreateBillingItemInput) {
+    const description = input.description?.trim();
+    if (!description) throw new RuleError("INVALID", "Description is required.", 400);
+    const billingStatus = input.billingStatus ?? "NOT_READY";
+    if (billingStatus === "READY_TO_INVOICE") {
+      throw new RuleError(
+        "NOT_DELIVERED",
+        "Mark the work delivered to make it ready to invoice.",
+        400,
+      );
+    }
+    if (!["NOT_READY", "NEEDS_REVIEW"].includes(billingStatus)) {
+      throw new RuleError("INVALID_STATUS", "A new item cannot start out as invoiced.", 400);
+    }
+    const quantity = input.quantity ?? 1;
+    const unitPrice = input.unitPrice ?? 0;
+    const custom = input.amount !== undefined && input.amount !== null;
+    const amount = money(custom ? Number(input.amount) : quantity * unitPrice);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new RuleError("INVALID", "Amount must be zero or more.", 400);
+    }
+    const actor = input.actor ?? DEFAULT_ACTOR;
+    const result = await this.db
+      .from("billing_items")
+      .insert({
+        project_id: input.projectId,
+        description,
+        type: input.type ?? "OTHER",
+        quantity,
+        unit_price: unitPrice,
+        amount,
+        custom_amount: custom,
+        production_status: "IN_PROGRESS",
+        billing_status: billingStatus,
+        note: input.note ?? null,
+        created_by: actor,
+        updated_by: actor,
+      })
+      .select()
+      .single();
+    return toItem(unwrap(result));
+  }
+
+  async updateBillingItem(id: string, patch: UpdateBillingItemInput) {
+    const current = toItem(unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()));
+    if (current.billingStatus === "INVOICED" || current.billingStatus === "PAID") {
+      throw new RuleError(
+        "ITEM_LOCKED",
+        "This item has already been invoiced. Add a new item instead of changing it.",
+      );
+    }
+    const quantity = patch.quantity ?? current.quantity;
+    const unitPrice = patch.unitPrice ?? current.unitPrice;
+    let custom = current.customAmount;
+    let amount = current.amount;
+    if (patch.amount === null) custom = false;
+    else if (patch.amount !== undefined) {
+      custom = true;
+      amount = money(Number(patch.amount));
+    }
+    if (!custom) amount = money(quantity * unitPrice);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new RuleError("INVALID", "Amount must be zero or more.", 400);
+    }
+    const description = patch.description?.trim() ?? current.description;
+    if (!description) throw new RuleError("INVALID", "Description is required.", 400);
+
+    const result = await this.db
+      .from("billing_items")
+      .update({
+        description,
+        type: patch.type ?? current.type,
+        quantity,
+        unit_price: unitPrice,
+        amount,
+        custom_amount: custom,
+        note: patch.note ?? current.note ?? null,
+        updated_at: new Date().toISOString(),
+        updated_by: patch.actor ?? DEFAULT_ACTOR,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    return toItem(unwrap(result));
+  }
+
+  async setBillingStatus(id: string, status: BillingStatus, actor = DEFAULT_ACTOR) {
+    if (!["NOT_READY", "READY_TO_INVOICE", "NEEDS_REVIEW"].includes(status)) {
+      throw new RuleError(
+        "INVALID_STATUS",
+        "Invoiced and paid are set by the billing and payment steps.",
+        400,
+      );
+    }
+    const current = toItem(unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()));
+    if (current.billingStatus === "INVOICED") {
+      throw new RuleError("ITEM_LOCKED", "This item is already on an invoice.");
+    }
+    if (current.billingStatus === "PAID") {
+      throw new RuleError("ITEM_LOCKED", "This item is already paid.");
+    }
+    if (status === "READY_TO_INVOICE" && current.productionStatus !== "DELIVERED") {
+      throw new RuleError(
+        "NOT_DELIVERED",
+        "Mark the work delivered before sending it to billing.",
+      );
+    }
+    const result = await this.db
+      .from("billing_items")
+      .update({
+        billing_status: status,
+        updated_at: new Date().toISOString(),
+        updated_by: actor,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    return toItem(unwrap(result));
+  }
+
+  async setItemDelivery(id: string, delivered: boolean, actor = DEFAULT_ACTOR) {
+    const result = await this.db.rpc("set_item_delivery", {
+      p_item_id: id,
+      p_delivered: delivered,
+      p_actor: actor,
+    });
+    if (result.error) fail(result.error);
+    return toItem(result.data as Record<string, unknown>);
+  }
+
+  async setProjectDelivery(projectId: string, delivered: boolean, actor = DEFAULT_ACTOR) {
+    const result = await this.db.rpc("set_project_delivery", {
+      p_project_id: projectId,
+      p_delivered: delivered,
+      p_actor: actor,
+    });
+    if (result.error) fail(result.error);
+    return ((result.data ?? []) as Record<string, unknown>[]).map(toItem);
+  }
+
+  async deleteBillingItem(id: string, actor = DEFAULT_ACTOR) {
+    const current = toItem(unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()));
+    if (current.billingStatus === "INVOICED" || current.billingStatus === "PAID") {
+      throw new RuleError("ITEM_LOCKED", "Invoiced work is kept as history and cannot be removed.");
+    }
+    const result = await this.db
+      .from("billing_items")
+      .update({ deleted_at: new Date().toISOString(), updated_by: actor })
+      .eq("id", id);
+    if (result.error) fail(result.error);
+  }
+
+  async createInvoice(input: CreateInvoiceInput) {
+    const result = await this.db.rpc("create_invoice", {
+      p_client_id: input.clientId,
+      p_invoice_number: input.invoiceNumber,
+      p_invoice_date: input.invoiceDate || today(),
+      p_item_ids: input.billingItemIds,
+      p_actor: input.actor ?? "Billing Staff",
+    });
+    if (result.error) fail(result.error);
+    return toInvoice(result.data as Record<string, unknown>);
+  }
+
+  async voidInvoice(id: string, actor = "Billing Staff") {
+    const result = await this.db.rpc("void_invoice", { p_invoice_id: id, p_actor: actor });
+    if (result.error) fail(result.error);
+    return toInvoice(result.data as Record<string, unknown>);
+  }
+
+  async confirmPayment(id: string, input: ConfirmPaymentInput) {
+    const result = await this.db.rpc("confirm_payment", {
+      p_invoice_id: id,
+      p_paid_at: input.paymentDate || today(),
+      p_slip: input.slip ?? null,
+      p_actor: input.actor ?? "Accounting",
+    });
+    if (result.error) fail(result.error);
+    return toInvoice(result.data as Record<string, unknown>);
+  }
+
+  async revertPayment(id: string, actor = "Accounting") {
+    const result = await this.db.rpc("revert_payment", { p_invoice_id: id, p_actor: actor });
+    if (result.error) fail(result.error);
+    return toInvoice(result.data as Record<string, unknown>);
+  }
+
+  async setReceiptStatus(id: string, status: ReceiptStatus, actor = "Accounting") {
+    const result = await this.db
+      .from("invoices")
+      .update({
+        receipt_status: status,
+        updated_at: new Date().toISOString(),
+        updated_by: actor,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    return toInvoice(unwrap(result));
+  }
+
+  async queueNotification(input: {
+    kind: "DELIVERY";
+    dedupeKey: string;
+    projectId: string;
+    text: string;
+  }): Promise<Notification | null> {
+    const existing = await this.db
+      .from("notification_logs")
+      .select("*")
+      .eq("dedupe_key", input.dedupeKey)
+      .neq("status", "FAILED")
+      .maybeSingle();
+    if (existing.data) return null;
+    const result = await this.db
+      .from("notification_logs")
+      .insert({
+        kind: input.kind,
+        dedupe_key: input.dedupeKey,
+        project_id: input.projectId,
+        text: input.text,
+        status: "PENDING",
+      })
+      .select()
+      .single();
+    // A race on the unique key means someone else queued the same notice.
+    if (result.error?.code === "23505") return null;
+    return toNotification(unwrap(result));
+  }
+
+  async markNotification(id: string, status: "SENT" | "FAILED" | "SKIPPED", error?: string) {
+    const current = await this.db
+      .from("notification_logs")
+      .select("attempts")
+      .eq("id", id)
+      .single();
+    const result = await this.db
+      .from("notification_logs")
+      .update({
+        status,
+        attempts: Number(current.data?.attempts ?? 0) + 1,
+        last_error: error ?? null,
+        sent_at: status === "SENT" ? new Date().toISOString() : null,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    return toNotification(unwrap(result));
+  }
+
+  async listNotifications(): Promise<Notification[]> {
+    const result = await this.db
+      .from("notification_logs")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (result.error) fail(result.error);
+    return (result.data ?? []).map(toNotification);
+  }
+
+  async getNotification(id: string): Promise<Notification | null> {
+    const result = await this.db.from("notification_logs").select("*").eq("id", id).maybeSingle();
+    if (result.error) fail(result.error);
+    return result.data ? toNotification(result.data) : null;
+  }
+
+  async getTelegramSession(chatId: string): Promise<TelegramSession | null> {
+    const result = await this.db
+      .from("telegram_sessions")
+      .select("*")
+      .eq("chat_id", chatId)
+      .maybeSingle();
+    if (result.error) fail(result.error);
+    return result.data ? toTelegramSession(result.data) : null;
+  }
+
+  async saveTelegramSession(session: TelegramSession): Promise<TelegramSession> {
+    const result = await this.db
+      .from("telegram_sessions")
+      .upsert({
+        chat_id: session.chatId,
+        last_project_id: session.lastProjectId ?? null,
+        candidate_ids: session.candidateIds ?? [],
+        pending_project_name: session.pendingProjectName ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    return toTelegramSession(unwrap(result));
+  }
+}
+
+export type { BillingItem };

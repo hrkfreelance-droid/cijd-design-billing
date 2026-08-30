@@ -8,11 +8,11 @@ web
 
 ## Stack
 
-delegated: Next.js + TypeScript with verified local data mode, keeping the data access boundary ready for Supabase
+Next.js 16 App Router + TypeScript, local JSON mode, Supabase repository/RLS/functions, and Telegram long polling
 
 ## Users
 
-The current seed metadata includes Hiroki only. The user and role model remains extensible for future Billing Staff and Accounting access.
+The seed metadata includes Hiroki (DESIGNER), Billing Staff (BILLING), Accounting (ACCOUNTING), and Admin (ADMIN).
 
 ## Product Purpose
 
@@ -24,16 +24,17 @@ The product separates projects from immutable billing items. Add-on work becomes
 
 ## Operating Context
 
-The primary workflow is Today → Projects → Billing → Archive. A global client selector filters the workspace. Future project registration may come from Telegram through `POST /api/projects`, but the Bot is out of scope for this MVP.
+Designer uses `/designer` for Today → Projects → Delivered → Archive. Billing and Accounting use `/office` for Billing → Payments → Archive. Project registration and delivery intake are also available through the authenticated Telegram endpoint and long-polling runner.
 
 ## Capabilities and Constraints
 
-- Four primary destinations only: Today, Projects, Billing, Archive.
+- Designer destinations are Today, Projects, Delivered, Archive; Office destinations are Billing, Payments, Archive.
 - Billing states: IN_PROGRESS, READY_TO_INVOICE, INVOICED, PAID, NEEDS_REVIEW.
 - Invoice numbers are manually entered in the MVP and duplicate invoice numbers are rejected.
 - Payment confirmation is idempotency-safe: a PAID invoice cannot be confirmed again.
-- Verified local data mode must work without Supabase credentials. Supabase is a future adapter, not a production connection in this MVP.
-- Invoice PDF, attachments, Telegram Bot, notifications, accounting integrations, and analytics are intentionally not implemented yet.
+- Local JSON mode must work without Supabase credentials. With credentials, Supabase is the shared production ledger.
+- Unconfirmed historical facts remain NEEDS_REVIEW; unknown invoice numbers or dates are stored as null when the billing/payment fact is confirmed.
+- Invoice PDF, attachments, accounting integrations, and analytics are intentionally not implemented yet.
 
 ## Brand Commitments
 
