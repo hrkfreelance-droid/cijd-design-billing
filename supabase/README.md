@@ -1,12 +1,22 @@
 # Supabase setup
 
-Nothing here has been run against a live project yet — there are no credentials.
-Once a project exists, these steps are all that is needed.
+This repository is prepared for the existing Supabase project
+`dldfhhcechzhkbvlnzld` in `ap-northeast-2`. Do not create another project.
+Keep all credentials outside Git and never paste key values into terminal
+reports, README files, or commits.
 
-## 1. Create the project
+## 1. Authenticate and link the existing project
 
-Supabase Free is enough. Note the project URL, the `anon` key and the
-`service_role` key from **Project Settings → API**.
+Install or run the Supabase CLI, then authenticate with an account that has
+access to the project. The CLI is not included as an application dependency.
+
+```bash
+npx supabase login
+npx supabase link --project-ref dldfhhcechzhkbvlnzld
+```
+
+The link step may ask for the database password. Store it only in the CLI
+prompt or approved local secret storage.
 
 ## 2. Apply the migrations
 
@@ -17,20 +27,35 @@ In **SQL Editor**, run in order:
 2. `migrations/0002_rls.sql` — row level security and the role helpers
 3. `migrations/0003_functions.sql` — the multi-table operations, as atomic
    functions
+4. `migrations/20260830165135_api_grants.sql` — explicit Data API grants for
+   authenticated users and the server-side service role; anonymous access is
+   not granted
 
 Or with the Supabase CLI:
 
 ```bash
-supabase link --project-ref <ref>
-supabase db push
+npx supabase migration list --project-ref dldfhhcechzhkbvlnzld
+npx supabase db push --project-ref dldfhhcechzhkbvlnzld --dry-run
+npx supabase db push --project-ref dldfhhcechzhkbvlnzld
 ```
 
 ## 3. Seed the real data
 
-Run `seed.sql`. It contains only confirmed records: Ringer Hut, DAISHIN and the
-current `RH Kids Promotion / Correction / $15`. The February–August history is
-deliberately absent — import it with `npm run import:history` when the records
-are available.
+Run `seed.sql` only after the migrations. It contains only confirmed records:
+Ringer Hut, DAISHIN and the current `RH Kids Promotion / Correction / $15`.
+The current item must remain `DELIVERED / READY_TO_INVOICE` with no invoice or
+payment. The February–August history is imported separately:
+
+```bash
+npx supabase db query --project-ref dldfhhcechzhkbvlnzld --file supabase/seed.sql
+npm run test:import
+npm run import:history -- history.csv "Ringer Hut"
+npx supabase db query --project-ref dldfhhcechzhkbvlnzld --file supabase/import-history.sql
+```
+
+The historical SQL must be applied after the seed. It must not merge with the
+current live item. Expected historical totals are 46 projects, 71 billing
+items, 28 invoices, 28 invoice links, and 0 payments.
 
 ## 4. Create the people
 
