@@ -167,11 +167,12 @@ npm run import:history -- history.csv "Ringer Hut"
 ```
 
 列は [`supabase/history-template.csv`](supabase/history-template.csv) を参照（`project,date,description,amount,status,invoice_number,invoice_date,payment_date` など）。
+月次照合形式（`client,month,project,billing_item,amount_usd,invoice_fact,payment_fact,target_status`）も取り込めます。月しか確定していない行は月バケットとして保持し、正確な作業日は不明のまま注記します。
 実行するとローカルストアへ取り込み、Supabase 用の SQL も生成します。
 
 ## Not Implemented Yet
 
-- **Ringer Hut の 2〜8 月の過去請求履歴**：実データ未受領のため未投入。上の import で1コマンドです
+- **Ringer Hut の 2〜8 月の過去請求履歴**：今回の実データをローカル候補へ取り込み済み。Supabase本番への反映とAccounting確認は未実施
 - **Supabase プロジェクト本体**：SQL・RLS・関数・seed・接続コードは完成済み。credentials 設定後に実接続の検証が必要
 - **納品通知の送信先**：ダイキテラシマさんの Chat ID 未確認（架空値は入れていません）
 - Invoice PDF、会計ソフト・銀行 API 連携、ファイル添付の実体

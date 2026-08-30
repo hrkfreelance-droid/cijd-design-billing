@@ -9,7 +9,7 @@
  * confirmed record into NEEDS_REVIEW. Rows with an unknown fact, a
  * contradiction, or a duplicate suspicion remain NEEDS_REVIEW.
  *
- * CSV columns (header required, order free):
+ * Canonical CSV columns (header required, order free):
  *   project        RH Lunch Menu            required
  *   date           2026-03-14               required, yyyy-mm-dd
  *   description    A3 Design                required
@@ -22,6 +22,12 @@
  *   invoice_date   2026-03-20               optional
  *   payment_date   2026-04-10               optional for PAID
  *   note           free text                optional
+ *
+ * Monthly reconciliation CSVs are also accepted. Their month is stored as a
+ * month bucket (YYYY-MM-01) because the exact work day is not known; the
+ * original limitation is retained in the item's note.
+ *   client,month,project,billing_item,amount_usd,invoice_fact,payment_fact,
+ *   invoice_number,invoice_date,target_status,note
  */
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -31,6 +37,7 @@ import { fileURLToPath } from "node:url";
 const VALID_STATUSES = new Set(["PAID", "INVOICED", "REVIEW", ""]);
 const VALID_TYPES = new Set(["DESIGN", "RESIZE", "PRINT", "OTHER"]);
 const UNKNOWN_VALUES = new Set(["", "UNKNOWN", "N/A", "NA", "-"]);
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** Empty/explicitly unknown administrative values become database nulls. */
 export function nullableText(value) {
@@ -50,7 +57,89 @@ export function isDate(value) {
   );
 }
 
+export function isMonth(value) {
+  if (typeof value !== "string" || !MONTH_PATTERN.test(value)) return false;
+  const [year, month] = value.split("-").map(Number);
+  return year >= 1 && month >= 1 && month <= 12;
+}
+
 /* ------------------------------------------------------------------- csv */
+function rowRecord(header, line) {
+  const record = {};
+  header.forEach((name, index) => {
+    record[name] = (line[index] ?? "").trim();
+  });
+  return record;
+}
+
+function factValue(value) {
+  const text = nullableText(value);
+  if (text === null) return null;
+  const normalized = text.toUpperCase();
+  if (["YES", "TRUE", "CONFIRMED"].includes(normalized)) return "YES";
+  if (["NO", "FALSE", "UNCONFIRMED"].includes(normalized)) return "NO";
+  return null;
+}
+
+function targetStatus(value) {
+  const text = nullableText(value);
+  if (text === null) return null;
+  const normalized = text.toUpperCase();
+  return normalized === "NEEDS_REVIEW" ? "REVIEW" : normalized;
+}
+
+function appendNote(note, addition) {
+  const existing = nullableText(note);
+  return existing ? `${existing}; ${addition}` : addition;
+}
+
+function monthlyItemType(value) {
+  const text = (nullableText(value) ?? "").toUpperCase();
+  if (text.includes("DESIGN")) return "DESIGN";
+  if (text.includes("RESIZE")) return "RESIZE";
+  if (text.includes("PRINT")) return "PRINT";
+  return "OTHER";
+}
+
+function monthlyRecord(source) {
+  const month = nullableText(source.month);
+  const invoiceFact = factValue(source.invoice_fact);
+  const paymentFact = factValue(source.payment_fact);
+  const declared = targetStatus(source.target_status);
+  let status = "REVIEW";
+
+  if (invoiceFact === "YES" && paymentFact === "YES") status = "PAID";
+  else if (invoiceFact === "YES" && paymentFact !== "YES") status = "INVOICED";
+
+  let note = nullableText(source.note);
+  if (month && isMonth(month)) {
+    note = appendNote(note, `Historical month ${month}; exact work date unknown`);
+  }
+
+  // The source target is a safety signal, not a substitute for the facts.
+  // A review target always remains review; a conflicting positive target is
+  // downgraded instead of allowing an unsafe archive or invoice link.
+  if (declared === "REVIEW") status = "REVIEW";
+  else if (declared && declared !== status) {
+    status = "REVIEW";
+    note = appendNote(note, `Source target_status ${declared} conflicts with invoice/payment facts`);
+  }
+
+  return {
+    client: nullableText(source.client),
+    project: source.project,
+    date: month && isMonth(month) ? `${month}-01` : "",
+    description: source.billing_item,
+    amount: source.amount_usd,
+    status,
+    invoice_number: source.invoice_number,
+    invoice_date: source.invoice_date,
+    payment_date: source.payment_date,
+    type: monthlyItemType(source.billing_item),
+    note,
+  };
+}
+
 export function parseCsv(text) {
   const rows = [];
   let row = [];
@@ -87,17 +176,24 @@ export function parseCsv(text) {
 export function recordsFromCsv(text) {
   const raw = parseCsv(text);
   if (!raw.length) throw new Error("CSV header is required.");
-  const header = raw[0].map((name) => name.trim().toLowerCase());
+  const header = raw[0].map((name) => name.replace(/^\uFEFF/, "").trim().toLowerCase());
+  const monthlyColumns = [
+    "client",
+    "month",
+    "project",
+    "billing_item",
+    "amount_usd",
+    "invoice_fact",
+    "payment_fact",
+    "target_status",
+  ];
+  if (monthlyColumns.every((name) => header.includes(name))) {
+    return raw.slice(1).map((line) => monthlyRecord(rowRecord(header, line)));
+  }
   const required = ["project", "date", "description", "amount", "status"];
   const missing = required.filter((name) => !header.includes(name));
   if (missing.length) throw new Error(`CSV header is missing: ${missing.join(", ")}`);
-  return raw.slice(1).map((line) => {
-    const record = {};
-    header.forEach((name, index) => {
-      record[name] = (line[index] ?? "").trim();
-    });
-    return record;
-  });
+  return raw.slice(1).map((line) => rowRecord(header, line));
 }
 
 /* --------------------------------------------------------------- checking */
@@ -295,6 +391,12 @@ export function importHistory(
     line: index + 2,
     result: classifyHistoryRecord(record),
   }));
+  for (const entry of classified) {
+    const rowClient = nullableText(entry.record.client);
+    if (rowClient && rowClient.toLowerCase() !== clientName.toLowerCase()) {
+      addReason(entry.result, `client does not match ${clientName}`);
+    }
+  }
   applyDuplicateChecks(classified);
 
   const problems = [];

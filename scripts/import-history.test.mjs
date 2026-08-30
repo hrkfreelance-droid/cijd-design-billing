@@ -174,3 +174,22 @@ test("CSV parser keeps optional unknown fields empty without changing status fac
   assert.equal(records.length, 1);
   assert.equal(classifyHistoryRecord(records[0]).outcome, "PAID");
 });
+
+test("monthly reconciliation CSV maps facts without trusting a guessed target", () => {
+  const records = recordsFromCsv(
+    [
+      "\uFEFFclient,month,project,billing_item,amount_usd,invoice_fact,payment_fact,invoice_number,invoice_date,target_status,note",
+      "Ringer Hut,2026-06,FREE Voucher,Design (2 designs),75,YES,,, ,INVOICED,invoice confirmed",
+      "Ringer Hut,2026-06,FREE Voucher,Print 3000,180,YES,,, ,NEEDS_REVIEW,source caution",
+      "Ringer Hut,2026-06,FREE Voucher,Unknown,75,,,,,PAID,contradictory target",
+    ].join("\n"),
+  );
+
+  assert.equal(records.length, 3);
+  assert.equal(records[0].date, "2026-06-01");
+  assert.equal(records[0].description, "Design (2 designs)");
+  assert.equal(classifyHistoryRecord(records[0]).outcome, "INVOICED");
+  assert.equal(classifyHistoryRecord(records[1]).outcome, "NEEDS_REVIEW");
+  assert.equal(classifyHistoryRecord(records[2]).outcome, "NEEDS_REVIEW");
+  assert.match(records[0].note, /exact work date unknown/);
+});
