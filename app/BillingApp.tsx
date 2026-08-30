@@ -1,7 +1,7 @@
 "use client";
 
 import { cloneElement, FormEvent, isValidElement, useEffect, useId, useRef, useState } from "react";
-import { mockSnapshot } from "./lib/mock-data";
+import { initialSnapshot } from "./lib/initial-data";
 import { createLocalRepository } from "./lib/repository";
 import { BillingItem, BillingSnapshot, BillingStatus, Client, Invoice, Project } from "./lib/types";
 
@@ -39,7 +39,7 @@ const ui = {
     billingHeading: "請求",
     billingSubheading: "Clientごとの請求と入金状況を確認します。",
     archiveHeading: "アーカイブ",
-    archiveSubheading: "完了した請求の履歴です。",
+    archiveSubheading: "確認済みの過去請求がここに表示されます。",
     newProject: "新しい案件",
     project: "案件",
     client: "Client",
@@ -106,9 +106,11 @@ const ui = {
     archivedReadOnly: "完了済みの履歴です。新しい作業は追加できません。",
     clearFilters: "絞り込みを解除",
     month: "月",
-    resetDemo: "デモデータに戻す",
-    resetDone: "デモデータに戻しました",
-    localMode: "Local data mode",
+    noVerifiedArchive: "確認済みのアーカイブはありません",
+    archiveAwaitingData: "確認済みの履歴データを追加すると、ここに表示されます。",
+    resetLocal: "ローカルデータを初期化",
+    resetDone: "初期状態に戻しました",
+    localMode: "確認済みデータ",
     todayDate: "2026年8月30日",
     showAll: "すべて表示",
     noActions: "今日のアクションはありません。",
@@ -148,7 +150,7 @@ const ui = {
     billingHeading: "Billing",
     billingSubheading: "Review invoices and payment status by client.",
     archiveHeading: "Archive",
-    archiveSubheading: "Completed billing history.",
+    archiveSubheading: "Verified historical billing appears here.",
     newProject: "New project",
     project: "Project",
     client: "Client",
@@ -215,9 +217,11 @@ const ui = {
     archivedReadOnly: "Completed history is read-only. Add new work as a separate item.",
     clearFilters: "Clear filters",
     month: "Month",
-    resetDemo: "Reset demo data",
-    resetDone: "Demo data restored",
-    localMode: "Local data mode",
+    noVerifiedArchive: "No verified archive records",
+    archiveAwaitingData: "Verified historical records will appear here after import.",
+    resetLocal: "Reset local data",
+    resetDone: "Initial state restored",
+    localMode: "Verified data",
     todayDate: "August 30, 2026",
     showAll: "Show all",
     noActions: "No actions for today.",
@@ -231,7 +235,7 @@ const ui = {
     newItem: "New item",
     updated: "Updated",
     sharedLedger: "One shared ledger.",
-    sharedLedgerBody: "Projects hold context. Billing items hold the charge. Once an item is invoiced, it stays in history.",
+    sharedLedgerBody: "Projects hold context. Billing items hold the charge. Only verified records should be moved into history.",
   },
 } as const;
 
@@ -313,6 +317,7 @@ export default function BillingApp() {
   const [projectSearch, setProjectSearch] = useState("");
   const [archiveSearch, setArchiveSearch] = useState("");
   const [archiveMonth, setArchiveMonth] = useState("");
+  const [archiveClientFilter, setArchiveClientFilter] = useState("all");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedBillingItemIds, setSelectedBillingItemIds] = useState<string[]>([]);
   const [modal, setModal] = useState<Modal>(null);
@@ -391,9 +396,10 @@ export default function BillingApp() {
   const awaitingInvoices = snapshot.invoices.filter((invoice) => invoice.status === "OPEN" && (!filteredClientId || invoice.clientId === filteredClientId));
   const receiptInvoices = snapshot.invoices.filter((invoice) => invoice.receiptStatus === "PENDING" && (!filteredClientId || invoice.clientId === filteredClientId));
 
+  const archiveClientId = archiveClientFilter === "all" ? null : archiveClientFilter;
   const archiveProjects = snapshot.projects.filter((project) => {
     const items = snapshot.billingItems.filter((item) => item.projectId === project.id);
-    const clientMatch = !filteredClientId || project.clientId === filteredClientId;
+    const clientMatch = (!filteredClientId || project.clientId === filteredClientId) && (!archiveClientId || project.clientId === archiveClientId);
     const searchMatch = !archiveSearch.trim() || `${project.name} ${snapshot.clients.find((client) => client.id === project.clientId)?.name ?? ""}`.toLowerCase().includes(archiveSearch.toLowerCase());
     const monthMatch = !archiveMonth || project.date.startsWith(archiveMonth);
     return items.length > 0 && items.every((item) => item.status === "PAID") && clientMatch && searchMatch && monthMatch;
@@ -402,8 +408,7 @@ export default function BillingApp() {
   const selectedItems = snapshot.billingItems.filter((item) => selectedBillingItemIds.includes(item.id) && item.status === "READY_TO_INVOICE");
   const selectedClientIds = Array.from(new Set(selectedItems.map((item) => snapshot.projects.find((project) => project.id === item.projectId)?.clientId).filter((clientId): clientId is string => Boolean(clientId))));
   const selectedTotal = selectedItems.reduce((total, item) => total + item.amount, 0);
-  const clientName = (clientId: string) => snapshot.clients.find((client) => client.id === clientId)?.name ?? "Unknown client";
-  const projectName = (projectId: string) => snapshot.projects.find((project) => project.id === projectId)?.name ?? "Unknown project";
+  const clientName = (clientId: string) => snapshot.clients.find((client) => client.id === clientId)?.name ?? "—";
 
   const mutateSnapshot = (mutator: (next: BillingSnapshot) => void) => {
     setSnapshot((current) => {
@@ -567,8 +572,8 @@ export default function BillingApp() {
     notify(t("restored"), "warning");
   };
 
-  const resetDemo = () => {
-    const fresh = cloneSnapshot(mockSnapshot);
+  const resetLocalData = () => {
+    const fresh = cloneSnapshot(initialSnapshot);
     window.localStorage.removeItem("cijd-design-billing.snapshot.v1");
     setSnapshot(fresh);
     notify(t("resetDone"));
@@ -615,20 +620,20 @@ export default function BillingApp() {
           {view === "today" && <TodayView t={t} formatAmount={(amount) => formatAmount(amount, language)} formatDate={(date) => formatDate(date, language)} clients={snapshot.clients} projects={snapshot.projects} items={snapshot.billingItems} invoices={snapshot.invoices} reviewItems={reviewItems} readyItems={readyItems} progressItems={progressItems} awaitingInvoices={awaitingInvoices} statusText={statusText} openProject={openProject} setView={setView} />}
           {view === "projects" && <ProjectsView t={t} formatAmount={(amount) => formatAmount(amount, language)} formatDate={(date) => formatDate(date, language)} projects={visibleProjects} clients={snapshot.clients} items={snapshot.billingItems} search={projectSearch} setSearch={setProjectSearch} openProject={openProject} openNewProject={() => { resetNewProject(); setModal("new-project"); }} statusText={statusText} />}
           {view === "billing" && <BillingView t={t} tab={billingTab} setTab={setBillingTab} readyItems={readyItems} awaitingInvoices={awaitingInvoices} receiptInvoices={receiptInvoices} projects={snapshot.projects} clients={snapshot.clients} items={snapshot.billingItems} invoices={snapshot.invoices} selectedIds={selectedBillingItemIds} toggleItem={toggleBillingItem} selectedTotal={selectedTotal} selectedClientIds={selectedClientIds} openProject={openProject} formatAmount={(amount) => formatAmount(amount, language)} formatDate={(date) => formatDate(date, language)} statusText={statusText} openInvoiceModal={openInvoiceModal} confirmPayment={confirmPayment} markReceiptReceived={markReceiptReceived} />}
-          {view === "archive" && <ArchiveView t={t} projects={archiveProjects} clients={snapshot.clients} items={snapshot.billingItems} invoices={snapshot.invoices} invoiceItems={snapshot.invoiceItems} search={archiveSearch} setSearch={setArchiveSearch} month={archiveMonth} setMonth={setArchiveMonth} openProject={openProject} formatAmount={(amount) => formatAmount(amount, language)} formatDate={(date) => formatDate(date, language)} clearFilters={() => { setArchiveSearch(""); setArchiveMonth(""); }} />}
+          {view === "archive" && <ArchiveView t={t} projects={archiveProjects} clients={snapshot.clients} items={snapshot.billingItems} invoices={snapshot.invoices} invoiceItems={snapshot.invoiceItems} search={archiveSearch} setSearch={setArchiveSearch} month={archiveMonth} setMonth={setArchiveMonth} clientFilter={archiveClientFilter} setClientFilter={setArchiveClientFilter} openProject={openProject} formatAmount={(amount) => formatAmount(amount, language)} formatDate={(date) => formatDate(date, language)} clearFilters={() => { setArchiveSearch(""); setArchiveMonth(""); setArchiveClientFilter("all"); }} />}
         </div>
-        <footer className="app-footer"><span>CIJD DESIGN Billing</span><span>Local data mode · {TODAY}</span><button onClick={resetDemo}>{t("resetDemo")}</button></footer>
+        <footer className="app-footer"><span>CIJD DESIGN Billing</span><span>{t("localMode")} · {TODAY}</span><button onClick={resetLocalData}>{t("resetLocal")}</button></footer>
       </main>
 
       <nav className="mobile-nav" aria-label="Mobile navigation">{navItems.map((item) => <button key={item.id} className={view === item.id ? "is-active" : ""} onClick={() => setView(item.id)} aria-current={view === item.id ? "page" : undefined}><Icon name={item.icon} size={19} /><span>{t(item.label)}</span>{item.id === "billing" && readyItems.length > 0 ? <b>{readyItems.length}</b> : null}</button>)}</nav>
 
       {selectedProjectId && currentProject ? <ProjectPanel t={t} project={currentProject} clientName={clientName(currentProject.clientId)} items={currentProjectItems} archived={currentProjectIsArchived} open={Boolean(selectedProjectId)} onClose={() => setSelectedProjectId(null)} formatAmount={(amount) => formatAmount(amount, language)} formatDate={(date) => formatDate(date, language)} statusText={statusText} onAddItem={handleAddItem} itemDescription={itemDescription} setItemDescription={setItemDescription} itemType={itemType} setItemType={setItemType} itemQuantity={itemQuantity} setItemQuantity={setItemQuantity} itemUnitPrice={itemUnitPrice} setItemUnitPrice={setItemUnitPrice} itemError={itemError} onRestore={() => { setRestoreProjectId(currentProject.id); setModal("restore"); }} /> : null}
 
-      {modal === "new-project" && <ModalShell title={t("newProject")} onClose={() => setModal(null)}><form className="form-stack" onSubmit={handleCreateProject}><Field label={t("projectName")} error={newProjectError}><input autoFocus value={newProjectName} onChange={(event) => { setNewProjectName(event.target.value); setNewProjectError(""); }} placeholder={language === "ja" ? "例：Home Fair Special Set" : "e.g. Home Fair Special Set"} /></Field><Field label={t("client")}><select value={newProjectClientId} onChange={(event) => setNewProjectClientId(event.target.value)}>{snapshot.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></Field><Field label={t("date")}><input type="date" value={newProjectDate} onChange={(event) => setNewProjectDate(event.target.value)} /></Field><p className="form-note">{t("savedLocally")}</p><div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setModal(null)}>{t("cancel")}</button><button className="button button-primary" type="submit">{t("createProject")} <Icon name="arrow" size={16} /></button></div></form></ModalShell>}
+      {modal === "new-project" && <ModalShell title={t("newProject")} onClose={() => setModal(null)}><form className="form-stack" onSubmit={handleCreateProject}><Field label={t("projectName")} error={newProjectError}><input autoFocus value={newProjectName} onChange={(event) => { setNewProjectName(event.target.value); setNewProjectError(""); }} placeholder={language === "ja" ? "案件名を入力" : "Enter project name"} /></Field><Field label={t("client")}><select value={newProjectClientId} onChange={(event) => setNewProjectClientId(event.target.value)}>{snapshot.clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></Field><Field label={t("date")}><input type="date" value={newProjectDate} onChange={(event) => setNewProjectDate(event.target.value)} /></Field><p className="form-note">{t("savedLocally")}</p><div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setModal(null)}>{t("cancel")}</button><button className="button button-primary" type="submit">{t("createProject")} <Icon name="arrow" size={16} /></button></div></form></ModalShell>}
 
-      {modal === "invoice" && <ModalShell title={t("createInvoice")} onClose={() => setModal(null)}><form className="form-stack" onSubmit={handleCreateInvoice}><div className="invoice-summary"><div><span className="eyebrow">{t("selectedForInvoice")}</span><strong>{selectedItems.length} {t("items")}</strong><span>{selectedClientIds[0] ? clientName(String(selectedClientIds[0])) : "—"}</span></div><strong className="invoice-summary-total">{formatAmount(selectedTotal, language)}</strong></div><div className="compact-item-list">{selectedItems.map((item) => <div key={item.id}><span>{item.description}</span><strong>{formatAmount(item.amount, language)}</strong></div>)}</div><Field label={t("invoiceNumber")} error={invoiceError}><input autoFocus value={invoiceNumber} onChange={(event) => { setInvoiceNumber(event.target.value); setInvoiceError(""); }} placeholder="CIJD-2026-08-002" aria-invalid={Boolean(invoiceError)} /></Field><Field label={t("invoiceDate")}><input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} /></Field><div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setModal(null)}>{t("cancel")}</button><button className="button button-primary" type="submit">{t("markAsInvoiced")} <Icon name="arrow" size={16} /></button></div></form></ModalShell>}
+      {modal === "invoice" && <ModalShell title={t("createInvoice")} onClose={() => setModal(null)}><form className="form-stack" onSubmit={handleCreateInvoice}><div className="invoice-summary"><div><span className="eyebrow">{t("selectedForInvoice")}</span><strong>{selectedItems.length} {t("items")}</strong><span>{selectedClientIds[0] ? clientName(String(selectedClientIds[0])) : "—"}</span></div><strong className="invoice-summary-total">{formatAmount(selectedTotal, language)}</strong></div><div className="compact-item-list">{selectedItems.map((item) => <div key={item.id}><span>{item.description}</span><strong>{formatAmount(item.amount, language)}</strong></div>)}</div><Field label={t("invoiceNumber")} error={invoiceError}><input autoFocus value={invoiceNumber} onChange={(event) => { setInvoiceNumber(event.target.value); setInvoiceError(""); }} placeholder="CIJD-YYYY-MM-###" aria-invalid={Boolean(invoiceError)} /></Field><Field label={t("invoiceDate")}><input type="date" value={invoiceDate} onChange={(event) => setInvoiceDate(event.target.value)} /></Field><div className="modal-actions"><button type="button" className="button button-quiet" onClick={() => setModal(null)}>{t("cancel")}</button><button className="button button-primary" type="submit">{t("markAsInvoiced")} <Icon name="arrow" size={16} /></button></div></form></ModalShell>}
 
-      {modal === "clients" && <ModalShell title={t("clientsHeading")} onClose={() => setModal(null)}><form className="client-create-form" onSubmit={handleAddClient}><Field label={t("clientName")} error={clientError}><input autoFocus value={newClientName} onChange={(event) => { setNewClientName(event.target.value); setClientError(""); }} placeholder={language === "ja" ? "例：North Studio" : "e.g. North Studio"} /></Field><button className="button button-primary" type="submit"><Icon name="plus" size={16} /> {t("addClient")}</button></form><div className="client-list">{snapshot.clients.map((client) => <div className="client-list-row" key={client.id}>{editingClientId === client.id ? <input className="client-edit-input" value={editingClientName} onChange={(event) => setEditingClientName(event.target.value)} aria-label={t("clientName")} /> : <div className="client-list-name"><span className={`client-status-dot ${client.active ? "is-active" : ""}`} /><strong>{client.name}</strong></div>}<div className="client-list-actions">{editingClientId === client.id ? <button className="text-button" onClick={() => saveClientName(client.id)}>{t("save")}</button> : <button className="text-button" onClick={() => { setEditingClientId(client.id); setEditingClientName(client.name); }}>{t("rename")}</button>}<button className="status-toggle" onClick={() => toggleClientActive(client.id)} aria-pressed={client.active}>{client.active ? t("active") : t("inactive")}</button></div></div>)}</div></ModalShell>}
+      {modal === "clients" && <ModalShell title={t("clientsHeading")} onClose={() => setModal(null)}><form className="client-create-form" onSubmit={handleAddClient}><Field label={t("clientName")} error={clientError}><input autoFocus value={newClientName} onChange={(event) => { setNewClientName(event.target.value); setClientError(""); }} placeholder={language === "ja" ? "Client名を入力" : "Enter client name"} /></Field><button className="button button-primary" type="submit"><Icon name="plus" size={16} /> {t("addClient")}</button></form><div className="client-list">{snapshot.clients.map((client) => <div className="client-list-row" key={client.id}>{editingClientId === client.id ? <input className="client-edit-input" value={editingClientName} onChange={(event) => setEditingClientName(event.target.value)} aria-label={t("clientName")} /> : <div className="client-list-name"><span className={`client-status-dot ${client.active ? "is-active" : ""}`} /><strong>{client.name}</strong></div>}<div className="client-list-actions">{editingClientId === client.id ? <button className="text-button" onClick={() => saveClientName(client.id)}>{t("save")}</button> : <button className="text-button" onClick={() => { setEditingClientId(client.id); setEditingClientName(client.name); }}>{t("rename")}</button>}<button className="status-toggle" onClick={() => toggleClientActive(client.id)} aria-pressed={client.active}>{client.active ? t("active") : t("inactive")}</button></div></div>)}</div></ModalShell>}
 
       {modal === "restore" && <ModalShell title={t("restoreHeading")} onClose={() => { setModal(null); setRestoreProjectId(null); }}><div className="confirm-copy"><span className="confirm-icon"><Icon name="alert" size={20} /></span><p>{t("restoreBody")}</p></div><div className="modal-actions"><button className="button button-quiet" onClick={() => { setModal(null); setRestoreProjectId(null); }}>{t("cancel")}</button><button className="button button-primary" onClick={restoreArchive}>{t("restoreConfirm")} <Icon name="arrow" size={16} /></button></div></ModalShell>}
 
@@ -674,8 +679,9 @@ function InvoiceList({ invoices, clients, title, emptyTitle, emptyBody, formatAm
   return <section className="invoice-list"><div className="list-caption"><span>{title}</span><span>{invoices.length}</span></div>{invoices.length ? <div className="invoice-table">{invoices.map((invoice) => <div className="invoice-row" key={invoice.id}><span className="invoice-number"><strong>{invoice.invoiceNumber}</strong><small>{clients.find((client) => client.id === invoice.clientId)?.name ?? "—"}</small></span><span><small>{dateLabel}</small><strong>{formatDate(invoice.invoiceDate)}</strong></span><span><small>{amountLabel}</small><strong>{formatAmount(invoice.amount)}</strong></span><span><small>{statusLabel}</small><span className={`invoice-state ${invoice.status === "PAID" ? "is-paid" : "is-open"}`}><i />{invoice.status === "PAID" ? paidLabel : statusText}</span></span><button className="button button-outline" onClick={() => onAction(invoice.id)}>{actionLabel}</button></div>)}</div> : <EmptyState icon="check" title={emptyTitle} body={emptyBody} />}</section>;
 }
 
-function ArchiveView({ t, projects, clients, items, invoices, invoiceItems, search, setSearch, month, setMonth, openProject, formatAmount, formatDate, clearFilters }: { t: (key: TranslationKey) => string; projects: Project[]; clients: Client[]; items: BillingItem[]; invoices: Invoice[]; invoiceItems: { invoiceId: string; billingItemId: string }[]; search: string; setSearch: (value: string) => void; month: string; setMonth: (value: string) => void; openProject: (id: string) => void; formatAmount: (amount: number) => string; formatDate: (date: string) => string; clearFilters: () => void }) {
-  return <div className="page"><PageIntro eyebrow={`${projects.length} ${t("completed")}`} title={t("archiveHeading")} subheading={t("archiveSubheading")} /><div className="archive-toolbar"><label className="search-field"><Icon name="search" size={17} /><span className="sr-only">{t("search")}</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("search")} /></label><label className="month-field"><span>{t("month")}</span><input type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label>{search || month ? <button className="text-button" onClick={clearFilters}>{t("clearFilters")}</button> : null}</div>{projects.length ? <div className="archive-list"><div className="project-table-head"><span>{t("date")}</span><span>{t("client")}</span><span>{t("project")}</span><span>{t("invoice")}</span><span>{t("amount")}</span><span /></div>{projects.map((project) => { const projectItems = items.filter((item) => item.projectId === project.id); const projectItemIds = new Set(projectItems.map((item) => item.id)); const invoiceNumber = invoices.find((invoice) => invoice.status === "PAID" && invoiceItems.some((link) => link.invoiceId === invoice.id && projectItemIds.has(link.billingItemId)))?.invoiceNumber ?? "—"; const total = projectItems.reduce((sum, item) => sum + item.amount, 0); return <button className="archive-row" key={project.id} onClick={() => openProject(project.id)}><span>{formatDate(project.date)}</span><span>{clients.find((client) => client.id === project.clientId)?.name ?? "—"}</span><strong>{project.name}</strong><span className="archive-invoice">{invoiceNumber}</span><strong>{formatAmount(total)}</strong><Icon name="chevron" size={17} /></button>; })}</div> : <EmptyState icon="archive" title={t("noProjects")} body={t("archiveSubheading")} action={search || month ? <button className="button button-outline" onClick={clearFilters}>{t("clearFilters")}</button> : undefined} />}</div>;
+function ArchiveView({ t, projects, clients, items, invoices, invoiceItems, search, setSearch, month, setMonth, clientFilter, setClientFilter, openProject, formatAmount, formatDate, clearFilters }: { t: (key: TranslationKey) => string; projects: Project[]; clients: Client[]; items: BillingItem[]; invoices: Invoice[]; invoiceItems: { invoiceId: string; billingItemId: string }[]; search: string; setSearch: (value: string) => void; month: string; setMonth: (value: string) => void; clientFilter: string; setClientFilter: (value: string) => void; openProject: (id: string) => void; formatAmount: (amount: number) => string; formatDate: (date: string) => string; clearFilters: () => void }) {
+  const hasFilters = search || month || clientFilter !== "all";
+  return <div className="page"><PageIntro eyebrow={`${projects.length} ${t("completed")}`} title={t("archiveHeading")} subheading={t("archiveSubheading")} /><div className="archive-toolbar"><label className="search-field"><Icon name="search" size={17} /><span className="sr-only">{t("search")}</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("search")} /></label><label className="archive-client-field"><span>{t("client")}</span><select value={clientFilter} onChange={(event) => setClientFilter(event.target.value)}><option value="all">{t("allClients")}</option>{clients.filter((client) => client.active).map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label className="month-field"><span>{t("month")}</span><input type="month" value={month} onChange={(event) => setMonth(event.target.value)} /></label>{hasFilters ? <button className="text-button" onClick={clearFilters}>{t("clearFilters")}</button> : null}</div>{projects.length ? <div className="archive-list"><div className="project-table-head"><span>{t("date")}</span><span>{t("client")}</span><span>{t("project")}</span><span>{t("invoice")}</span><span>{t("amount")}</span><span /></div>{projects.map((project) => { const projectItems = items.filter((item) => item.projectId === project.id); const projectItemIds = new Set(projectItems.map((item) => item.id)); const invoiceNumber = invoices.find((invoice) => invoice.status === "PAID" && invoiceItems.some((link) => link.invoiceId === invoice.id && projectItemIds.has(link.billingItemId)))?.invoiceNumber ?? "—"; const total = projectItems.reduce((sum, item) => sum + item.amount, 0); return <button className="archive-row" key={project.id} onClick={() => openProject(project.id)}><span>{formatDate(project.date)}</span><span>{clients.find((client) => client.id === project.clientId)?.name ?? "—"}</span><strong>{project.name}</strong><span className="archive-invoice">{invoiceNumber}</span><strong>{formatAmount(total)}</strong><Icon name="chevron" size={17} /></button>; })}</div> : <EmptyState icon="archive" title={t("noVerifiedArchive")} body={t("archiveAwaitingData")} action={hasFilters ? <button className="button button-outline" onClick={clearFilters}>{t("clearFilters")}</button> : undefined} />}</div>;
 }
 
 function ProjectPanel({ t, project, clientName, items, archived, onClose, formatAmount, formatDate, statusText, onAddItem, itemDescription, setItemDescription, itemType, setItemType, itemQuantity, setItemQuantity, itemUnitPrice, setItemUnitPrice, itemError, onRestore }: { t: (key: TranslationKey) => string; project: Project; clientName: string; items: BillingItem[]; archived: boolean; open: boolean; onClose: () => void; formatAmount: (amount: number) => string; formatDate: (date: string) => string; statusText: (status: BillingStatus) => string; onAddItem: (event: FormEvent<HTMLFormElement>) => void; itemDescription: string; setItemDescription: (value: string) => void; itemType: string; setItemType: (value: string) => void; itemQuantity: string; setItemQuantity: (value: string) => void; itemUnitPrice: string; setItemUnitPrice: (value: string) => void; itemError: string; onRestore: () => void }) {

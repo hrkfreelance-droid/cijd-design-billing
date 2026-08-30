@@ -8,11 +8,11 @@ web
 
 ## Stack
 
-delegated: Next.js + TypeScript with local mock data mode, keeping the data access boundary ready for Supabase
+delegated: Next.js + TypeScript with verified local data mode, keeping the data access boundary ready for Supabase
 
 ## Users
 
-Assumption from the implementation brief: Hiroki, Billing Staff, and Accounting. They need a calm, shared view of projects, invoiceable line items, payment status, and history.
+The current seed metadata includes Hiroki only. The user and role model remains extensible for future Billing Staff and Accounting access.
 
 ## Product Purpose
 
@@ -32,16 +32,16 @@ The primary workflow is Today → Projects → Billing → Archive. A global cli
 - Billing states: IN_PROGRESS, READY_TO_INVOICE, INVOICED, PAID, NEEDS_REVIEW.
 - Invoice numbers are manually entered in the MVP and duplicate invoice numbers are rejected.
 - Payment confirmation is idempotency-safe: a PAID invoice cannot be confirmed again.
-- Local data mode must work without Supabase credentials. Supabase is a future adapter, not a production connection in this MVP.
+- Verified local data mode must work without Supabase credentials. Supabase is a future adapter, not a production connection in this MVP.
 - Invoice PDF, attachments, Telegram Bot, notifications, accounting integrations, and analytics are intentionally not implemented yet.
 
 ## Brand Commitments
 
-CIJD DESIGN is the product name. The service is labeled Billing. Ringer Hut is only allowed as demo data, never as product identity or business logic.
+CIJD DESIGN is the product name. The service is labeled Billing. Ringer Hut is a real client record supplied for this MVP; no demo or dummy records are seeded.
 
 ## Evidence on Hand
 
-The implementation brief is the only confirmed product source. Historical client records and real production billing data are not available for this build and must not be fabricated.
+The implementation brief and the user-supplied RH Kids Promotion record are the confirmed sources for this build. Ringer Hut historical 2–8 month records were not available in the current workspace, so they were not fabricated.
 
 ## Product Principles
 

@@ -12,7 +12,7 @@ export type Client = {
   id: string;
   name: string;
   active: boolean;
-  createdAt: string;
+  createdAt?: string;
 };
 
 export type User = {

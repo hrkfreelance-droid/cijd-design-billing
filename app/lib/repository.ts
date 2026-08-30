@@ -1,4 +1,4 @@
-import { mockSnapshot } from "./mock-data";
+import { initialSnapshot } from "./initial-data";
 import { BillingSnapshot } from "./types";
 
 export interface BillingRepository {
@@ -13,12 +13,12 @@ const clone = (value: BillingSnapshot): BillingSnapshot => JSON.parse(JSON.strin
 export function createLocalRepository(): BillingRepository {
   return {
     load() {
-      if (typeof window === "undefined") return clone(mockSnapshot);
+      if (typeof window === "undefined") return clone(initialSnapshot);
       try {
         const stored = window.localStorage.getItem(STORAGE_KEY);
-        return stored ? (JSON.parse(stored) as BillingSnapshot) : clone(mockSnapshot);
+        return stored ? (JSON.parse(stored) as BillingSnapshot) : clone(initialSnapshot);
       } catch {
-        return clone(mockSnapshot);
+        return clone(initialSnapshot);
       }
     },
     save(snapshot) {
@@ -29,4 +29,3 @@ export function createLocalRepository(): BillingRepository {
 }
 
 export const repositoryStorageKey = STORAGE_KEY;
-

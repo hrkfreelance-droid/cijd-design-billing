@@ -1,12 +1,12 @@
 # CIJD DESIGN Billing
 
-CIJD DESIGNの案件・請求・入金管理Webアプリ。現在は安全なmock/local dataで主要業務フローを確認できます。
+CIJD DESIGNの案件・請求・入金管理Webアプリ。現在は確認済みのlocal dataで主要業務フローを確認できます。
 
 ### Live Preview
 
 [Open GitHub Pages Preview](https://hrkfreelance-droid.github.io/cijd-design-billing/)
 
-GitHub Pagesはmock/local dataによる画面・主要操作確認用です。`POST /api/projects`はNext.jsのローカル実行で利用できます。
+GitHub Pagesは確認済みのlocal dataによる画面・主要操作確認用です。未確認の過去履歴や本番データは含めていません。`POST /api/projects`はNext.jsのローカル実行で利用できます。
 
 ### Overview
 
@@ -48,7 +48,7 @@ Current MVPでは環境変数不要です。Supabase接続時にのみ、秘密�
 
 ### Current MVP Scope
 
-Mock/local dataによる案件・請求・入金管理と、将来用の`POST /api/projects` APIを含みます。公開Previewにも本番データやSecretは含めません。
+確認済みのlocal dataによる案件・請求・入金管理と、将来用の`POST /api/projects` APIを含みます。初期ClientはRinger HutとDAISHIN、初期請求対象はRinger HutのRH Kids Promotion / Correction / $15です。公開Previewにも本番データやSecretは含めません。
 
 ### Not Implemented Yet
 

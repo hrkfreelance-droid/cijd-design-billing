@@ -240,6 +240,9 @@ select:focus:not(:focus-visible) { outline: none; }
 .invoice-state.is-paid { color: var(--color-success); }
 
 .archive-toolbar { gap: 18px; }
+.archive-client-field { display: flex; min-height: 44px; align-items: center; gap: 9px; padding: 0 11px; border: 1px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-panel); }
+.archive-client-field span { color: var(--color-muted); font: 600 10px/1 var(--font-mono); text-transform: uppercase; }
+.archive-client-field select { min-width: 130px; border: 0; outline: 0; background: transparent; color: var(--color-ink); font-size: 13px; }
 .month-field { display: flex; min-height: 44px; align-items: center; gap: 9px; padding: 0 11px; border: 1px solid var(--color-rule); border-radius: var(--radius-sm); background: var(--color-panel); }
 .month-field span { color: var(--color-muted); font: 600 10px/1 var(--font-mono); text-transform: uppercase; }
 .month-field input { min-width: 128px; border: 0; outline: 0; background: transparent; color: var(--color-ink); font-size: 13px; }
