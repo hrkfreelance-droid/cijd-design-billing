@@ -2,9 +2,11 @@
 
 CIJD DESIGNの案件・請求・入金管理Webアプリ。現在は安全なmock/local dataで主要業務フローを確認できます。
 
-### Preview
+### Live Preview
 
-Preview URLはNetlify公開後に設定します。
+[Open GitHub Pages Preview](https://hrkfreelance-droid.github.io/cijd-design-billing/)
+
+GitHub Pagesはmock/local dataによる画面・主要操作確認用です。`POST /api/projects`はNext.jsのローカル実行で利用できます。
 
 ### Overview
 
