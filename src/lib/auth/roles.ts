@@ -52,7 +52,7 @@ export function canAny(role: Role, permissions: Permission[]): boolean {
 /** Where a role lands after signing in. */
 export function homeFor(role: Role): string {
   if (can(role, "printing:read") && !can(role, "designer:read")) return "/printing";
-  if (can(role, "designer:read")) return "/designer";
+  if (can(role, "designer:read")) return "/designer/projects";
   if (can(role, "billing:read")) return "/office";
   return "/office/payments";
 }

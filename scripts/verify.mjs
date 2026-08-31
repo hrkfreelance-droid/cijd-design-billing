@@ -14,7 +14,7 @@ const OUT = process.env.OUT ?? ".shots/verify";
 await mkdir(OUT, { recursive: true });
 
 const PAGES = [
-  ["designer-today", "/designer"],
+  ["designer-home-redirect", "/designer"],
   ["designer-projects", "/designer/projects"],
   ["designer-delivered", "/designer/delivered"],
   ["designer-archive", "/designer/archive"],
@@ -52,8 +52,9 @@ async function signIn(ctx, userId) {
 
 /* ------------------------------------------------- layout across the matrix */
 for (const [size, viewport] of Object.entries({
+  compact: { width: 320, height: 844 },
   mobile: { width: 390, height: 844 },
-  desktop: { width: 1280, height: 900 },
+  desktop: { width: 1440, height: 900 },
 })) {
   for (const theme of ["light", "dark"]) {
     for (const locale of ["ja", "en"]) {

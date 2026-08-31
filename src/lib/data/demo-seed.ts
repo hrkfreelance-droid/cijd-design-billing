@@ -8,6 +8,15 @@ import { buildSeed } from "./seed";
  */
 export function buildDemoSeed(): Database {
   const db = buildSeed();
+  // Demo sign-in mirrors the real workspace split. Hiroki is the one Admin
+  // candidate and can exercise Design, Printing, and Billing without creating
+  // a second fake Admin account.
+  db.users = [
+    { id: "u_hiroki", name: "Hiroki", role: "ADMIN" },
+    { id: "u_printing", name: "Printing Staff", role: "PRINTING" },
+    { id: "u_billing", name: "Billing Staff", role: "BILLING" },
+    { id: "u_accounting", name: "Accounting", role: "ACCOUNTING" },
+  ];
   const now = new Date().toISOString();
   const date = "2026-08-31";
 

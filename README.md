@@ -5,8 +5,8 @@ CIJD DESIGN の案件・請求・入金管理 Web アプリ。
 
 ## Preview
 
-現在、公開 Preview は停止中です。Netlify への操作はユーザーの明示的な許可があるまで行いません。
-ローカルでの起動方法は [Local Development](#local-development) を参照してください。
+現在、公開・実行基盤は未確定です。Cloudflare Freeを第一候補として成立方法を検証しており、公開設定はまだ変更していません。
+Netlifyを前提にせず、ローカルでの起動方法は [Local Development](#local-development) を参照してください。
 
 正本Repositoryに設定されていた GitHub Pages Preview の案内は保持しています。
 [Open GitHub Pages Preview](https://hrkfreelance-droid.github.io/cijd-design-billing/)
@@ -27,8 +27,8 @@ Designer                              Office
 
 ## Features
 
-**Designer（`/designer`）**
-- Today / Projects / Delivered / Archive
+**Designer（`/designer/projects`。`/designer` からもリダイレクト）**
+- Design / Archive
 - 案件と請求項目の登録、`納品済みにする` の実行、`✓ 納品済み` の表示
 - 請求書・入金・領収書は表示も操作もしない
 
@@ -38,7 +38,7 @@ Designer                              Office
 - Invoice Number は請求書発行時に入力（必須・重複禁止）
 
 **守っているルール**
-- `productionStatus !== DELIVERED` の項目は、請求待ちにも Invoice にもできない（UI・API・データ層すべてで拒否）
+- `productionStatus` が `DELIVERED` または `COMPLETED` でない項目は、請求待ちにも Invoice にもできない（UI・API・データ層すべてで拒否）
 - 請求済み・入金済みの項目は編集・削除・再請求ができない
 - 同じ請求書番号は登録できない。入金済みへの再入金確認はエラー
 - 請求・入金の取り消しは確認付きで、履歴は消さずに残す
@@ -91,16 +91,15 @@ npm run dev          # http://localhost:3000
 初回起動時に `.data/runtime/db.json` が作成されます。既存の `.data/db.json` は
 手動検証・Import証拠として保全され、自動Runtimeでは使用しません。ローカルのNext生成物は
 `.next-local` に出力し、既存の `.next` も保全します。
-サインイン画面で担当（Hiroki / Billing Staff / Accounting / Admin）を選ぶと、Role ごとのワークスペースに入ります。
+サインイン画面で担当（Hiroki / Printing Staff / Billing Staff / Accounting）を選ぶと、Role ごとのワークスペースに入ります。Hiroki は Demo では ADMIN として Design / Printing / Billing を切り替えられます。
 
 ## Codespaces Preview
 
 `integrate-production-workspace` でCodespaceを作成し、Terminalで `npm run preview:codespaces` を実行してください。Forwarded Port 3000をOpen in Browserすると、Supabase・Telegramなしのbrowser-only Demo ModeでUIを確認できます。Port visibilityはPrivateです。
 
-開発時にSupabase credentialsが無い場合は画面に `LOCAL MODE` と表示されます。
-`NODE_ENV=production` ではSupabase credentialsが無い場合にデータ層がfail closedし、
-localStorageや `.data/runtime/db.json` を業務DBとして使いません。接続後は開発者とAdminに
-`PRODUCTION / SUPABASE` と表示されます。
+Demoでは接続先バッジを表示せず、ブラウザ内データだけで動作します。Supabase接続時は
+開発者とAdminに `PRODUCTION / SUPABASE` と表示されます。`NODE_ENV=production` ではSupabase credentialsが無い場合にデータ層がfail closedし、
+localStorageや `.data/runtime/db.json` を業務DBとして使いません。
 
 | コマンド | 内容 |
 | --- | --- |

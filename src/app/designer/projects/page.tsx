@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -31,6 +30,7 @@ import type { BillingItem } from "@/lib/types";
 export default function ProjectsPage() {
   const scope = useScope();
   const { t, locale } = useI18n();
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -95,17 +95,25 @@ export default function ProjectsPage() {
       ) : (
         <div className="space-y-6 px-5 pb-8 sm:px-8">
           {rows.map(({ project, client, items }) => (
-            <section
+            <article
               key={project.id}
               data-testid="designer-project-group"
-              className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
+              tabIndex={0}
+              aria-label={project.name}
+              onClick={(event) => {
+                if (hasInteractiveTarget(event.target)) return;
+                router.push(`/designer/projects/${project.id}`);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || hasInteractiveTarget(event.target)) return;
+                event.preventDefault();
+                router.push(`/designer/projects/${project.id}`);
+              }}
+              className="group cursor-pointer overflow-hidden border-y border-line bg-panel outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent sm:rounded-2xl sm:border sm:hover:border-line-strong"
             >
               {/* Name, client, date, owner and money — everything needed to
                   recognise the project without opening it. */}
-              <Link
-                href={`/designer/projects/${project.id}`}
-                className="block border-b border-line px-5 py-5 transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
-              >
+              <div className="border-b border-line px-5 py-5 transition-colors duration-150 group-hover:bg-fill active:bg-fill sm:px-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="text-[18px] font-semibold leading-tight tracking-[-0.014em] [overflow-wrap:anywhere]">
@@ -118,7 +126,7 @@ export default function ProjectsPage() {
                   </div>
                   <ProjectTotal items={items} />
                 </div>
-              </Link>
+              </div>
 
               <div className="px-5 sm:px-6">
                 <div className="divide-y divide-line">
@@ -127,7 +135,7 @@ export default function ProjectsPage() {
                   ))}
                 </div>
               </div>
-            </section>
+            </article>
           ))}
         </div>
       )}
@@ -135,6 +143,11 @@ export default function ProjectsPage() {
       <NewProjectSheet open={creating} onClose={() => setCreating(false)} />
     </div>
   );
+}
+
+function hasInteractiveTarget(target: EventTarget | null) {
+  return target instanceof Element &&
+    !!target.closest("button, a, input, select, textarea, [role='button'], [role='link']");
 }
 
 /**

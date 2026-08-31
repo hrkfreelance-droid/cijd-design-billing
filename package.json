@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "CIJD_NEXT_DIST_DIR=.next-local next dev",
     "preview:codespaces": "NEXT_PUBLIC_DEMO_MODE=1 NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= SUPABASE_SERVICE_ROLE_KEY= TELEGRAM_BOT_TOKEN= TELEGRAM_WEBHOOK_SECRET= TELEGRAM_BILLING_CHAT_ID= CIJD_NEXT_DIST_DIR=.next-codespaces next dev --hostname 0.0.0.0 --port 3000",
-    "build": "CIJD_NEXT_DIST_DIR=.next-local next build",
+    "build": "CIJD_NEXT_DIST_DIR=.next-local next build --webpack",
     "start": "CIJD_NEXT_DIST_DIR=.next-local next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit --incremental false",

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { buildDemoSeed } from "../src/lib/data/demo-seed";
+
 /**
  * The two rules this app exists to keep:
  *   1. nothing is billed before it is delivered;
@@ -46,9 +48,13 @@ async function newProjectWithItem(
 test("designer sees production, not invoicing", async ({ page }) => {
   await signIn(page, "u_hiroki");
   await page.goto("/designer");
-  await expect(page.getByRole("heading", { name: "Today", level: 1 })).toBeVisible();
-  await expect(page.getByTestId("data-mode")).toHaveText("LOCAL MODE");
-  await expect(page.getByRole("link", { name: "Delivered" }).first()).toBeVisible();
+  await expect(page).toHaveURL(/\/designer\/projects$/);
+  await expect(page.getByRole("heading", { name: "Design", level: 1 })).toBeVisible();
+  await expect(page.getByTestId("data-mode")).toHaveCount(0);
+  const designerNav = page.locator('nav[aria-label="Workspace navigation"]');
+  await expect(designerNav.getByRole("link", { name: "Design", exact: true })).toHaveCount(1);
+  await expect(designerNav.getByRole("link", { name: "Archive", exact: true })).toHaveCount(1);
+  await expect(designerNav.getByRole("link", { name: /Today|Projects|Delivered/ })).toHaveCount(0);
   // No billing navigation anywhere on the designer side.
   await expect(page.getByRole("link", { name: "Payments" })).toHaveCount(0);
 
@@ -577,4 +583,82 @@ test("designer price display does not infer certainty from note text", async ({ 
     .filter({ hasText: "Design" });
   await expect(item).toBeVisible();
   await expect(item.getByText("Suggested", { exact: false })).toHaveCount(0);
+});
+
+test("designer uses one project card and keeps nested actions local", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Project Card Navigation Check" },
+    })
+  ).json();
+  await page.request.post("/api/billing-items", {
+    data: { projectId: project.data.id, description: "Design", type: "DESIGN", unitPrice: 25 },
+  });
+  await page.request.post("/api/billing-items", {
+    data: {
+      projectId: project.data.id,
+      description: "Print ×100",
+      type: "PRINT",
+      quantity: 100,
+      unitPrice: 0.15,
+      amount: 15,
+      billingStatus: "NEEDS_REVIEW",
+    },
+  });
+
+  await page.goto("/designer/projects");
+  const card = page.getByTestId("designer-project-group").filter({ hasText: "Project Card Navigation Check" });
+  await expect(card).toHaveCount(1);
+  await expect(card.getByTestId("designer-project-item")).toHaveCount(2);
+
+  // The project container is keyboard/click navigable as one unit.
+  await card.click({ position: { x: 8, y: 8 } });
+  await expect(page).toHaveURL(new RegExp(`/designer/projects/${project.data.id}$`));
+
+  // A nested production action opens its own confirmation sheet and must not
+  // fall through to the containing project's navigation handler.
+  await page.goto("/designer/projects");
+  const design = card.getByTestId("designer-project-item").filter({ hasText: "Design" });
+  await design.getByRole("button", { name: "Complete" }).click();
+  await expect(page).toHaveURL(/\/designer\/projects$/);
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel" }).click();
+
+  const print = card.getByTestId("designer-project-item").filter({ hasText: "Print ×100" });
+  await print.getByRole("link", { name: "Review price" }).click();
+  await expect(page).toHaveURL(new RegExp(`/designer/projects/${project.data.id}\\?item=`));
+});
+
+test("admin switches workspaces from the current workspace title", async ({ page }) => {
+  await signIn(page, "u_admin");
+  await page.goto("/designer/projects");
+  await page.getByRole("button", { name: /Switch workspace/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Switch workspace" });
+  await expect(dialog.getByRole("button", { name: "Design", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Printing", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Billing", exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Printing", exact: true }).click();
+  await expect(page).toHaveURL(/\/printing$/);
+});
+
+test("printing navigation stays focused on printing and history", async ({ page }) => {
+  await signIn(page, "u_admin");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/printing");
+  const printingNav = page.locator('nav[aria-label="Workspace navigation"]');
+  await expect(printingNav.getByRole("link", { name: "Printing", exact: true })).toBeVisible();
+  await expect(printingNav.getByRole("link", { name: "History", exact: true })).toBeVisible();
+  await expect(printingNav.getByRole("link", { name: /Review|Ordering|Delivered/ })).toHaveCount(0);
+});
+
+test("demo users keep one Admin and separated operational roles", () => {
+  const users = buildDemoSeed().users;
+  expect(users).toEqual([
+    { id: "u_hiroki", name: "Hiroki", role: "ADMIN" },
+    { id: "u_printing", name: "Printing Staff", role: "PRINTING" },
+    { id: "u_billing", name: "Billing Staff", role: "BILLING" },
+    { id: "u_accounting", name: "Accounting", role: "ACCOUNTING" },
+  ]);
+  expect(users.filter((user) => user.role === "ADMIN")).toHaveLength(1);
 });

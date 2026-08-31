@@ -8,8 +8,8 @@ import {
   ArchiveIcon,
   BillIcon,
   CheckIcon,
+  ChevronDown,
   ChevronRight,
-  ClockIcon,
   ListIcon,
   MoonIcon,
   PlusIcon,
@@ -32,26 +32,22 @@ import type { Client } from "@/lib/types";
 export interface NavItem {
   href: string;
   key: MessageKey;
-  Icon: typeof ClockIcon;
+  Icon: typeof ListIcon;
 }
 
 export const DESIGNER_NAV: NavItem[] = [
-  { href: "/designer", key: "nav.today", Icon: ClockIcon },
-  { href: "/designer/projects", key: "nav.projects", Icon: ListIcon },
-  { href: "/designer/delivered", key: "nav.delivered", Icon: CheckIcon },
+  { href: "/designer/projects", key: "nav.design", Icon: ListIcon },
   { href: "/designer/archive", key: "nav.archive", Icon: ArchiveIcon },
 ];
 
 export const OFFICE_NAV: NavItem[] = [
   { href: "/office", key: "nav.billing", Icon: BillIcon },
-  { href: "/office/payments", key: "nav.payments", Icon: ClockIcon },
+  { href: "/office/payments", key: "nav.payments", Icon: ListIcon },
   { href: "/office/archive", key: "nav.archive", Icon: ArchiveIcon },
 ];
 
 export const PRINTING_NAV: NavItem[] = [
-  { href: "/printing", key: "nav.printReview", Icon: ClockIcon },
-  { href: "/printing/ordering", key: "nav.printOrdering", Icon: ListIcon },
-  { href: "/printing/delivered", key: "nav.printDelivered", Icon: CheckIcon },
+  { href: "/printing", key: "nav.printingHome", Icon: ListIcon },
   { href: "/printing/history", key: "nav.printHistory", Icon: ArchiveIcon },
 ];
 
@@ -92,28 +88,21 @@ export function Workspace({
   }
 
   const mode = snapshot?.mode ?? (auth === "supabase" ? "supabase" : "local");
-  const showMode = process.env.NODE_ENV !== "production" || user.role === "ADMIN";
+  const showMode = mode === "supabase" && (process.env.NODE_ENV !== "production" || user.role === "ADMIN");
+  const spaces = workspacesFor(user.role);
 
   return (
     <div className="min-h-dvh bg-bg">
       <header className="header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-4 px-5 sm:px-8">
-          <Link href={nav[0].href} className="shrink-0 leading-none">
+          <div className="min-w-0 shrink-0 leading-none">
             <span className="block text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">
               {t("brand.company")}
             </span>
-            <span className="mt-[3px] block text-[15px] font-semibold tracking-[-0.012em]">
-              {t(
-                workspace === "designer"
-                  ? "workspace.designer"
-                  : workspace === "printing"
-                    ? "workspace.printing"
-                    : "workspace.office",
-              )}
-            </span>
-          </Link>
+            <WorkspaceSelector current={workspace} spaces={spaces} />
+          </div>
 
-          <nav className="hidden items-center gap-1 sm:flex">
+          <nav aria-label="Workspace navigation" className="hidden items-center gap-1 sm:flex">
             {nav.map(({ href, key }) => {
               const active = isActive(pathname, href, nav);
               return (
@@ -157,7 +146,7 @@ export function Workspace({
             >
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}
             </IconButton>
-            <UserMenu current={workspace} mode={mode} showMode={showMode} />
+            <UserMenu />
           </div>
         </div>
         <ClientBar canAdd={workspace === "designer"} />
@@ -228,21 +217,12 @@ function Content({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function UserMenu({
-  current,
-  mode,
-  showMode,
-}: {
-  current: "designer" | "printing" | "office";
-  mode: "local" | "supabase";
-  showMode: boolean;
-}) {
+function UserMenu() {
   const { t } = useI18n();
   const { user, signOut } = useSession();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   if (!user) return null;
-  const spaces = workspacesFor(user.role);
 
   return (
     <>
@@ -274,51 +254,94 @@ function UserMenu({
           </div>
         }
       >
-        {showMode && (
-          <div className="mb-3">
-            <ModeBadge mode={mode} className="inline-flex" />
-          </div>
-        )}
-        {spaces.length > 1 && (
-          <div className="pb-2">
-            <p className="mb-2 text-[12.5px] font-medium text-muted">
-              {t("workspace.switch")}
-            </p>
-            <div className="divide-y divide-line">
-              {spaces.map((space) => (
-                <button
-                  key={space}
-                  onClick={() => {
-                    setOpen(false);
-                    router.push(
-                      space === "designer"
-                        ? "/designer"
-                        : space === "printing"
-                          ? "/printing"
-                          : "/office",
-                    );
-                  }}
-                  className="flex w-full items-center gap-3 py-3 text-left"
-                >
-                  <span className="flex-1 text-[15px]">
-                    {t(
-                      space === "designer"
-                        ? "workspace.designer"
-                        : space === "printing"
-                          ? "workspace.printing"
-                          : "workspace.office",
-                    )}
-                  </span>
-                  {space === current ? (
-                    <CheckIcon className="h-4 w-4 text-accent" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-faint" />
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+      </Sheet>
+    </>
+  );
+}
+
+function workspaceHref(space: "designer" | "printing" | "office") {
+  return space === "designer" ? "/designer/projects" : space === "printing" ? "/printing" : "/office";
+}
+
+function workspaceLabel(
+  t: (key: MessageKey) => string,
+  space: "designer" | "printing" | "office",
+) {
+  return t(
+    space === "designer"
+      ? "workspace.designer"
+      : space === "printing"
+        ? "workspace.printing"
+        : "workspace.office",
+  );
+}
+
+function WorkspaceSelector({
+  current,
+  spaces,
+}: {
+  current: "designer" | "printing" | "office";
+  spaces: ("designer" | "printing" | "office")[];
+}) {
+  const { t } = useI18n();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const label = workspaceLabel(t, current);
+
+  if (spaces.length <= 1) {
+    return (
+      <Link
+        href={workspaceHref(current)}
+        className="mt-[3px] block truncate text-[15px] font-semibold tracking-[-0.012em]"
+      >
+        {label}
+      </Link>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={`${label} — ${t("workspace.switch")}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        className="mt-[3px] flex max-w-[180px] items-center gap-1 truncate text-left text-[15px] font-semibold tracking-[-0.012em]"
+      >
+        <span className="truncate">{label}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-faint" />
+      </button>
+      <Sheet
+        open={open}
+        onClose={() => setOpen(false)}
+        title={t("workspace.switch")}
+        footer={
+          <Button variant="secondary" full onClick={() => setOpen(false)}>
+            {t("common.close")}
+          </Button>
+        }
+      >
+        <div className="divide-y divide-line pb-2">
+          {spaces.map((space) => (
+            <button
+              key={space}
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                router.push(workspaceHref(space));
+              }}
+              className="flex min-h-11 w-full items-center gap-3 py-3 text-left"
+            >
+              <span className="flex-1 text-[15px]">{workspaceLabel(t, space)}</span>
+              {space === current ? (
+                <CheckIcon className="h-4 w-4 text-accent" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-faint" />
+              )}
+            </button>
+          ))}
+        </div>
       </Sheet>
     </>
   );
