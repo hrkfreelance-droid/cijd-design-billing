@@ -339,7 +339,7 @@ export function Providers({ children }: { children: ReactNode }) {
 
 function ToastStack({ toasts }: { toasts: Toast[] }) {
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+76px)] z-50 flex flex-col items-center gap-2 px-4 sm:bottom-6">
+    <div className="safe-bottom-toast pointer-events-none fixed inset-x-0 z-50 flex flex-col items-center gap-2 px-4 sm:bottom-6">
       {toasts.map((item) => (
         <div
           key={item.id}

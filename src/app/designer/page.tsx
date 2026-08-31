@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 
-import { DeliverButton, DeliveredMark } from "@/components/delivery";
+import { DeliverButton } from "@/components/delivery";
 import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, StatusDot } from "@/components/ui";
-import { flowStatus, sum } from "@/lib/derive";
-import { longDate, mediumDate, money, todayIso } from "@/lib/format";
+import { isOperationalRecord, projectStatus, sum } from "@/lib/derive";
+import { longDate, money, todayIso } from "@/lib/format";
 import type { BillingItem, FlowStatus } from "@/lib/types";
 
 export default function DesignerTodayPage() {
@@ -17,9 +17,12 @@ export default function DesignerTodayPage() {
 
   if (!scope) return <PageSkeleton />;
 
-  const inProgress = scope.items.filter((item) => item.productionStatus !== "DELIVERED");
-  const review = scope.items.filter((item) => item.billingStatus === "NEEDS_REVIEW");
-  const delivered = scope.items.filter((item) => item.productionStatus === "DELIVERED");
+  const currentWork = scope.items.filter(
+    (item) => isOperationalRecord(item) && item.productionStatus !== "DELIVERED",
+  );
+  const inProgress = currentWork;
+  const review = currentWork.filter((item) => item.billingStatus === "NEEDS_REVIEW");
+  const ready = currentWork.filter((item) => item.billingStatus === "READY_TO_INVOICE");
 
   const byProject = (items: BillingItem[]) =>
     Array.from(
@@ -31,12 +34,7 @@ export default function DesignerTodayPage() {
       }, new Map<string, BillingItem[]>()),
     );
 
-  const toDeliver = byProject(inProgress.filter((item) => item.billingStatus !== "NEEDS_REVIEW"));
-  const recent = byProject(delivered)
-    .sort(
-      ([, a], [, b]) => (b[0]?.deliveredAt ?? "").localeCompare(a[0]?.deliveredAt ?? ""),
-    )
-    .slice(0, 5);
+  const toDeliver = byProject(inProgress);
 
   return (
     <div className="animate-rise">
@@ -50,16 +48,16 @@ export default function DesignerTodayPage() {
           amount={sum(inProgress)}
         />
         <Stat
-          label={t("delivery.done")}
-          status="READY_TO_INVOICE"
-          count={delivered.length}
-          amount={sum(delivered)}
-        />
-        <Stat
           label={t("status.NEEDS_REVIEW")}
           status="NEEDS_REVIEW"
           count={review.length}
           amount={sum(review)}
+        />
+        <Stat
+          label={t("status.READY_TO_INVOICE")}
+          status="READY_TO_INVOICE"
+          count={ready.length}
+          amount={sum(ready)}
         />
       </div>
 
@@ -87,7 +85,7 @@ export default function DesignerTodayPage() {
               title={scope.idx.projectById.get(projectId)?.name ?? ""}
               meta={`${scope.clientOf(projectId)?.name ?? ""} · ${t("today.itemsInProject", { count: items.length })}`}
               amount={money(sum(items))}
-              status="IN_PROGRESS"
+              status={projectStatus(items) ?? "IN_PROGRESS"}
               action={<DeliverButton projectId={projectId} size="sm" />}
             />
           ))}
@@ -98,29 +96,6 @@ export default function DesignerTodayPage() {
         )
       )}
 
-      {recent.length > 0 && (
-        <Section title={t("designer.today.recent")} hint={t("designer.today.recentHint")}>
-          {recent.map(([projectId, items]) => (
-            <Row
-              key={projectId}
-              projectId={projectId}
-              title={scope.idx.projectById.get(projectId)?.name ?? ""}
-              meta={scope.clientOf(projectId)?.name ?? ""}
-              amount={money(sum(items))}
-              status={flowStatus(items[0])}
-              trailing={
-                <DeliveredMark
-                  date={
-                    items[0]?.deliveredAt
-                      ? mediumDate(items[0].deliveredAt.slice(0, 10), locale)
-                      : undefined
-                  }
-                />
-              }
-            />
-          ))}
-        </Section>
-      )}
     </div>
   );
 }
@@ -184,7 +159,6 @@ function Row({
   amount,
   status,
   action,
-  trailing,
 }: {
   projectId: string;
   title: string;
@@ -192,7 +166,6 @@ function Row({
   amount: string;
   status: FlowStatus;
   action?: React.ReactNode;
-  trailing?: React.ReactNode;
 }) {
   return (
     <div className="flex items-center gap-3 px-5 py-3.5 sm:px-6">
@@ -201,7 +174,6 @@ function Row({
         <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">{title}</span>
         <span className="mt-0.5 flex items-center gap-2 truncate text-[12.5px] text-faint">
           {meta}
-          {trailing}
         </span>
       </Link>
       <Amount value={amount} className="text-[15px]" />

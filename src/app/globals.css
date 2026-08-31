@@ -126,6 +126,31 @@ button {
   border-color: var(--c-line);
 }
 
+/* Keep safe-area expressions in authored CSS instead of Tailwind arbitrary utilities. */
+.safe-bottom-main {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 92px);
+}
+
+.safe-bottom-nav {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-bottom-sheet {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+}
+
+.safe-bottom-toast {
+  bottom: calc(env(safe-area-inset-bottom) + 76px);
+}
+
+.header-surface {
+  background-color: var(--c-header);
+}
+
+.overlay-surface {
+  background-color: var(--c-overlay);
+}
+
 /* Hide scrollbar on the client bar without losing scrollability. */
 .no-scrollbar {
   scrollbar-width: none;

@@ -89,7 +89,7 @@ export function Workspace({
 
   return (
     <div className="min-h-dvh bg-bg">
-      <header className="sticky top-0 z-40 border-b border-line bg-[var(--c-header)] backdrop-blur-xl">
+      <header className="header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
         <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-4 px-5 sm:px-8">
           <Link href={nav[0].href} className="shrink-0 leading-none">
             <span className="block text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">
@@ -150,11 +150,11 @@ export function Workspace({
         <ClientBar canAdd={workspace === "designer"} />
       </header>
 
-      <main className="mx-auto max-w-4xl pb-[calc(env(safe-area-inset-bottom)+92px)] sm:pb-20">
+      <main className="safe-bottom-main mx-auto max-w-4xl sm:pb-20">
         <Content>{children}</Content>
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-[var(--c-header)] pb-[env(safe-area-inset-bottom)] backdrop-blur-xl sm:hidden">
+      <nav className="header-surface safe-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-line backdrop-blur-xl sm:hidden">
         <div className="flex">
           {nav.map(({ href, key, Icon }) => {
             const active = isActive(pathname, href, nav);

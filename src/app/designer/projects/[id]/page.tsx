@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { DeliverButton, DeliveredMark, UndeliverButton } from "@/components/delivery";
@@ -19,16 +19,24 @@ import {
   Sheet,
   StatusTag,
 } from "@/components/ui";
-import { flowStatus, projectDelivered, sum } from "@/lib/derive";
+import {
+  flowStatus,
+  isHistoricalRecord,
+  isOperationalRecord,
+  projectDelivered,
+  sum,
+} from "@/lib/derive";
 import { mediumDate, money } from "@/lib/format";
 import { ITEM_TYPES, type BillingItem, type ItemType } from "@/lib/types";
 
 export default function ProjectPage() {
   const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
   const scope = useScope();
   const { t, locale } = useI18n();
   const [editing, setEditing] = useState<BillingItem | null>(null);
   const [adding, setAdding] = useState(false);
+  const historyView = searchParams.get("view") === "history";
 
   if (!scope) return <PageSkeleton />;
 
@@ -49,21 +57,25 @@ export default function ProjectPage() {
 
   const client = scope.idx.clientById.get(project.clientId);
   const items = (scope.idx.itemsByProject.get(project.id) ?? [])
+    .filter(historyView ? isHistoricalRecord : isOperationalRecord)
     .slice()
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const delivered = projectDelivered(items);
+  const delivered = !historyView && projectDelivered(items);
   const deliveredAt = items.find((item) => item.deliveredAt)?.deliveredAt ?? null;
-  const canUndo = delivered && items.every((item) => item.billingStatus === "READY_TO_INVOICE");
+  const canUndo =
+    !historyView && delivered && items.every((item) => item.billingStatus === "READY_TO_INVOICE");
+  const backHref = historyView ? "/designer/archive" : "/designer/projects";
+  const backLabel = historyView ? t("productionArchive.title") : t("projects.title");
 
   return (
     <div className="animate-rise">
       <div className="px-5 pt-6 sm:px-8 sm:pt-8">
         <Link
-          href="/designer/projects"
+          href={backHref}
           className="inline-flex items-center gap-1 text-[13px] text-muted transition-colors hover:text-text"
         >
           <ChevronRight className="h-3.5 w-3.5 rotate-180" />
-          {t("projects.title")}
+          {backLabel}
         </Link>
       </div>
 
@@ -73,7 +85,8 @@ export default function ProjectPage() {
             {project.name}
           </h1>
           <p className="mt-1.5 text-[13.5px] text-muted">
-            {client?.name} · {mediumDate(project.date, locale)} · {project.createdBy}
+            {client?.name} · {mediumDate(project.date, locale)} ·{" "}
+            {historyView ? t("productionArchive.historyLabel") : project.createdBy}
           </p>
         </div>
         <div className="shrink-0 text-right">
@@ -86,9 +99,13 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* The handoff sits above the items: it is the one thing to do here. */}
+      {/* Historical imports are evidence, not editable production work. */}
       <div className="border-y border-line bg-panel px-5 py-4 sm:mx-8 sm:rounded-2xl sm:border sm:px-6">
-        {delivered ? (
+        {historyView ? (
+          <p className="text-[13px] leading-relaxed text-muted">
+            {t("productionArchive.historyNotice")}
+          </p>
+        ) : delivered ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <DeliveredMark
               date={deliveredAt ? mediumDate(deliveredAt.slice(0, 10), locale) : undefined}
@@ -120,38 +137,51 @@ export default function ProjectPage() {
             <p className="mt-1 text-[13px] text-faint">{t("project.noItemsHint")}</p>
           </div>
         ) : (
-          items.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setEditing(item)}
-              className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] tracking-[-0.01em]">
-                  {item.description}
+          items.map((item) => {
+            const content = (
+              <>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[15px] tracking-[-0.01em]">
+                    {item.description}
+                  </span>
+                  <span className="mt-0.5 flex items-center gap-2 text-[12.5px] text-faint">
+                    {item.quantity !== 1 && (
+                      <span className="tnum">
+                        {item.quantity} × {money(item.unitPrice)}
+                      </span>
+                    )}
+                    <StatusTag status={flowStatus(item)} />
+                  </span>
                 </span>
-                <span className="mt-0.5 flex items-center gap-2 text-[12.5px] text-faint">
-                  {item.quantity !== 1 && (
-                    <span className="tnum">
-                      {item.quantity} × {money(item.unitPrice)}
-                    </span>
-                  )}
-                  <StatusTag status={flowStatus(item)} />
-                </span>
-              </span>
-              <Amount value={money(item.amount)} className="text-[15px]" />
-              <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
-            </button>
-          ))
+                <Amount value={money(item.amount)} className="text-[15px]" />
+                {!historyView && <ChevronRight className="h-4 w-4 shrink-0 text-faint" />}
+              </>
+            );
+            return historyView ? (
+              <div key={item.id} className="flex w-full items-center gap-4 px-5 py-3.5 sm:px-6">
+                {content}
+              </div>
+            ) : (
+              <button
+                key={item.id}
+                onClick={() => setEditing(item)}
+                className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
+              >
+                {content}
+              </button>
+            );
+          })
         )}
 
-        <button
-          onClick={() => setAdding(true)}
-          className="flex w-full items-center gap-2 px-5 py-3.5 text-left text-[14.5px] font-medium text-accent transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
-        >
-          <PlusIcon className="h-4 w-4" />
-          {t("project.addItem")}
-        </button>
+        {!historyView && (
+          <button
+            onClick={() => setAdding(true)}
+            className="flex w-full items-center gap-2 px-5 py-3.5 text-left text-[14.5px] font-medium text-accent transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
+          >
+            <PlusIcon className="h-4 w-4" />
+            {t("project.addItem")}
+          </button>
+        )}
       </div>
 
       <ItemSheet

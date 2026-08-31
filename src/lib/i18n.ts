@@ -72,8 +72,14 @@ const en = {
   "delivered.empty": "Nothing delivered yet.",
 
   "productionArchive.title": "Archive",
-  "productionArchive.subtitle": "Completed production history.",
-  "productionArchive.empty": "Nothing archived yet.",
+  "productionArchive.subtitle": "Imported history, kept outside active work.",
+  "productionArchive.empty": "No imported history yet.",
+  "productionArchive.emptyHint": "Historical records remain here with their original billing facts.",
+  "productionArchive.items": "{count} historical items",
+  "productionArchive.itemsOne": "{count} historical item",
+  "productionArchive.historyLabel": "Historical import",
+  "productionArchive.historyNotice":
+    "Read-only historical import. This archive does not mean paid or complete.",
 
   "office.deliveredOnly": "Only delivered work appears here.",
   "office.payments": "Payments",
@@ -338,8 +344,14 @@ const ja: Record<MessageKey, string> = {
   "delivered.empty": "納品済みの案件はまだありません。",
 
   "productionArchive.title": "アーカイブ",
-  "productionArchive.subtitle": "完了した制作の履歴。",
-  "productionArchive.empty": "アーカイブはまだありません。",
+  "productionArchive.subtitle": "現在の処理待ちから分けた過去Import履歴。",
+  "productionArchive.empty": "Import履歴はまだありません。",
+  "productionArchive.emptyHint": "元の請求状態を保ったまま、ここで確認できます。",
+  "productionArchive.items": "{count}件の過去履歴",
+  "productionArchive.itemsOne": "{count}件の過去履歴",
+  "productionArchive.historyLabel": "過去Import",
+  "productionArchive.historyNotice":
+    "読み取り専用の過去Import履歴です。アーカイブは入金済み・完了済みを意味しません。",
 
   "office.deliveredOnly": "納品済みの項目だけが表示されています",
   "office.payments": "入金",

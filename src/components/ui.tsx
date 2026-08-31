@@ -363,7 +363,7 @@ export function Sheet({
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
       <div
-        className="animate-fade absolute inset-0 bg-[var(--c-overlay)] backdrop-blur-[2px]"
+        className="overlay-surface animate-fade absolute inset-0 backdrop-blur-[2px]"
         onClick={onClose}
       />
       <div
@@ -379,7 +379,7 @@ export function Sheet({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-2">{children}</div>
         {footer && (
-          <div className="shrink-0 border-t border-line px-5 pb-[calc(env(safe-area-inset-bottom)+16px)] pt-4 sm:pb-4">
+          <div className="safe-bottom-sheet shrink-0 border-t border-line px-5 pt-4 sm:pb-4">
             {footer}
           </div>
         )}

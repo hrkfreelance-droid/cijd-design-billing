@@ -20,7 +20,7 @@ import {
   StatusDot,
   StatusTag,
 } from "@/components/ui";
-import { projectStatus, sum } from "@/lib/derive";
+import { isOperationalRecord, projectStatus, sum } from "@/lib/derive";
 import { money, shortDate } from "@/lib/format";
 
 export default function ProjectsPage() {
@@ -34,7 +34,9 @@ export default function ProjectsPage() {
     const term = query.trim().toLowerCase();
     return scope.projects
       .map((project) => {
-        const items = scope.idx.itemsByProject.get(project.id) ?? [];
+        const items = (scope.idx.itemsByProject.get(project.id) ?? []).filter(
+          isOperationalRecord,
+        );
         return {
           project,
           items,
@@ -43,6 +45,7 @@ export default function ProjectsPage() {
           total: sum(items),
         };
       })
+      .filter(({ items }) => items.length > 0)
       .filter(({ project, client }) =>
         term
           ? project.name.toLowerCase().includes(term) ||
@@ -58,7 +61,7 @@ export default function ProjectsPage() {
     <div className="animate-rise">
       <PageHeader
         title={t("projects.title")}
-        subtitle={t("projects.count", { count: scope.projects.length })}
+        subtitle={t("projects.count", { count: rows.length })}
         action={
           <Button variant="secondary" onClick={() => setCreating(true)} className="shrink-0">
             <PlusIcon className="h-[15px] w-[15px]" />
@@ -80,7 +83,7 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      {scope.projects.length === 0 ? (
+      {rows.length === 0 && !query.trim() ? (
         <EmptyState title={t("projects.empty")} hint={t("projects.emptyHint")} />
       ) : rows.length === 0 ? (
         <EmptyState title={t("projects.noMatch")} />

@@ -6,12 +6,12 @@ import { useMemo, useState } from "react";
 import { ChevronRight, SearchIcon } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, Select } from "@/components/ui";
-import { monthKey, sum } from "@/lib/derive";
+import { Amount, EmptyState, PageHeader, Select, StatusTag } from "@/components/ui";
+import { flowStatus, isHistoricalRecord, monthKey, sum } from "@/lib/derive";
 import { mediumDate, money, monthLabel } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
-/** Production history: finished work, without any invoice or payment detail. */
+/** Imported history, kept outside the designer's active workload. */
 export default function ProductionArchivePage() {
   const scope = useScope();
   const { t, locale } = useI18n();
@@ -22,18 +22,18 @@ export default function ProductionArchivePage() {
     if (!scope) return [];
     const byProject = new Map<string, BillingItem[]>();
     for (const item of scope.items) {
+      if (!isHistoricalRecord(item)) continue;
       const list = byProject.get(item.projectId) ?? [];
       list.push(item);
       byProject.set(item.projectId, list);
     }
     return Array.from(byProject)
-      .filter(([, items]) => items.every((item) => item.billingStatus === "PAID"))
       .map(([projectId, items]) => ({
         projectId,
         items,
         project: scope.idx.projectById.get(projectId),
         client: scope.clientOf(projectId),
-        deliveredAt: items[0]?.deliveredAt ?? null,
+        statuses: Array.from(new Set(items.map(flowStatus))),
       }))
       .sort((a, b) => (b.project?.date ?? "").localeCompare(a.project?.date ?? ""));
   }, [scope]);
@@ -93,7 +93,10 @@ export default function ProductionArchivePage() {
       </div>
 
       {groups.length === 0 ? (
-        <EmptyState title={t("productionArchive.empty")} />
+        <EmptyState
+          title={t("productionArchive.empty")}
+          hint={t("productionArchive.emptyHint")}
+        />
       ) : rows.length === 0 ? (
         <EmptyState title={t("archive.noMatch")} />
       ) : (
@@ -101,7 +104,7 @@ export default function ProductionArchivePage() {
           {rows.map((group) => (
             <Link
               key={group.projectId}
-              href={`/designer/projects/${group.projectId}`}
+              href={`/designer/projects/${group.projectId}?view=history`}
               className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-fill sm:px-6"
             >
               <span className="min-w-0 flex-1">
@@ -110,7 +113,13 @@ export default function ProductionArchivePage() {
                 </span>
                 <span className="mt-0.5 block truncate text-[12.5px] text-faint">
                   {group.client?.name}
-                  {group.project ? ` · ${mediumDate(group.project.date, locale)}` : ""}
+                  {group.project ? ` · ${mediumDate(group.project.date, locale)}` : ""} ·{" "}
+                  {t("productionArchive.items", { count: group.items.length })}
+                </span>
+                <span className="mt-1 flex flex-wrap gap-1.5">
+                  {group.statuses.map((status) => (
+                    <StatusTag key={status} status={status} />
+                  ))}
                 </span>
               </span>
               <Amount value={money(sum(group.items))} className="text-[15px]" />

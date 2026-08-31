@@ -7,7 +7,7 @@ import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, StatusTag } from "@/components/ui";
-import { flowStatus, sum } from "@/lib/derive";
+import { flowStatus, isOperationalRecord, sum } from "@/lib/derive";
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
@@ -19,8 +19,13 @@ export default function DeliveredPage() {
   if (!scope) return <PageSkeleton />;
 
   const groups = Array.from(
-    scope.items
-      .filter((item) => item.productionStatus === "DELIVERED" && item.billingStatus !== "PAID")
+      scope.items
+      .filter(
+        (item) =>
+          isOperationalRecord(item) &&
+          item.productionStatus === "DELIVERED" &&
+          item.billingStatus !== "PAID",
+      )
       .reduce((map, item) => {
         const list = map.get(item.projectId) ?? [];
         list.push(item);

@@ -25,6 +25,16 @@ export function isDelivered(item: BillingItem): boolean {
   return item.productionStatus === "DELIVERED";
 }
 
+/** Imported rows are historical evidence, not current designer workload. */
+export function isHistoricalRecord(item: BillingItem): boolean {
+  return item.createdBy.trim().toLowerCase() === "import";
+}
+
+/** Current operational work is identified by the explicit import marker. */
+export function isOperationalRecord(item: BillingItem): boolean {
+  return !isHistoricalRecord(item);
+}
+
 /** A project counts as delivered once every live item has been. */
 export function projectDelivered(items: BillingItem[]): boolean {
   return items.length > 0 && items.every(isDelivered);
