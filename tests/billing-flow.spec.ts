@@ -439,6 +439,78 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
   expect(design.data.id).toBeTruthy();
 });
 
+test("printing total derives from quantity and unit price and stays review-required", async ({ page }) => {
+  await signIn(page, "u_admin");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Printing Calculation Check" },
+    })
+  ).json();
+  const print = await (
+    await page.request.post("/api/billing-items", {
+      data: {
+        projectId: project.data.id,
+        description: "Print ×2000",
+        type: "PRINT",
+        quantity: 2000,
+        unitPrice: 0.15,
+        amount: 300,
+        printSize: "Name Card",
+      },
+    })
+  ).json();
+
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/printing");
+    const card = page.getByTestId("printing-item-card").filter({ hasText: "Printing Calculation Check" });
+    await card.getByRole("button", { name: "Edit specs & price" }).click();
+    const dialog = page.getByRole("dialog");
+    const dialogBox = await dialog.boundingBox();
+    expect(dialogBox).not.toBeNull();
+    const layout = await dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const buttons = Array.from(element.querySelectorAll("button"), (button) => {
+        const buttonRect = button.getBoundingClientRect();
+        return { left: buttonRect.left, right: buttonRect.right, bottom: buttonRect.bottom };
+      });
+      return {
+        left: rect.left,
+        right: rect.right,
+        bottom: rect.bottom,
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        buttons,
+      };
+    });
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+    expect(layout.buttons.every((button) => button.left >= layout.left - 1 && button.right <= layout.right + 1)).toBeTruthy();
+    expect(layout.buttons.every((button) => button.bottom <= layout.bottom + 1)).toBeTruthy();
+
+    const quantity = dialog.getByLabel("Quantity");
+    const unitPrice = dialog.getByLabel("Unit price");
+    const total = dialog.getByTestId("printing-total");
+    await expect(total).toHaveValue("300.00");
+    await expect(total).toHaveAttribute("readonly", "");
+    await quantity.fill("100");
+    await expect(total).toHaveValue("15.00");
+    await unitPrice.fill("0.20");
+    await expect(total).toHaveValue("20.00");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+  }
+
+  // A stale total is rejected at the server-side repository boundary.
+  const stale = await page.request.post(`/api/printing-items/${print.data.id}/price`, {
+    data: { unitPrice: 0.2, amount: 15, confirm: false },
+  });
+  expect(stale.status()).toBe(400);
+  expect((await stale.json()).code).toBe("INVALID");
+  const unchanged = await (await page.request.get("/api/state")).json();
+  expect(unchanged.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
+    expect.objectContaining({ amount: 300, priceReviewStatus: "REVIEW_REQUIRED" }),
+  );
+});
+
 test("unconfirmed print price is prioritized over delivery in the designer list", async ({ page }) => {
   await signIn(page, "u_hiroki");
   const project = await (

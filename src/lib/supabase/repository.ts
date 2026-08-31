@@ -29,11 +29,12 @@ import {
   toUser,
 } from "./rows";
 import { isProductionComplete, isPrintPriceConfirmed } from "@/lib/derive";
+import { roundMoney } from "@/lib/format";
 
 const DEFAULT_ACTOR = "Hiroki";
 
 function money(value: number): number {
-  return Math.round(value * 100) / 100;
+  return roundMoney(value);
 }
 
 function today(): string {
@@ -331,6 +332,13 @@ export class SupabaseRepository implements Repository {
     const amount = Number(input.amount);
     if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(amount) || amount <= 0) {
       throw new RuleError("INVALID", "A confirmed print price must be greater than zero.", 400);
+    }
+    const current = unwrap<{ quantity: number | string }>(
+      await this.db.from("billing_items").select("quantity").eq("id", id).single(),
+    );
+    const quantity = Number(current.quantity);
+    if (!Number.isFinite(quantity) || money(amount) !== money(quantity * unitPrice)) {
+      throw new RuleError("INVALID", "Print total must equal quantity × unit price.", 400);
     }
     const result = await this.db.rpc("review_print_price", {
       p_item_id: id,

@@ -1,8 +1,13 @@
 import type { Locale } from "@/lib/i18n";
 
+/** Round monetary calculations to cents before formatting or persistence. */
+export function roundMoney(amount: number): number {
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
 /** $225 for round numbers, $22.50 when cents matter. */
 export function money(amount: number): string {
-  const rounded = Math.round(amount * 100) / 100;
+  const rounded = roundMoney(amount);
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",

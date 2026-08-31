@@ -12,7 +12,7 @@ import {
   isProductionComplete,
   printPriceReviewState,
 } from "@/lib/derive";
-import { mediumDate, money } from "@/lib/format";
+import { mediumDate, money, roundMoney } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
 export type PrintingView = "review" | "ordering" | "delivered" | "history";
@@ -282,17 +282,26 @@ function PrintEditSheet({
   const [size, setSize] = useState(item.printSize ?? "");
   const [quantity, setQuantity] = useState(String(item.quantity));
   const [unitPrice, setUnitPrice] = useState(String(item.unitPrice || ""));
-  const [amount, setAmount] = useState(String(item.amount || ""));
   const [source, setSource] = useState(item.priceSource ?? "");
   const [reason, setReason] = useState(item.priceReason ?? "");
   const [note, setNote] = useState(item.note ?? "");
 
+  const quantityValue = parseNumber(quantity);
+  const unitPriceValue = parseNumber(unitPrice);
+  const calculatedAmount = calculatePrintTotal(quantity, unitPrice);
+  const validQuantity = quantityValue !== null && quantityValue > 0;
+  const validUnitPrice =
+    unitPrice.trim() === "" || (unitPriceValue !== null && unitPriceValue >= 0);
+  const validPrice =
+    validQuantity && unitPriceValue !== null && unitPriceValue > 0 && calculatedAmount !== "";
+
   const saveSpec = async () => {
+    if (quantityValue === null || quantityValue <= 0 || !validUnitPrice) return;
     const ok = await run(
       () =>
         api(`/api/printing-items/${item.id}/spec`, {
           method: "PATCH",
-          body: { printSize: size, quantity: Number(quantity), note },
+          body: { printSize: size, quantity: quantityValue, note },
         }),
       { key: "toast.itemUpdated" },
     );
@@ -300,13 +309,21 @@ function PrintEditSheet({
   };
 
   const savePrice = async (confirm: boolean) => {
+    if (
+      !validQuantity ||
+      unitPriceValue === null ||
+      unitPriceValue <= 0 ||
+      calculatedAmount === ""
+    ) {
+      return;
+    }
     const ok = await run(
       () =>
         api(`/api/printing-items/${item.id}/price`, {
           method: "POST",
           body: {
-            unitPrice: Number(unitPrice),
-            amount: Number(amount),
+            unitPrice: unitPriceValue,
+            amount: Number(calculatedAmount),
             confirm,
             priceSource: source,
             priceReason: reason,
@@ -324,23 +341,19 @@ function PrintEditSheet({
       title={t("printing.specEdit")}
       description={t("printing.confirmHint")}
       footer={
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <Button variant="secondary" full onClick={onClose}>
-              {t("common.cancel")}
-            </Button>
-            <Button variant="primary" full onClick={saveSpec} disabled={busy}>
-              {t("printing.saveSpec")}
-            </Button>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" full onClick={() => savePrice(false)} disabled={busy}>
-              {t("printing.savePrice")}
-            </Button>
-            <Button variant="primary" full onClick={() => savePrice(true)} disabled={busy}>
-              {t("printing.confirmPrice")}
-            </Button>
-          </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button variant="secondary" full onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="primary" full onClick={saveSpec} disabled={busy || !validQuantity || !validUnitPrice}>
+            {t("printing.saveSpec")}
+          </Button>
+          <Button variant="secondary" full onClick={() => savePrice(false)} disabled={busy || !validPrice}>
+            {t("printing.savePrice")}
+          </Button>
+          <Button variant="primary" full onClick={() => savePrice(true)} disabled={busy || !validPrice}>
+            {t("printing.confirmPrice")}
+          </Button>
         </div>
       }
     >
@@ -355,8 +368,15 @@ function PrintEditSheet({
           <Field label={t("printing.unitPrice")}>
             <Input inputMode="decimal" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} className="tnum" />
           </Field>
-          <Field label={t("common.total")}>
-            <Input inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} className="tnum" />
+          <Field label={t("common.total")} hint={t("printing.autoCalculated")}>
+            <Input
+              value={calculatedAmount}
+              readOnly
+              aria-readonly="true"
+              data-testid="printing-total"
+              placeholder="—"
+              className="tnum cursor-default bg-fill"
+            />
           </Field>
         </div>
         <Field label={t("printing.priceSource")} hint={t("common.optional")}>
@@ -371,4 +391,25 @@ function PrintEditSheet({
       </div>
     </Sheet>
   );
+}
+
+function parseNumber(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function calculatePrintTotal(quantity: string, unitPrice: string): string {
+  const quantityValue = parseNumber(quantity);
+  const unitPriceValue = parseNumber(unitPrice);
+  if (
+    quantityValue === null ||
+    quantityValue <= 0 ||
+    unitPriceValue === null ||
+    unitPriceValue < 0
+  ) {
+    return "";
+  }
+  return roundMoney(quantityValue * unitPriceValue).toFixed(2);
 }

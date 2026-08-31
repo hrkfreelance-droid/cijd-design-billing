@@ -397,7 +397,7 @@ begin
   next_note := case when p_note is null then item.note else nullif(btrim(p_note), '') end;
   next_quantity := coalesce(p_quantity, item.quantity);
   if next_quantity <= 0 then raise exception 'INVALID' using detail = 'Quantity must be greater than zero.'; end if;
-  next_amount := case when item.unit_price > 0 then round(next_quantity * item.unit_price, 2) else item.amount end;
+  next_amount := round(next_quantity * item.unit_price, 2);
 
   perform set_config('cijd.printing_action', 'spec', true);
   update public.billing_items set

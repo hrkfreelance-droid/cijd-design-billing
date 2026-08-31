@@ -29,6 +29,7 @@ import {
   productionAction,
   terminalProductionStatus,
 } from "@/lib/derive";
+import { roundMoney } from "@/lib/format";
 
 const DEFAULT_ACTOR = "Hiroki";
 
@@ -52,7 +53,7 @@ function now(): string {
   return new Date().toISOString();
 }
 function money(n: number): number {
-  return Math.round(n * 100) / 100;
+  return roundMoney(n);
 }
 
 function log(
@@ -436,7 +437,7 @@ export class Store implements Repository {
           throw new RuleError("INVALID", "Quantity must be greater than zero.", 400);
         }
         item.quantity = patch.quantity;
-        if (item.unitPrice > 0) item.amount = money(item.quantity * item.unitPrice);
+        item.amount = money(item.quantity * item.unitPrice);
       }
       if (patch.note !== undefined) item.note = patch.note;
       item.priceReviewStatus = "REVIEW_REQUIRED";
@@ -464,6 +465,9 @@ export class Store implements Repository {
       const amount = Number(input.amount);
       if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(amount) || amount <= 0) {
         throw new RuleError("INVALID", "A confirmed print price must be greater than zero.", 400);
+      }
+      if (money(amount) !== money(item.quantity * unitPrice)) {
+        throw new RuleError("INVALID", "Print total must equal quantity × unit price.", 400);
       }
       const actor = input.actor ?? DEFAULT_ACTOR;
       const wasPriceConfirmed = item.priceReviewStatus === "CONFIRMED";
