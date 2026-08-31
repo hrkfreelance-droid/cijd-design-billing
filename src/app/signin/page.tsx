@@ -233,7 +233,15 @@ function SupabaseSignIn({
           </Button>
         </div>
       ) : (
-        <div className="space-y-4">
+        // A real form so Enter submits natively and password managers can see
+        // the email and password as one credential pair.
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
           <Field label={t("signin.email")}>
             <Input
               type="email"
@@ -248,30 +256,22 @@ function SupabaseSignIn({
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void submit();
-              }}
             />
           </Field>
           {error && <p className="text-[13px] text-review" role="alert">{error}</p>}
           {notice && <p className="text-[13px] text-muted" role="status">{notice}</p>}
-          <Button
-            variant="primary"
-            full
-            onClick={submit}
-            disabled={!email || !password || busy}
-          >
+          <Button type="submit" variant="primary" full disabled={!email || !password || busy}>
             {t("signin.title")}
           </Button>
           <button
             type="button"
             onClick={requestReset}
             disabled={busy}
-            className="w-full py-2 text-[13px] text-muted transition-colors hover:text-text disabled:opacity-50"
+            className="w-full py-2 text-[13px] text-muted transition-colors hover:text-text disabled:text-faint"
           >
             {t("signin.reset")}
           </button>
-        </div>
+        </form>
       )}
     </div>
   );

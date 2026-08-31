@@ -18,13 +18,11 @@ import {
   PageHeader,
   Select,
   Sheet,
-  StatusPill,
 } from "@/components/ui";
 import {
   isOperationalRecord,
   isProductionComplete,
   priceState,
-  projectStatus,
   sum,
 } from "@/lib/derive";
 import { money, monthLabel } from "@/lib/format";
@@ -48,7 +46,6 @@ export default function ProjectsPage() {
           project,
           items,
           client: scope.idx.clientById.get(project.clientId),
-          status: projectStatus(items),
         };
       })
       .filter(({ items }) => items.length > 0)
@@ -97,26 +94,29 @@ export default function ProjectsPage() {
         <EmptyState title={t("projects.noMatch")} />
       ) : (
         <div className="space-y-6 px-5 pb-8 sm:px-8">
-          {rows.map(({ project, client, status, items }) => (
+          {rows.map(({ project, client, items }) => (
             <section
               key={project.id}
               data-testid="designer-project-group"
               className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
             >
+              {/* Name, client, date, owner and money — everything needed to
+                  recognise the project without opening it. */}
               <Link
                 href={`/designer/projects/${project.id}`}
                 className="block border-b border-line px-5 py-5 transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <h2 className="truncate text-[18px] font-semibold uppercase leading-tight tracking-[0.01em]">
+                    <h2 className="text-[18px] font-semibold leading-tight tracking-[-0.014em] [overflow-wrap:anywhere]">
                       {project.name}
                     </h2>
                     <p className="mt-1.5 truncate text-[12.5px] text-faint">
-                      {client?.name} · {monthLabel(project.date.slice(0, 7), locale)} · {t("projects.items", { count: items.length })}
+                      {client?.name} · {monthLabel(project.date.slice(0, 7), locale)} ·{" "}
+                      {project.createdBy}
                     </p>
                   </div>
-                  {status && <StatusPill status={status} />}
+                  <ProjectTotal items={items} />
                 </div>
               </Link>
 
@@ -127,8 +127,6 @@ export default function ProjectsPage() {
                   ))}
                 </div>
               </div>
-
-              <ProjectTotal items={items} />
             </section>
           ))}
         </div>
@@ -139,29 +137,32 @@ export default function ProjectsPage() {
   );
 }
 
+/**
+ * A total is only called a Total when every price behind it is confirmed. A
+ * suggested or missing price makes the figure an estimate, and saying so is
+ * the difference between a number someone can invoice and one they cannot.
+ */
 function ProjectTotal({ items }: { items: BillingItem[] }) {
   const { t } = useI18n();
-  const hasSuggested = items.some((item) => priceState(item) === "SUGGESTED");
   const pendingCount = items.filter((item) => priceState(item) === "PENDING").length;
+  const estimated = items.some((item) => priceState(item) !== "CONFIRMED");
   const knownTotal = sum(items.filter((item) => item.amount > 0));
 
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-line px-5 py-4 sm:px-6">
-      <div className="min-w-0">
-        <p className="text-[12px] font-medium uppercase tracking-[0.05em] text-muted">
-          {t(hasSuggested ? "projects.estimatedTotal" : "projects.total")}
-        </p>
-        {pendingCount > 0 && (
-          <p className="mt-0.5 text-[11.5px] text-review">
-            {t("projects.pendingPrices", { count: pendingCount })}
-          </p>
-        )}
-      </div>
+    <div className="shrink-0 text-right">
+      <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-faint">
+        {t(estimated ? "projects.estimatedTotal" : "projects.total")}
+      </p>
       <Amount
         value={knownTotal > 0 ? money(knownTotal) : "—"}
         strong
-        className="text-[16px]"
+        className="mt-0.5 block text-[18px] tracking-[-0.015em]"
       />
+      {pendingCount > 0 && (
+        <p className="mt-0.5 text-[11.5px] font-medium text-review">
+          {t("projects.pendingPrices", { count: pendingCount })}
+        </p>
+      )}
     </div>
   );
 }

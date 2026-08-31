@@ -102,11 +102,14 @@ export function ItemProductionAction({
   item,
   size = "sm",
   full = false,
+  variant,
   onDone,
 }: {
   item: BillingItem;
   size?: "sm" | "md";
   full?: boolean;
+  /** Demoted to secondary where an earlier step (price review) outranks it. */
+  variant?: "primary" | "secondary";
   onDone?: () => void;
 }) {
   const { t } = useI18n();
@@ -133,7 +136,7 @@ export function ItemProductionAction({
   return (
     <>
       <Button
-        variant={finished ? "secondary" : "primary"}
+        variant={variant ?? (finished ? "secondary" : "primary")}
         size={size}
         full={full}
         disabled={busy}
@@ -160,7 +163,7 @@ export function ItemProductionAction({
           finished
             ? delivery
               ? t("delivery.undoConfirm")
-              : t("production.completeConfirmBody")
+              : t("production.undoCompleteConfirmBody")
             : delivery
               ? t("delivery.confirmBody")
               : t("production.completeConfirmBody")

@@ -19,13 +19,16 @@ import type { FlowStatus } from "@/lib/types";
 
 type Variant = "primary" | "secondary" | "ghost" | "quiet";
 
+// A disabled primary fades to an inert grey rather than a translucent blue:
+// dropping the whole button to 40% left white text on pale blue, which was the
+// one place in the app where a filled button became unreadable.
 const VARIANTS: Record<Variant, string> = {
   primary:
-    "bg-accent text-on-accent hover:bg-accent-hover active:opacity-90 disabled:opacity-40",
+    "bg-accent text-on-accent hover:bg-accent-hover active:opacity-90 disabled:bg-fill-strong disabled:text-faint disabled:hover:bg-fill-strong",
   secondary:
-    "border border-line-strong bg-panel text-text hover:bg-fill active:bg-fill-strong disabled:opacity-40",
-  ghost: "text-accent hover:bg-fill active:bg-fill-strong disabled:opacity-40",
-  quiet: "text-muted hover:bg-fill hover:text-text active:bg-fill-strong disabled:opacity-40",
+    "border border-line-strong bg-panel text-text hover:bg-fill active:bg-fill-strong disabled:text-faint disabled:hover:bg-panel",
+  ghost: "text-accent hover:bg-fill active:bg-fill-strong disabled:text-faint disabled:hover:bg-transparent",
+  quiet: "text-muted hover:bg-fill hover:text-text active:bg-fill-strong disabled:text-faint",
 };
 
 export function Button({
@@ -39,12 +42,18 @@ export function Button({
   size?: "sm" | "md";
   full?: boolean;
 }) {
+  // One height and one radius per size, and a shared min width so that
+  // "Complete" and "Deliver" never end up different widths beside each other.
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
-        size === "sm" ? "h-9 min-w-[104px] px-3.5 text-[12.5px]" : "h-10 px-4 text-[13.5px]"
-      } ${full ? "w-full" : ""} ${VARIANTS[variant]} ${className}`}
+      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
+        size === "sm"
+          ? "h-9 px-3.5 text-[12.5px]"
+          : "h-10 px-[18px] text-[13.5px]"
+      } ${full ? "w-full" : size === "sm" ? "min-w-[84px]" : "min-w-[104px]"} ${
+        VARIANTS[variant]
+      } ${className}`}
     />
   );
 }
@@ -187,10 +196,16 @@ export function StatusPill({
   );
 }
 
-export function StatusDot({ status }: { status: FlowStatus }) {
+export function StatusDot({
+  status,
+  className = "",
+}: {
+  status: FlowStatus;
+  className?: string;
+}) {
   return (
     <span
-      className={`inline-block h-[6px] w-[6px] shrink-0 rounded-full ${STATUS_COLOR[status]}`}
+      className={`inline-block h-[6px] w-[6px] shrink-0 rounded-full ${STATUS_COLOR[status]} ${className}`}
     />
   );
 }

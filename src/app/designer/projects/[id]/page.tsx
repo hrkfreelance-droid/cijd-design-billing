@@ -99,22 +99,23 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* Historical imports are evidence, not editable production work. */}
-      <div className="border-y border-line bg-panel px-5 py-4 sm:mx-8 sm:rounded-2xl sm:border sm:px-6">
-        {historyView ? (
+      {/* Historical imports are evidence, not editable production work. The
+          notice earns a panel; the everyday hint is just a caption. */}
+      {historyView ? (
+        <div className="border-y border-line bg-fill px-5 py-3.5 sm:mx-8 sm:rounded-xl sm:border sm:px-5">
           <p className="text-[13px] leading-relaxed text-muted">
             {t("productionArchive.historyNotice")}
           </p>
-        ) : (
-          <p className="text-[13px] leading-relaxed text-muted">
-            {items.length ? t("projects.itemActionsHint") : t("delivery.needsItems")}
-          </p>
-        )}
-      </div>
+        </div>
+      ) : (
+        <p className="px-5 text-[12.5px] leading-relaxed text-faint sm:px-8">
+          {items.length ? t("projects.itemActionsHint") : t("delivery.needsItems")}
+        </p>
+      )}
 
-      <div className="mt-4 divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
+      <div className="mt-4 divide-y divide-line border-y border-line bg-panel px-5 sm:mx-8 sm:rounded-2xl sm:border sm:px-6">
         {items.length === 0 ? (
-          <div className="px-5 py-10 text-center sm:px-6">
+          <div className="py-10 text-center">
             <p className="text-[14px] text-muted">{t("project.noItems")}</p>
             <p className="mt-1 text-[13px] text-faint">{t("project.noItemsHint")}</p>
           </div>
@@ -133,7 +134,7 @@ export default function ProjectPage() {
         {!historyView && (
           <button
             onClick={() => setAdding(true)}
-            className="flex w-full items-center gap-2 px-5 py-3.5 text-left text-[14.5px] font-medium text-accent transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
+            className="flex w-full items-center gap-2 py-3.5 text-left text-[14.5px] font-medium text-accent transition-colors duration-150 hover:text-accent-hover"
           >
             <PlusIcon className="h-4 w-4" />
             {t("project.addItem")}
@@ -288,6 +289,8 @@ function ItemSheet({
         }
       >
         <div className="space-y-4 pb-2">
+          {item && <PriceContext item={item} />}
+
           <Field label={t("item.description")}>
             <Input
               value={description}
@@ -383,6 +386,58 @@ function ItemSheet({
         busy={busy}
       />
     </>
+  );
+}
+
+/**
+ * Why this amount is not final yet. The figure, where it came from and the
+ * reasoning already exist on the record; showing them here is what turns
+ * "Needs review" from a label into something the designer can act on.
+ */
+function PriceContext({ item }: { item: BillingItem }) {
+  const { t } = useI18n();
+  const state = priceState(item);
+  if (state === "CONFIRMED") return null;
+
+  const suggested = item.suggestedAmount ?? item.amount;
+  const unit = item.suggestedUnitPrice ?? item.unitPrice;
+
+  return (
+    <div className="rounded-xl bg-review/8 px-3.5 py-3">
+      <p className="text-[12.5px] font-medium text-review">
+        {state === "PENDING"
+          ? `${t("projects.pricePending")} · ${t("projects.priceReview")}`
+          : `${t("projects.priceSuggested", { amount: money(suggested) })} · ${t("projects.priceReview")}`}
+      </p>
+      <dl className="mt-2 space-y-1 text-[12.5px] text-muted">
+        {item.printSize && (
+          <ContextRow label={t("printing.size")} value={item.printSize} />
+        )}
+        {unit > 0 && (
+          <ContextRow label={t("printing.unitPrice")} value={`${money(unit)} / pc`} />
+        )}
+        {item.priceSource && (
+          <ContextRow label={t("printing.priceSource")} value={item.priceSource} />
+        )}
+        {item.priceReason && (
+          <ContextRow label={t("printing.reason")} value={item.priceReason} />
+        )}
+      </dl>
+      {item.type === "PRINT" && (
+        <p className="mt-2 text-[12px] leading-relaxed text-faint">
+          {t("printing.confirmedInPrinting")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ContextRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2">
+      <dt className="shrink-0 text-faint">{label}</dt>
+      <dd className="min-w-0 flex-1 leading-relaxed">{value}</dd>
+    </div>
   );
 }
 

@@ -120,6 +120,7 @@ function PrintItemCard({
   const suggestedUnit = item.suggestedUnitPrice ?? item.unitPrice;
   const suggestedAmount = item.suggestedAmount ?? item.amount;
   const confirmed = review === "CONFIRMED";
+  const shown = confirmed ? item.amount : suggestedAmount;
   const finished = isProductionComplete(item);
   const workStatus: WorkStatus = finished
     ? "DELIVERED"
@@ -152,17 +153,17 @@ function PrintItemCard({
       <div className="px-5 py-5 sm:px-6">
         <div className="flex items-start justify-between gap-4">
           <StatusPill status={workStatus} />
+          {/* With no figure yet there is nothing to call suggested — the
+              headline says the price is missing rather than labelling a blank. */}
           <span className="shrink-0 text-right">
-            <span className="block text-[11px] font-medium uppercase tracking-[0.08em] text-faint">
-              {confirmed ? t("printing.confirmed") : t("printing.suggested")}
-            </span>
+            {shown > 0 && (
+              <span className="block text-[11px] font-medium uppercase tracking-[0.08em] text-faint">
+                {confirmed ? t("printing.confirmed") : t("printing.suggested")}
+              </span>
+            )}
             <Amount
-              value={
-                (confirmed ? item.amount : suggestedAmount) > 0
-                  ? money(confirmed ? item.amount : suggestedAmount)
-                  : t("printing.pricePending")
-              }
-              className="mt-1 block text-[15px] font-semibold"
+              value={shown > 0 ? money(shown) : t("printing.pricePending")}
+              className={`mt-1 block text-[15px] font-semibold ${shown > 0 ? "" : "text-review"}`}
             />
           </span>
         </div>
@@ -175,23 +176,15 @@ function PrintItemCard({
             {client?.name} · {project ? mediumDate(project.date, locale) : ""}
           </p>
           <p className="mt-3 truncate text-[15px] font-medium tracking-[-0.006em]">
-            {item.description} · PRINT ×{item.quantity}
+            {t("printing.itemType")} ×{item.quantity}
           </p>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-line pt-4 sm:grid-cols-4">
+        {/* The total already sits in the header — this row is the working out
+            behind it, which is what a price reviewer actually checks. */}
+        <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-line pt-4 sm:grid-cols-3">
           <Info label={t("printing.size")} value={item.printSize || "—"} />
           <Info label={t("printing.quantity")} value={String(item.quantity)} numeric />
-          <Info
-            label={confirmed ? t("printing.confirmed") : t("printing.suggested")}
-            value={
-              (confirmed ? item.amount : suggestedAmount) > 0
-                ? money(confirmed ? item.amount : suggestedAmount)
-                : t("printing.pricePending")
-            }
-            emphasis={!confirmed}
-            numeric={suggestedAmount > 0}
-          />
           <Info
             label={t("printing.unitPrice")}
             value={suggestedUnit > 0 ? `${money(suggestedUnit)} / pc` : "—"}
@@ -224,15 +217,15 @@ function PrintItemCard({
       </div>
 
       {!history && (
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3.5 sm:px-6">
+        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-2 border-t border-line px-5 py-3.5 sm:px-6">
+          {/* Confirming a price we do not have is the one thing this screen
+              cannot do, so it says what is missing instead of going quiet. */}
+          {!confirmed && item.amount <= 0 && (
+            <p className="mr-auto text-[12px] text-review">{t("printing.needsSpec")}</p>
+          )}
           <Button variant="secondary" size="sm" onClick={() => setEditing(true)} disabled={busy}>
             {t("printing.editSpec")}
           </Button>
-          {!confirmed && (
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)} disabled={busy}>
-              {t("printing.editPrice")}
-            </Button>
-          )}
           {!confirmed ? (
             <Button variant="primary" size="sm" onClick={confirm} disabled={busy || item.amount <= 0}>
               {t("printing.confirmPrice")}

@@ -3,13 +3,18 @@
 import Link from "next/link";
 
 import { ItemProductionAction } from "@/components/delivery";
-import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, StatusDot, StatusPill } from "@/components/ui";
-import { flowStatus, isOperationalRecord, isProductionComplete, sum } from "@/lib/derive";
+import {
+  flowStatus,
+  isOperationalRecord,
+  isProductionComplete,
+  priceState,
+  sum,
+} from "@/lib/derive";
 import { longDate, money, todayIso } from "@/lib/format";
-import type { FlowStatus } from "@/lib/types";
+import type { BillingItem, FlowStatus } from "@/lib/types";
 
 export default function DesignerTodayPage() {
   const scope = useScope();
@@ -23,6 +28,8 @@ export default function DesignerTodayPage() {
   const review = currentWork.filter((item) => item.billingStatus === "NEEDS_REVIEW");
   const ready = currentWork.filter((item) => item.billingStatus === "READY_TO_INVOICE");
   const actionable = currentWork.filter((item) => item.billingStatus !== "NEEDS_REVIEW");
+  // The three counts partition the queue, so they can be read as a whole.
+  const inProgress = actionable.filter((item) => item.billingStatus !== "READY_TO_INVOICE");
 
   return (
     <div className="animate-rise">
@@ -30,16 +37,16 @@ export default function DesignerTodayPage() {
 
       <div className="grid grid-cols-3 gap-px overflow-hidden border-y border-line bg-line sm:mx-8 sm:rounded-2xl sm:border">
         <Stat
-          label={t("status.IN_PROGRESS")}
-          status="IN_PROGRESS"
-          count={currentWork.length}
-          amount={sum(currentWork)}
-        />
-        <Stat
           label={t("status.NEEDS_REVIEW")}
           status="NEEDS_REVIEW"
           count={review.length}
           amount={sum(review)}
+        />
+        <Stat
+          label={t("status.IN_PROGRESS")}
+          status="IN_PROGRESS"
+          count={inProgress.length}
+          amount={sum(inProgress)}
         />
         <Stat
           label={t("status.READY_TO_INVOICE")}
@@ -54,15 +61,13 @@ export default function DesignerTodayPage() {
           {review.map((item) => (
             <Row
               key={item.id}
-              projectId={item.projectId}
+              item={item}
               title={scope.idx.projectById.get(item.projectId)?.name ?? ""}
-              meta={`${scope.clientOf(item.projectId)?.name ?? ""} · ${item.description}`}
-              amount={item.amount > 0 ? money(item.amount) : "—"}
+              client={scope.clientOf(item.projectId)?.name ?? ""}
               status="NEEDS_REVIEW"
-              action={<ItemProductionAction item={item} size="sm" />}
             />
           ))}
-      </Section>
+        </Section>
       )}
 
       {actionable.length > 0 ? (
@@ -70,12 +75,10 @@ export default function DesignerTodayPage() {
           {actionable.map((item) => (
             <Row
               key={item.id}
-              projectId={item.projectId}
+              item={item}
               title={scope.idx.projectById.get(item.projectId)?.name ?? ""}
-              meta={`${scope.clientOf(item.projectId)?.name ?? ""} · ${item.description}`}
-              amount={item.amount > 0 ? money(item.amount) : "—"}
+              client={scope.clientOf(item.projectId)?.name ?? ""}
               status={flowStatus(item)}
-              action={<ItemProductionAction item={item} size="sm" />}
             />
           ))}
         </Section>
@@ -84,7 +87,6 @@ export default function DesignerTodayPage() {
           <EmptyState title={t("designer.today.empty")} hint={t("designer.today.emptyHint")} />
         )
       )}
-
     </div>
   );
 }
@@ -103,9 +105,11 @@ function Stat({
   const dim = count === 0;
   return (
     <div className="flex flex-col gap-1 bg-panel px-5 py-4 sm:py-5">
-      <span className="flex items-center gap-1.5 text-[12px] text-muted">
-        <StatusDot status={status} />
-        <span className="truncate">{label}</span>
+      {/* Wraps rather than truncates: the longer English labels do not fit on
+          one line at 390 and a clipped "Ready to Inv…" reads as broken. */}
+      <span className="flex items-start gap-1.5 text-[12px] leading-snug text-muted">
+        <StatusDot status={status} className="mt-[5px]" />
+        <span className="min-w-0">{label}</span>
       </span>
       <span
         className={`tnum text-[26px] font-semibold leading-none tracking-[-0.02em] ${dim ? "text-faint" : ""}`}
@@ -141,37 +145,68 @@ function Section({
   );
 }
 
+/**
+ * The queue reads project-first, because that is how the work is spoken about,
+ * with the item underneath it. Same three column grid as the project lists, so
+ * amounts line up across every screen in the workspace.
+ */
 function Row({
-  projectId,
+  item,
   title,
-  meta,
-  amount,
+  client,
   status,
-  action,
 }: {
-  projectId: string;
+  item: BillingItem;
   title: string;
-  meta: string;
-  amount: string;
+  client: string;
   status: FlowStatus;
-  action?: React.ReactNode;
 }) {
+  const { t } = useI18n();
+  const state = priceState(item);
+  const href = `/designer/projects/${item.projectId}?item=${encodeURIComponent(item.id)}`;
+  const unconfirmed = state !== "CONFIRMED";
+
   return (
-    <div className="px-5 py-5 sm:px-6">
-      <div className="flex items-start justify-between gap-4">
-        <StatusPill status={status} />
-        <Amount value={amount} className="shrink-0 text-[15px]" />
-      </div>
-      <div className="mt-3 flex items-end justify-between gap-4">
-        <Link href={`/designer/projects/${projectId}`} className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">{title}</span>
-          <span className="mt-1 block truncate text-[12.5px] text-faint">{meta}</span>
-        </Link>
-        {action ?? (
-          <Link href={`/designer/projects/${projectId}`} aria-hidden>
-            <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 px-5 py-4 sm:px-6">
+      <StatusPill status={status} className="col-span-2 col-start-1 row-start-1 mb-2" />
+
+      <Link href={`/designer/projects/${item.projectId}`} className="col-start-1 row-start-2 min-w-0">
+        <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">{title}</span>
+      </Link>
+
+      <Amount
+        value={item.amount > 0 ? money(item.amount) : "—"}
+        className="col-start-2 row-start-2 justify-self-end text-[15px]"
+      />
+
+      <p className="col-start-1 row-start-3 mt-1 min-w-0 truncate text-[12.5px] text-muted">
+        {client} · {item.description}
+      </p>
+
+      {unconfirmed && (
+        <span className="col-start-2 row-start-3 mt-1 justify-self-end whitespace-nowrap text-[11.5px] font-medium text-review">
+          {state === "PENDING"
+            ? t("projects.pricePending")
+            : t("projects.priceSuggestedShort")}
+          {" · "}
+          {t("projects.priceReview")}
+        </span>
+      )}
+
+      <div className="col-span-2 col-start-1 row-start-4 mt-3 flex flex-wrap items-center justify-end gap-2">
+        {unconfirmed && (
+          <Link
+            href={href}
+            className="inline-flex h-9 min-w-[84px] shrink-0 items-center justify-center rounded-full bg-accent px-3.5 text-[12.5px] font-medium text-on-accent transition-colors duration-150 hover:bg-accent-hover"
+          >
+            {t("projects.reviewPrice")}
           </Link>
         )}
+        <ItemProductionAction
+          item={item}
+          size="sm"
+          variant={unconfirmed ? "secondary" : undefined}
+        />
       </div>
     </div>
   );

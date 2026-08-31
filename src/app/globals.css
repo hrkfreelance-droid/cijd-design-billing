@@ -13,7 +13,9 @@
   --c-raise: #ffffff;
   --c-text: #1d1d1f;
   --c-muted: #6e6e73;
-  --c-faint: #8e8e93;
+  /* Carries most of the small meta text, so it has to clear AA on white
+     (4.59:1) rather than sit at the 3.26:1 the old #8e8e93 gave. */
+  --c-faint: #757579;
   --c-line: rgba(0, 0, 0, 0.09);
   --c-line-strong: rgba(0, 0, 0, 0.16);
   --c-accent: #0066cc;

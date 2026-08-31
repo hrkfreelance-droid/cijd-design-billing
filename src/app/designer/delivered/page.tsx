@@ -52,7 +52,10 @@ export default function DeliveredPage() {
                 <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">
                   {scope.idx.projectById.get(projectId)?.name}
                 </span>
-                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12.5px] text-faint">
+                {/* Billing status belongs on the same wrapping line as the
+                    rest of the meta, so it survives a narrow screen instead of
+                    being hidden at the one width where space is tightest. */}
+                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
                   <span>{scope.clientOf(projectId)?.name}</span>
                   {items[0]?.productionStatus === "COMPLETED" ? (
                     <CompletedMark
@@ -71,9 +74,9 @@ export default function DeliveredPage() {
                       }
                     />
                   )}
+                  <StatusTag status={flowStatus(items[0])} />
                 </span>
               </span>
-              <StatusTag status={flowStatus(items[0])} className="hidden sm:flex" />
               <Amount value={money(sum(items))} className="text-[15px]" />
               <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
             </Link>
