@@ -150,30 +150,32 @@ export function Workspace({
         <ClientBar canAdd={workspace === "designer"} />
       </header>
 
-      <main className="safe-bottom-main mx-auto max-w-4xl sm:pb-20">
-        <Content>{children}</Content>
-      </main>
-
-      <nav className="header-surface safe-bottom-nav fixed inset-x-0 bottom-0 z-40 border-t border-line backdrop-blur-xl sm:hidden">
-        <div className="flex">
-          {nav.map(({ href, key, Icon }) => {
+      <nav
+        aria-label="Workspace navigation"
+        className="mx-auto max-w-4xl border-t border-line sm:hidden"
+      >
+        <div className="no-scrollbar flex items-center gap-4 overflow-x-auto px-5 sm:px-8">
+          {nav.map(({ href, key }) => {
             const active = isActive(pathname, href, nav);
             return (
               <Link
                 key={href}
                 href={href}
                 aria-current={active ? "page" : undefined}
-                className={`flex flex-1 flex-col items-center gap-[3px] py-2.5 transition-colors duration-150 ${
-                  active ? "text-accent" : "text-faint"
+                className={`flex h-10 shrink-0 items-center border-b-2 px-0.5 text-[12px] font-medium transition-colors duration-150 ${
+                  active ? "border-accent text-text" : "border-transparent text-faint hover:text-text"
                 }`}
               >
-                <Icon />
-                <span className="text-[10.5px] font-medium tracking-tight">{t(key)}</span>
+                {t(key)}
               </Link>
             );
           })}
         </div>
       </nav>
+
+      <main className="mx-auto max-w-4xl">
+        <Content>{children}</Content>
+      </main>
     </div>
   );
 }

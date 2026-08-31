@@ -127,20 +127,12 @@ button {
 }
 
 /* Keep safe-area expressions in authored CSS instead of Tailwind arbitrary utilities. */
-.safe-bottom-main {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 92px);
-}
-
-.safe-bottom-nav {
-  padding-bottom: env(safe-area-inset-bottom);
-}
-
 .safe-bottom-sheet {
   padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
 }
 
 .safe-bottom-toast {
-  bottom: calc(env(safe-area-inset-bottom) + 76px);
+  bottom: calc(env(safe-area-inset-bottom) + 16px);
 }
 
 .header-surface {
