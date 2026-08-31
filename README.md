@@ -93,13 +93,28 @@ npm run dev          # http://localhost:3000
 `.next-local` に出力し、既存の `.next` も保全します。
 サインイン画面で担当（Hiroki / Printing Staff / Billing Staff / Accounting）を選ぶと、Role ごとのワークスペースに入ります。Hiroki は Demo では ADMIN として Design / Printing / Billing を切り替えられます。
 
-## Codespaces Preview
+## Cloudflare Preview
 
-`integrate-production-workspace` でCodespaceを作成し、Terminalで `npm run preview:codespaces` を実行してください。Forwarded Port 3000をOpen in Browserすると、Supabase・Telegramなしのbrowser-only Demo ModeでUIを確認できます。Port visibilityはPrivateです。
+公開Previewの実行基盤はCloudflare Workersを第一候補とし、Next.js 16向けの公式推奨に沿って
+vinextを使用します。`integrate-production-workspace` へのpushをPreview Workerの自動build/deployに
+接続できます。ユーザーはCloudflareが発行した固定Worker URLを開くだけで、Terminal・
+git pull・Port操作は不要です。
 
-Demoでは接続先バッジを表示せず、ブラウザ内データだけで動作します。Supabase接続時は
-開発者とAdminに `PRODUCTION / SUPABASE` と表示されます。`NODE_ENV=production` ではSupabase credentialsが無い場合にデータ層がfail closedし、
-localStorageや `.data/runtime/db.json` を業務DBとして使いません。
+Preview buildはserver-onlyの `CIJD_PREVIEW_MODE=1` で一時Demo storeを選び、Supabase credentials・
+Telegram secretsを含めません。通常のcookie、route guard、GuardedRepositoryはPreviewでも有効です。
+本番Supabase未設定の本番Workerは引き続きfail closedし、localStorageや `.data/runtime/db.json` を
+業務DBとして使いません。固定URLはCloudflare Workerとaccountのworkers.dev設定が確定した後に決まります。
+
+Cloudflare Workers Buildsの一度きりの接続設定は次の値です。
+
+- Repository: `hrkfreelance-droid/cijd-design-billing`
+- Preview branch: `integrate-production-workspace`
+- Build command: `npm run build:vinext`
+- Deploy command: `npm run deploy:vinext`
+- Worker: `cijd-design-billing-preview`
+
+Production branchはこのPreview設定に含めません。Cloudflare account側のGitHub接続と
+workers.dev設定が完了した後は、対象branchへのpushだけでPreviewが更新されます。
 
 | コマンド | 内容 |
 | --- | --- |
@@ -129,7 +144,8 @@ localStorageや `.data/runtime/db.json` を業務DBとして使いません。
 | `SUPABASE_SERVICE_ROLE_KEY` | サーバー専用。Telegram エンドポイント（ブラウザセッションを持たない）で使用 |
 | `CIJD_DATA_FILE` | ローカル JSON ストアの保存先（既定：`.data/runtime/db.json`） |
 | `CIJD_NEXT_DIST_DIR` | Next生成物の保存先（npm scriptsの既定：`.next-local`） |
-| `NEXT_PUBLIC_DEMO_MODE` | `1` でブラウザ内デモデータに切り替え（公開 Preview 用。API routes は無効化） |
+| `NEXT_PUBLIC_DEMO_MODE` | 開発時のみブラウザ内デモデータへ切り替え（Production Previewでは使用しない） |
+| `CIJD_PREVIEW_MODE` | Cloudflare Preview Worker専用のserver-only一時Demo store flag。Secretではないが本番へ設定しない |
 
 ## Production setup checklist
 

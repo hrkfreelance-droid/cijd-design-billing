@@ -1,6 +1,9 @@
 import { filePersistence } from "./file-persistence";
-import { Store } from "./store";
+import { Store, type Persistence } from "./store";
 import type { Repository } from "./repository";
+import { buildDemoSeed } from "./demo-seed";
+import { isPreviewRuntime } from "@/lib/runtime";
+import type { Database } from "@/lib/types";
 
 /**
  * Single switch point for the data layer.
@@ -11,8 +14,21 @@ import type { Repository } from "./repository";
  */
 let localStore: Repository | null = null;
 
+let previewDb: Database | null = null;
+const previewPersistence: Persistence = {
+  async read() {
+    if (!previewDb) previewDb = buildDemoSeed();
+    return previewDb;
+  },
+  async write(db) {
+    previewDb = db;
+  },
+};
+
 export function getLocalRepository(): Repository {
-  if (!localStore) localStore = new Store(filePersistence);
+  if (!localStore) {
+    localStore = new Store(isPreviewRuntime ? previewPersistence : filePersistence);
+  }
   return localStore;
 }
 

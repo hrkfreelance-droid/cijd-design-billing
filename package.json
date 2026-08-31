@@ -4,7 +4,6 @@
   "private": true,
   "scripts": {
     "dev": "CIJD_NEXT_DIST_DIR=.next-local next dev",
-    "preview:codespaces": "NEXT_PUBLIC_DEMO_MODE=1 NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= SUPABASE_SERVICE_ROLE_KEY= TELEGRAM_BOT_TOKEN= TELEGRAM_WEBHOOK_SECRET= TELEGRAM_BILLING_CHAT_ID= CIJD_NEXT_DIST_DIR=.next-codespaces next dev --hostname 0.0.0.0 --port 3000",
     "build": "CIJD_NEXT_DIST_DIR=.next-local next build --webpack",
     "start": "CIJD_NEXT_DIST_DIR=.next-local next start",
     "lint": "eslint",
@@ -15,25 +14,38 @@
     "supabase:user": "node scripts/supabase-user.mjs",
     "shots": "node scripts/shots.mjs",
     "telegram": "node scripts/telegram-bot.mjs",
-    "import:history": "node scripts/import-history.mjs"
+    "import:history": "node scripts/import-history.mjs",
+    "dev:vinext": "vinext dev --port 3001",
+    "build:vinext": "vinext build",
+    "start:vinext": "wrangler dev --config dist/server/wrangler.json",
+    "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
+    "@vinext/cloudflare": "^1.0.0-beta.6",
     "next": "16.3.3",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-server-dom-webpack": "^19.2.8",
+    "vinext": "^1.0.0-beta.8"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.54.2",
     "@netlify/plugin-nextjs": "^5.15.13",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-rsc": "^0.5.34",
     "eslint": "^9",
     "eslint-config-next": "16.3.3",
     "tailwindcss": "^4",
-    "typescript": "^5"
-  }
+    "typescript": "^5",
+    "vite": "^8.2.2",
+    "wrangler": "^4.127.1"
+  },
+  "type": "module"
 }

@@ -1,3 +1,5 @@
+import { isPreviewRuntime } from "@/lib/runtime";
+
 export type DataMode = "local" | "supabase";
 
 /** Supabase is the only data source allowed by a production runtime. */
@@ -16,6 +18,6 @@ export const supabaseEnabled = () => supabaseConfig() !== null;
  */
 export function dataMode(): DataMode {
   if (supabaseEnabled()) return "supabase";
-  if (process.env.NODE_ENV !== "production") return "local";
+  if (process.env.NODE_ENV !== "production" || isPreviewRuntime) return "local";
   throw new Error("Supabase credentials are required in production.");
 }

@@ -17,7 +17,6 @@
 /.next/
 /.next-local/
 /.next-test/
-/.next-codespaces/
 /.next 2/
 /out/
 
@@ -59,3 +58,6 @@ next-env.d.ts
 
 # Supabase CLI local metadata
 /supabase/.temp/
+/dist/
+.vinext/
+.wrangler/
