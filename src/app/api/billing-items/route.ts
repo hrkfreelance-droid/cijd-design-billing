@@ -12,6 +12,9 @@ export async function POST(request: Request) {
       unitPrice: num(body.unitPrice),
       amount: num(body.amount),
       billingStatus: str(body.billingStatus) as BillingStatus | undefined,
+      printSize: str(body.printSize),
+      priceSource: str(body.priceSource),
+      priceReason: str(body.priceReason),
       note: str(body.note),
     }),
   );

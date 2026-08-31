@@ -1,4 +1,4 @@
-export const ROLES = ["DESIGNER", "BILLING", "ACCOUNTING", "ADMIN"] as const;
+export const ROLES = ["DESIGNER", "BILLING", "ACCOUNTING", "PRINTING", "ADMIN"] as const;
 export type Role = (typeof ROLES)[number];
 
 /**
@@ -7,6 +7,7 @@ export type Role = (typeof ROLES)[number];
  * someone from reaching data.
  */
 export type Permission =
+  | "designer:read"
   | "production:read"
   | "production:write"
   | "delivery:write"
@@ -15,14 +16,18 @@ export type Permission =
   | "invoice:write"
   | "payment:read"
   | "payment:write"
+  | "printing:read"
+  | "print:write"
   | "notification:manage";
 
 const MATRIX: Record<Role, Permission[]> = {
-  DESIGNER: ["production:read", "production:write", "delivery:write", "client:write"],
+  DESIGNER: ["designer:read", "production:read", "production:write", "delivery:write", "client:write"],
   BILLING: ["billing:read", "invoice:write", "notification:manage"],
   ACCOUNTING: ["payment:read", "payment:write"],
+  PRINTING: ["production:read", "printing:read", "print:write", "delivery:write"],
   ADMIN: [
     "production:read",
+    "designer:read",
     "production:write",
     "delivery:write",
     "client:write",
@@ -44,14 +49,16 @@ export function canAny(role: Role, permissions: Permission[]): boolean {
 
 /** Where a role lands after signing in. */
 export function homeFor(role: Role): string {
-  if (can(role, "production:read")) return "/designer";
+  if (can(role, "printing:read") && !can(role, "designer:read")) return "/printing";
+  if (can(role, "designer:read")) return "/designer";
   if (can(role, "billing:read")) return "/office";
   return "/office/payments";
 }
 
-export function workspacesFor(role: Role): ("designer" | "office")[] {
-  const spaces: ("designer" | "office")[] = [];
-  if (can(role, "production:read")) spaces.push("designer");
+export function workspacesFor(role: Role): ("designer" | "printing" | "office")[] {
+  const spaces: ("designer" | "printing" | "office")[] = [];
+  if (can(role, "designer:read")) spaces.push("designer");
+  if (can(role, "printing:read")) spaces.push("printing");
   if (canAny(role, ["billing:read", "payment:read"])) spaces.push("office");
   return spaces;
 }

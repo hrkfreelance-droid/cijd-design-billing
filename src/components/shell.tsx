@@ -48,6 +48,13 @@ export const OFFICE_NAV: NavItem[] = [
   { href: "/office/archive", key: "nav.archive", Icon: ArchiveIcon },
 ];
 
+export const PRINTING_NAV: NavItem[] = [
+  { href: "/printing", key: "nav.printReview", Icon: ClockIcon },
+  { href: "/printing/ordering", key: "nav.printOrdering", Icon: ListIcon },
+  { href: "/printing/delivered", key: "nav.printDelivered", Icon: CheckIcon },
+  { href: "/printing/history", key: "nav.printHistory", Icon: ArchiveIcon },
+];
+
 function isActive(pathname: string, href: string, nav: NavItem[]) {
   if (pathname === href) return true;
   if (!pathname.startsWith(`${href}/`)) return false;
@@ -62,7 +69,7 @@ export function Workspace({
   children,
 }: {
   nav: NavItem[];
-  workspace: "designer" | "office";
+  workspace: "designer" | "printing" | "office";
   /** Checked again in the browser, on top of the server side guard. */
   requires: Permission[];
   children: ReactNode;
@@ -96,7 +103,13 @@ export function Workspace({
               {t("brand.company")}
             </span>
             <span className="mt-[3px] block text-[15px] font-semibold tracking-[-0.012em]">
-              {t(workspace === "designer" ? "workspace.designer" : "workspace.office")}
+              {t(
+                workspace === "designer"
+                  ? "workspace.designer"
+                  : workspace === "printing"
+                    ? "workspace.printing"
+                    : "workspace.office",
+              )}
             </span>
           </Link>
 
@@ -220,7 +233,7 @@ function UserMenu({
   mode,
   showMode,
 }: {
-  current: "designer" | "office";
+  current: "designer" | "printing" | "office";
   mode: "local" | "supabase";
   showMode: boolean;
 }) {
@@ -277,12 +290,24 @@ function UserMenu({
                   key={space}
                   onClick={() => {
                     setOpen(false);
-                    router.push(space === "designer" ? "/designer" : "/office");
+                    router.push(
+                      space === "designer"
+                        ? "/designer"
+                        : space === "printing"
+                          ? "/printing"
+                          : "/office",
+                    );
                   }}
                   className="flex w-full items-center gap-3 py-3 text-left"
                 >
                   <span className="flex-1 text-[15px]">
-                    {t(space === "designer" ? "workspace.designer" : "workspace.office")}
+                    {t(
+                      space === "designer"
+                        ? "workspace.designer"
+                        : space === "printing"
+                          ? "workspace.printing"
+                          : "workspace.office",
+                    )}
                   </span>
                   {space === current ? (
                     <CheckIcon className="h-4 w-4 text-accent" />

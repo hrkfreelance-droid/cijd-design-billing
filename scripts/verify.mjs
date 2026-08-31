@@ -21,6 +21,10 @@ const PAGES = [
   ["office-billing", "/office"],
   ["office-payments", "/office/payments"],
   ["office-archive", "/office/archive"],
+  ["printing-review", "/printing"],
+  ["printing-ordering", "/printing/ordering"],
+  ["printing-delivered", "/printing/delivered"],
+  ["printing-history", "/printing/history"],
 ];
 
 const results = [];
@@ -106,6 +110,16 @@ for (const [size, viewport] of Object.entries({
         unitPrice: 60,
       },
     });
+
+    await signIn(ctx, "u_admin");
+    const createdState = await (await ctx.request.get(`${BASE}/api/state`)).json();
+    const createdItem = createdState.data.billingItems.find(
+      (item) => item.projectId === project.data.id,
+    );
+    await ctx.request.post(`${BASE}/api/printing-items/${createdItem.id}/price`, {
+      data: { unitPrice: 60, amount: 60, confirm: true },
+    });
+    await signIn(ctx, "u_hiroki");
 
     await page.goto(`${BASE}/designer/projects/${project.data.id}`, {
       waitUntil: "networkidle",

@@ -152,6 +152,9 @@ export async function demoRequest<T>(
           unitPrice: num(body.unitPrice),
           amount: num(body.amount),
           billingStatus: str(body.billingStatus) as BillingStatus | undefined,
+          printSize: str(body.printSize),
+          priceSource: str(body.priceSource),
+          priceReason: str(body.priceReason),
           note: str(body.note),
         })) as T;
       }
@@ -178,10 +181,31 @@ export async function demoRequest<T>(
           quantity: num(body.quantity),
           unitPrice: num(body.unitPrice),
           amount: body.amount === null ? null : num(body.amount),
+          printSize: str(body.printSize),
           note: str(body.note),
         })) as T;
       }
       if (method === "DELETE" && id) return (await guarded.deleteBillingItem(id)) as T;
+    }
+
+    if (resource === "printing-items" && id) {
+      if (sub === "price" && method === "POST") {
+        return (await guarded.reviewPrintPrice(id, {
+          unitPrice: num(body.unitPrice) ?? 0,
+          amount: num(body.amount) ?? 0,
+          confirm: body.confirm === true,
+          priceSource: str(body.priceSource),
+          priceReason: str(body.priceReason),
+        })) as T;
+      }
+      if (sub === "spec" && method === "PATCH") {
+        return (await guarded.updatePrintSpec(id, {
+          description: str(body.description),
+          printSize: str(body.printSize),
+          quantity: num(body.quantity),
+          note: str(body.note),
+        })) as T;
+      }
     }
 
     if (resource === "invoices") {

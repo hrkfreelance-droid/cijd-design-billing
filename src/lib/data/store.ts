@@ -23,6 +23,8 @@ import {
 } from "./repository";
 import { buildSeed } from "./seed";
 import {
+  isPrintPriceConfirmed,
+  isHistoricalRecord,
   isProductionComplete,
   productionAction,
   terminalProductionStatus,
@@ -89,6 +91,22 @@ const MANUAL_STATUSES: BillingStatus[] = ["NOT_READY", "READY_TO_INVOICE", "NEED
 
 function isLocked(item: BillingItem): boolean {
   return item.billingStatus === "INVOICED" || item.billingStatus === "PAID";
+}
+
+function isHistoricalRecordForStore(item: BillingItem): boolean {
+  return isHistoricalRecord(item);
+}
+
+function assertCurrentPrintItem(item: BillingItem): void {
+  if (item.type !== "PRINT") {
+    throw new RuleError("INVALID_PRINT", "This operation is only available for print items.", 400);
+  }
+  if (isHistoricalRecord(item)) {
+    throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.", 403);
+  }
+  if (isLocked(item)) {
+    throw new RuleError("ITEM_LOCKED", "Invoiced print work cannot be changed.");
+  }
 }
 
 /**
@@ -290,6 +308,8 @@ export class Store implements Repository {
         throw new RuleError("INVALID", "Amount must be zero or more.", 400);
       }
       const actor = input.actor ?? DEFAULT_ACTOR;
+      const type = input.type ?? "OTHER";
+      const imported = actor.trim().toLowerCase() === "import";
       const billingStatus = input.billingStatus ?? "NOT_READY";
       if (!MANUAL_STATUSES.includes(billingStatus)) {
         throw new RuleError(
@@ -309,7 +329,7 @@ export class Store implements Repository {
         id: newId(),
         projectId: input.projectId,
         description,
-        type: input.type ?? "OTHER",
+        type,
         quantity,
         unitPrice,
         amount,
@@ -319,6 +339,14 @@ export class Store implements Repository {
         deliveredAt: null,
         deliveredBy: null,
         invoiceId: null,
+        printSize: input.printSize ?? null,
+        priceReviewStatus: type === "PRINT" ? (imported ? null : "REVIEW_REQUIRED") : "NOT_REQUIRED",
+        suggestedUnitPrice: type === "PRINT" ? unitPrice : null,
+        suggestedAmount: type === "PRINT" ? amount : null,
+        priceSource: type === "PRINT" ? input.priceSource ?? null : null,
+        priceReason: type === "PRINT" ? input.priceReason ?? null : null,
+        priceConfirmedBy: null,
+        priceConfirmedAt: null,
         note: input.note,
         createdAt: now(),
         createdBy: actor,
@@ -328,6 +356,9 @@ export class Store implements Repository {
       };
       db.billingItems.push(item);
       log(db, actor, "item.create", "billing_item", item.id, description);
+      if (type === "PRINT" && !imported) {
+        log(db, actor, "price.suggested", "billing_item", item.id, input.priceReason ?? description);
+      }
       return item;
     });
   }
@@ -346,9 +377,11 @@ export class Store implements Repository {
         if (!trimmed) throw new RuleError("INVALID", "Description is required.", 400);
         item.description = trimmed;
       }
+      const wasPrint = item.type === "PRINT";
       if (patch.type !== undefined) item.type = patch.type;
       if (patch.quantity !== undefined) item.quantity = patch.quantity;
       if (patch.unitPrice !== undefined) item.unitPrice = patch.unitPrice;
+      if (patch.printSize !== undefined) item.printSize = patch.printSize.trim() || null;
       if (patch.note !== undefined) item.note = patch.note;
 
       if (patch.amount === null) {
@@ -361,9 +394,90 @@ export class Store implements Repository {
       if (!Number.isFinite(item.amount) || item.amount < 0) {
         throw new RuleError("INVALID", "Amount must be zero or more.", 400);
       }
+      const priceChanged =
+        patch.type !== undefined ||
+        patch.quantity !== undefined ||
+        patch.unitPrice !== undefined ||
+        patch.amount !== undefined;
+      if (item.type === "PRINT" && !isHistoricalRecordForStore(item) && (priceChanged || !wasPrint)) {
+        item.priceReviewStatus = "REVIEW_REQUIRED";
+        item.suggestedUnitPrice = item.unitPrice;
+        item.suggestedAmount = item.amount;
+        item.priceConfirmedBy = null;
+        item.priceConfirmedAt = null;
+        if (item.billingStatus === "READY_TO_INVOICE") item.billingStatus = "NEEDS_REVIEW";
+        log(db, patch.actor ?? DEFAULT_ACTOR, "price.suggested", "billing_item", item.id, item.description);
+      }
       item.updatedAt = now();
       item.updatedBy = patch.actor ?? DEFAULT_ACTOR;
       log(db, item.updatedBy, "item.update", "billing_item", item.id);
+      return item;
+    });
+  }
+
+  updatePrintSpec(id: string, patch: Parameters<Repository["updatePrintSpec"]>[1]) {
+    return this.transaction((db) => {
+      const item = requireItem(db, id);
+      assertCurrentPrintItem(item);
+      const actor = patch.actor ?? DEFAULT_ACTOR;
+      if (patch.description !== undefined) {
+        const description = patch.description.trim();
+        if (!description) throw new RuleError("INVALID", "Description is required.", 400);
+        item.description = description;
+      }
+      if (patch.printSize !== undefined) item.printSize = patch.printSize.trim() || null;
+      if (patch.quantity !== undefined) {
+        if (!Number.isFinite(patch.quantity) || patch.quantity <= 0) {
+          throw new RuleError("INVALID", "Quantity must be greater than zero.", 400);
+        }
+        item.quantity = patch.quantity;
+        if (item.unitPrice > 0) item.amount = money(item.quantity * item.unitPrice);
+      }
+      if (patch.note !== undefined) item.note = patch.note;
+      item.priceReviewStatus = "REVIEW_REQUIRED";
+      item.suggestedUnitPrice = item.unitPrice;
+      item.suggestedAmount = item.amount;
+      item.priceConfirmedBy = null;
+      item.priceConfirmedAt = null;
+      if (item.billingStatus === "READY_TO_INVOICE") item.billingStatus = "NEEDS_REVIEW";
+      item.updatedAt = now();
+      item.updatedBy = actor;
+      log(db, actor, "print.spec.update", "billing_item", item.id, item.description);
+      log(db, actor, "price.suggested", "billing_item", item.id, item.priceReason ?? item.description);
+      return item;
+    });
+  }
+
+  reviewPrintPrice(id: string, input: Parameters<Repository["reviewPrintPrice"]>[1]) {
+    return this.transaction((db) => {
+      const item = requireItem(db, id);
+      assertCurrentPrintItem(item);
+      const unitPrice = Number(input.unitPrice);
+      const amount = Number(input.amount);
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(amount) || amount <= 0) {
+        throw new RuleError("INVALID", "A confirmed print price must be greater than zero.", 400);
+      }
+      const actor = input.actor ?? DEFAULT_ACTOR;
+      if (item.suggestedUnitPrice == null) item.suggestedUnitPrice = item.unitPrice;
+      if (item.suggestedAmount == null) item.suggestedAmount = item.amount;
+      item.unitPrice = money(unitPrice);
+      item.amount = money(amount);
+      item.customAmount = item.amount !== money(item.quantity * item.unitPrice);
+      if (input.priceSource !== undefined) item.priceSource = input.priceSource.trim() || null;
+      if (input.priceReason !== undefined) item.priceReason = input.priceReason.trim() || null;
+      item.priceReviewStatus = input.confirm ? "CONFIRMED" : "REVIEW_REQUIRED";
+      item.priceConfirmedBy = input.confirm ? actor : null;
+      item.priceConfirmedAt = input.confirm ? now() : null;
+      item.updatedAt = now();
+      item.updatedBy = actor;
+      log(
+        db,
+        actor,
+        input.confirm ? "price.confirm" : "price.edit",
+        "billing_item",
+        item.id,
+        `${item.unitPrice}/${item.amount}`,
+      );
       return item;
     });
   }
@@ -392,6 +506,12 @@ export class Store implements Repository {
         throw new RuleError(
           "NOT_DELIVERED",
           "Finish the work before sending it to billing.",
+        );
+      }
+      if (status === "READY_TO_INVOICE" && item.type === "PRINT" && !isPrintPriceConfirmed(item)) {
+        throw new RuleError(
+          "PRICE_REVIEW_REQUIRED",
+          "Confirm the print price before sending it to billing.",
         );
       }
       item.billingStatus = status;
@@ -475,7 +595,9 @@ export class Store implements Repository {
     item.deliveredAt = delivered ? now() : null;
     item.deliveredBy = delivered ? actor : null;
     // Finishing sends work to billing; undoing pulls it back out.
-    if (item.billingStatus !== "NEEDS_REVIEW") {
+    if (item.type === "PRINT") {
+      item.billingStatus = delivered && isPrintPriceConfirmed(item) ? "READY_TO_INVOICE" : delivered ? "NEEDS_REVIEW" : "NOT_READY";
+    } else if (item.billingStatus !== "NEEDS_REVIEW") {
       item.billingStatus = delivered ? "READY_TO_INVOICE" : "NOT_READY";
     }
     item.updatedAt = now();
@@ -551,6 +673,12 @@ export class Store implements Repository {
           throw new RuleError(
             "NOT_DELIVERED",
             `"${item.description}" has not been completed yet.`,
+          );
+        }
+        if (item.type === "PRINT" && !isPrintPriceConfirmed(item)) {
+          throw new RuleError(
+            "PRICE_REVIEW_REQUIRED",
+            `"${item.description}" needs a confirmed print price first.`,
           );
         }
         if (item.billingStatus !== "READY_TO_INVOICE") {

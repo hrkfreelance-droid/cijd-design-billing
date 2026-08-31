@@ -16,6 +16,7 @@ export async function PATCH(
       quantity: num(body.quantity),
       unitPrice: num(body.unitPrice),
       amount: body.amount === null ? null : num(body.amount),
+      printSize: str(body.printSize),
       note: str(body.note),
     });
   });

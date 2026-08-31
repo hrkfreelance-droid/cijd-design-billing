@@ -40,7 +40,9 @@ export type ItemType = (typeof ITEM_TYPES)[number];
 
 export type InvoiceStatus = "ISSUED" | "PAID" | "VOID";
 export type ReceiptStatus = "NOT_REQUIRED" | "PENDING" | "RECEIVED";
-export type UserRole = "DESIGNER" | "BILLING" | "ACCOUNTING" | "ADMIN";
+export type UserRole = "DESIGNER" | "BILLING" | "ACCOUNTING" | "PRINTING" | "ADMIN";
+export const PRICE_REVIEW_STATUSES = ["NOT_REQUIRED", "REVIEW_REQUIRED", "CONFIRMED"] as const;
+export type PriceReviewStatus = (typeof PRICE_REVIEW_STATUSES)[number];
 
 export interface Client {
   id: string;
@@ -79,6 +81,15 @@ export interface BillingItem {
   /** Actor who marked the item delivered or completed. */
   deliveredBy?: string | null;
   invoiceId?: string | null;
+  /** Printing-only specification and price certainty fields. */
+  printSize?: string | null;
+  priceReviewStatus?: PriceReviewStatus | null;
+  suggestedUnitPrice?: number | null;
+  suggestedAmount?: number | null;
+  priceSource?: string | null;
+  priceReason?: string | null;
+  priceConfirmedBy?: string | null;
+  priceConfirmedAt?: string | null;
   note?: string;
   createdAt: string;
   createdBy: string;
@@ -192,5 +203,5 @@ export interface Snapshot {
   users: User[];
   mode: "local" | "supabase";
   /** Which slice of the data this snapshot contains, given the viewer's role. */
-  scope: { production: boolean; billing: boolean; payment: boolean };
+  scope: { production: boolean; billing: boolean; payment: boolean; printing?: boolean };
 }

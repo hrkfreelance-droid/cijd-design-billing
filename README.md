@@ -54,6 +54,7 @@ Designer                              Office
 | Role | 見られるもの |
 | --- | --- |
 | `DESIGNER` | Designer 全画面、納品操作 |
+| `PRINTING` | 印刷仕様・価格確認、印刷物の納品操作 |
 | `BILLING` | 請求待ち、Invoice 作成、Invoice Archive、納品通知の再送 |
 | `ACCOUNTING` | 入金待ち、領収書、完了、Archive |
 | `ADMIN` | 全画面（ワークスペース切替つき） |
@@ -132,7 +133,7 @@ localStorageや `.data/runtime/db.json` を業務DBとして使いません。�
 本番接続は次の順序で行います。
 
 1. Supabase Projectを作成
-2. migrationsを実行（`0001_init.sql` → `0002_rls.sql` → `0003_functions.sql` → `20260830165135_api_grants.sql` → `20260831011623_harden_role_functions.sql` → `20260831012607_revoke_anon_access.sql` → `20260831015410_enforce_active_users_and_audit.sql` → `20260831020942_restrict_office_billing_item_updates.sql`）
+2. migrationsを実行（`0001_init.sql` → `0002_rls.sql` → `0003_functions.sql` → `20260830165135_api_grants.sql` → `20260831011623_harden_role_functions.sql` → `20260831012607_revoke_anon_access.sql` → `20260831015410_enforce_active_users_and_audit.sql` → `20260831020942_restrict_office_billing_item_updates.sql` → `20260831090000_add_completed_production_status.sql` → `20260831110000_add_printing_workflow.sql`）
 3. `seed.sql`を実行
 4. Supabase Auth Userを作成（Dashboardまたは `npm run supabase:user -- --email ... --role ...`）
 5. `public.users`のname / Role / activeを確認

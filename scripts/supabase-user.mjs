@@ -13,7 +13,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-export const ROLES = new Set(["DESIGNER", "BILLING", "ACCOUNTING", "ADMIN"]);
+export const ROLES = new Set(["DESIGNER", "BILLING", "ACCOUNTING", "PRINTING", "ADMIN"]);
 
 export function parseArgs(argv) {
   const args = { email: "", role: "", name: "", help: false };
@@ -44,7 +44,7 @@ export function validateArgs(args) {
   }
   args.role = args.role.toUpperCase();
   if (!ROLES.has(args.role)) {
-    throw new Error("--role must be DESIGNER, BILLING, ACCOUNTING, or ADMIN.");
+    throw new Error("--role must be DESIGNER, BILLING, ACCOUNTING, PRINTING, or ADMIN.");
   }
   if (args.name && args.name.trim().length > 120) {
     throw new Error("--name must be 120 characters or fewer.");

@@ -43,6 +43,9 @@ In **SQL Editor**, run in order:
 9. `migrations/20260831090000_add_completed_production_status.sql` — adds the
    `COMPLETED` creative-production state, extends RLS and the invoice gate, and
    keeps PRINT delivery separate from creative completion
+10. `migrations/20260831110000_add_printing_workflow.sql` — adds the `PRINTING`
+   role, print-only RLS, explicit price review fields, audit-backed price
+   review operations, and the confirmed-price invoice gate
 
 Or with the Supabase CLI:
 
@@ -81,7 +84,7 @@ SUPABASE_SERVICE_ROLE_KEY='(set only in the local shell)' \
   npm run supabase:user -- --email person@example.com --role DESIGNER --name 'Hiroki'
 ```
 
-The helper accepts `DESIGNER`, `BILLING`, `ACCOUNTING`, or `ADMIN`; it asks for
+The helper accepts `DESIGNER`, `BILLING`, `ACCOUNTING`, `PRINTING`, or `ADMIN`; it asks for
 the password without echoing it. Never run it in the browser or commit the
 service-role key. The Dashboard path is also valid: **Authentication → Users
 → Add user**, then set the matching `public.users` profile:
@@ -91,6 +94,7 @@ update users set name = 'Hiroki',        role = 'DESIGNER'   where id = '<auth u
 update users set name = 'Billing Staff', role = 'BILLING'    where id = '<auth uid>';
 update users set name = 'Accounting',    role = 'ACCOUNTING' where id = '<auth uid>';
 update users set name = 'Admin',         role = 'ADMIN'      where id = '<auth uid>';
+update users set name = 'Printing',      role = 'PRINTING'   where id = '<auth uid>';
 ```
 
 A new Auth sign-up gets a `users` row automatically with the `DESIGNER` role;
@@ -111,6 +115,7 @@ To disable or change a profile as an administrator:
 update public.users set active = false where id = '<auth uid>';
 update public.users set active = true  where id = '<auth uid>';
 update public.users set role = 'BILLING' where id = '<auth uid>';
+update public.users set role = 'PRINTING' where id = '<auth uid>';
 ```
 
 The application checks `active` on every session lookup and the RLS role
@@ -123,6 +128,11 @@ Put `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
 its own — sign-in becomes email and password. Add
 `SUPABASE_SERVICE_ROLE_KEY` only when enabling the server-side Telegram
 endpoint; never expose that key to the browser.
+
+For a printing operator, use the same Auth/profile flow with `role =
+'PRINTING'`. The Printing workspace exposes only PRINT items; imported PRINT
+rows remain read-only history. A current print item must have a human-confirmed
+price before it can become invoice-ready.
 
 日々の請求・入金・障害対応、NEEDS_REVIEWの扱い、バックアップ・復旧、
 Telegram停止時の手順は [`docs/OPERATIONS.md`](../docs/OPERATIONS.md) を参照してください。

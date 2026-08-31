@@ -43,6 +43,9 @@ export interface CreateBillingItemInput {
   amount?: number;
   billingStatus?: BillingStatus;
   note?: string;
+  printSize?: string;
+  priceSource?: string;
+  priceReason?: string;
   actor?: string;
 }
 
@@ -53,6 +56,24 @@ export interface UpdateBillingItemInput {
   unitPrice?: number;
   amount?: number | null;
   note?: string;
+  printSize?: string;
+  actor?: string;
+}
+
+export interface UpdatePrintSpecInput {
+  description?: string;
+  printSize?: string;
+  quantity?: number;
+  note?: string;
+  actor?: string;
+}
+
+export interface ReviewPrintPriceInput {
+  unitPrice: number;
+  amount: number;
+  confirm?: boolean;
+  priceSource?: string;
+  priceReason?: string;
   actor?: string;
 }
 
@@ -94,6 +115,8 @@ export interface Repository {
 
   createBillingItem(input: CreateBillingItemInput): Promise<BillingItem>;
   updateBillingItem(id: string, patch: UpdateBillingItemInput): Promise<BillingItem>;
+  updatePrintSpec(id: string, patch: UpdatePrintSpecInput): Promise<BillingItem>;
+  reviewPrintPrice(id: string, input: ReviewPrintPriceInput): Promise<BillingItem>;
   setBillingStatus(
     id: string,
     status: BillingStatus,

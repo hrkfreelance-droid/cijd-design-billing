@@ -28,7 +28,7 @@ import {
   toTelegramSession,
   toUser,
 } from "./rows";
-import { isProductionComplete } from "@/lib/derive";
+import { isProductionComplete, isPrintPriceConfirmed } from "@/lib/derive";
 
 const DEFAULT_ACTOR = "Hiroki";
 
@@ -64,6 +64,9 @@ function fail(error: PostgrestError | null): never {
     "INVOICE_VOID",
     "NOT_PAID",
     "PROJECT_LOCKED",
+    "PRICE_REVIEW_REQUIRED",
+    "INVALID_PRINT",
+    "HISTORY_READ_ONLY",
   ];
   if (known.includes(code)) {
     throw new RuleError(code, error.details || code, code === "NOT_FOUND" ? 404 : 409);
@@ -237,18 +240,26 @@ export class SupabaseRepository implements Repository {
       throw new RuleError("INVALID", "Amount must be zero or more.", 400);
     }
     const actor = input.actor ?? DEFAULT_ACTOR;
+    const type = input.type ?? "OTHER";
+    const imported = actor.trim().toLowerCase() === "import";
     const result = await this.db
       .from("billing_items")
       .insert({
         project_id: input.projectId,
         description,
-        type: input.type ?? "OTHER",
+        type,
         quantity,
         unit_price: unitPrice,
         amount,
         custom_amount: custom,
         production_status: "IN_PROGRESS",
         billing_status: billingStatus,
+        print_size: input.printSize ?? null,
+        price_review_status: type === "PRINT" ? (imported ? null : "REVIEW_REQUIRED") : "NOT_REQUIRED",
+        suggested_unit_price: type === "PRINT" ? unitPrice : null,
+        suggested_amount: type === "PRINT" ? amount : null,
+        price_source: type === "PRINT" ? input.priceSource ?? null : null,
+        price_reason: type === "PRINT" ? input.priceReason ?? null : null,
         note: input.note ?? null,
         created_by: actor,
         updated_by: actor,
@@ -291,6 +302,7 @@ export class SupabaseRepository implements Repository {
         unit_price: unitPrice,
         amount,
         custom_amount: custom,
+        print_size: patch.printSize ?? current.printSize ?? null,
         note: patch.note ?? current.note ?? null,
         updated_at: new Date().toISOString(),
         updated_by: patch.actor ?? DEFAULT_ACTOR,
@@ -299,6 +311,38 @@ export class SupabaseRepository implements Repository {
       .select()
       .single();
     return toItem(unwrap(result));
+  }
+
+  async updatePrintSpec(id: string, patch: Parameters<Repository["updatePrintSpec"]>[1]) {
+    const result = await this.db.rpc("update_print_spec", {
+      p_item_id: id,
+      p_description: patch.description ?? null,
+      p_print_size: patch.printSize ?? null,
+      p_quantity: patch.quantity ?? null,
+      p_note: patch.note ?? null,
+      p_actor: patch.actor ?? DEFAULT_ACTOR,
+    });
+    if (result.error) fail(result.error);
+    return toItem(result.data as Record<string, unknown>);
+  }
+
+  async reviewPrintPrice(id: string, input: Parameters<Repository["reviewPrintPrice"]>[1]) {
+    const unitPrice = Number(input.unitPrice);
+    const amount = Number(input.amount);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(amount) || amount <= 0) {
+      throw new RuleError("INVALID", "A confirmed print price must be greater than zero.", 400);
+    }
+    const result = await this.db.rpc("review_print_price", {
+      p_item_id: id,
+      p_unit_price: unitPrice,
+      p_amount: amount,
+      p_confirm: input.confirm ?? false,
+      p_price_source: input.priceSource ?? null,
+      p_price_reason: input.priceReason ?? null,
+      p_actor: input.actor ?? DEFAULT_ACTOR,
+    });
+    if (result.error) fail(result.error);
+    return toItem(result.data as Record<string, unknown>);
   }
 
   async setBillingStatus(id: string, status: BillingStatus, actor = DEFAULT_ACTOR) {
@@ -321,6 +365,9 @@ export class SupabaseRepository implements Repository {
         "NOT_DELIVERED",
         "Finish the work before sending it to billing.",
       );
+    }
+    if (status === "READY_TO_INVOICE" && current.type === "PRINT" && !isPrintPriceConfirmed(current)) {
+      throw new RuleError("PRICE_REVIEW_REQUIRED", "Confirm the print price before sending it to billing.");
     }
     const result = await this.db
       .from("billing_items")

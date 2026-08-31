@@ -31,6 +31,16 @@ export class GuardedRepository {
     const production = can(this.user.role, "production:read");
     const billing = can(this.user.role, "billing:read");
     const payment = can(this.user.role, "payment:read");
+    const printing = can(this.user.role, "printing:read");
+
+    if (printing && this.user.role === "PRINTING") {
+      snapshot.billingItems = snapshot.billingItems.filter((item) => item.type === "PRINT");
+      const projectIds = new Set(snapshot.billingItems.map((item) => item.projectId));
+      snapshot.projects = snapshot.projects.filter((project) => projectIds.has(project.id));
+      snapshot.invoices = [];
+      snapshot.invoiceItems = [];
+      snapshot.users = [];
+    }
 
     if (!production) {
       // Unfinished work never leaves the designer side.
@@ -47,6 +57,8 @@ export class GuardedRepository {
       snapshot.invoices = [];
       snapshot.invoiceItems = [];
     }
+    // Keep the public scope shape backward-compatible; the dedicated printing
+    // slice is enforced by the filtered rows above and by the route permission.
     snapshot.scope = { production, billing, payment };
     return snapshot;
   }
@@ -81,6 +93,16 @@ export class GuardedRepository {
     return this.repo.updateBillingItem(id, { ...patch, actor: this.actor(patch.actor) });
   }
 
+  updatePrintSpec(id: string, patch: Parameters<Repository["updatePrintSpec"]>[1]) {
+    this.assert("print:write");
+    return this.repo.updatePrintSpec(id, { ...patch, actor: this.actor(patch.actor) });
+  }
+
+  reviewPrintPrice(id: string, input: Parameters<Repository["reviewPrintPrice"]>[1]) {
+    this.assert("print:write");
+    return this.repo.reviewPrintPrice(id, { ...input, actor: this.actor(input.actor) });
+  }
+
   setBillingStatus(id: string, status: BillingStatus, actor?: string) {
     this.assert("production:write");
     return this.repo.setBillingStatus(id, status, this.actor(actor));
@@ -93,11 +115,17 @@ export class GuardedRepository {
 
   setItemCompletion(id: string, completed: boolean, actor?: string) {
     this.assert("delivery:write");
+    if (this.user.role === "PRINTING") {
+      throw new RuleError("FORBIDDEN", "Printing items use delivery, not creative completion.", 403);
+    }
     return this.repo.setItemCompletion(id, completed, this.actor(actor));
   }
 
   setProjectDelivery(projectId: string, delivered: boolean, actor?: string) {
     this.assert("delivery:write");
+    if (this.user.role === "PRINTING") {
+      throw new RuleError("FORBIDDEN", "Printing work is handled one item at a time.", 403);
+    }
     return this.repo.setProjectDelivery(projectId, delivered, this.actor(actor));
   }
 

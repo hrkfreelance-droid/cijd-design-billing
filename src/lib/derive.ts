@@ -57,8 +57,41 @@ export function isOperationalRecord(item: BillingItem): boolean {
 
 export type PriceState = "CONFIRMED" | "SUGGESTED" | "PENDING";
 
+/**
+ * Explicit certainty for current print work. Null is kept as a compatibility
+ * path for rows created before the printing migration; imported rows remain
+ * historical evidence and are never treated as current review work.
+ */
+export function printPriceReviewState(item: BillingItem): "NOT_REQUIRED" | "REVIEW_REQUIRED" | "CONFIRMED" {
+  if (item.type !== "PRINT") return "NOT_REQUIRED";
+  if (item.priceReviewStatus) return item.priceReviewStatus;
+  if (isHistoricalRecord(item)) return "NOT_REQUIRED";
+  const note = item.note?.toLowerCase() ?? "";
+  if (
+    item.amount <= 0 ||
+    item.billingStatus === "NEEDS_REVIEW" ||
+    note.includes("suggested") ||
+    note.includes("pricing review") ||
+    /price[^;,.]*unknown/.test(note)
+  ) {
+    return "REVIEW_REQUIRED";
+  }
+  // Legacy operational print rows with a positive, unflagged amount remain
+  // usable until their first edit; new rows always get an explicit review state.
+  return "CONFIRMED";
+}
+
+export function isPrintPriceConfirmed(item: BillingItem): boolean {
+  return item.type !== "PRINT" || printPriceReviewState(item) === "CONFIRMED";
+}
+
 /** Display-only price certainty derived from the existing billing facts. */
 export function priceState(item: BillingItem): PriceState {
+  if (item.type === "PRINT") {
+    const review = printPriceReviewState(item);
+    if (review === "REVIEW_REQUIRED") return item.amount > 0 ? "SUGGESTED" : "PENDING";
+    if (review === "CONFIRMED") return "CONFIRMED";
+  }
   const note = item.note?.toLowerCase() ?? "";
   if (item.amount <= 0 || /amount[^;,.]*unconfirmed|price[^;,.]*unknown/.test(note)) {
     return "PENDING";

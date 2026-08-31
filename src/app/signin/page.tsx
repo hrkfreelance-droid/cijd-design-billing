@@ -125,7 +125,7 @@ function SupabaseSignIn({
       return;
     }
     try {
-      const who = await api<{ user: { role: "DESIGNER" | "BILLING" | "ACCOUNTING" | "ADMIN" } | null }>(
+      const who = await api<{ user: { role: "DESIGNER" | "BILLING" | "ACCOUNTING" | "PRINTING" | "ADMIN" } | null }>(
         "/api/session",
       );
       if (!who.user) {

@@ -42,7 +42,8 @@ export function formatDeliveryMessage(
     const total = items.reduce((sum, item) => sum + item.amount, 0);
     lines.push(`Total — ${money(total)}`);
   }
-  lines.push("Ready to invoice.");
+  const ready = items.every((item) => item.billingStatus === "READY_TO_INVOICE");
+  lines.push(ready ? "Ready to invoice." : "Price review required before invoicing.");
   lines.push(`Delivered: ${deliveredAtLabel(deliveredAt)}`);
   return lines.join("\n");
 }

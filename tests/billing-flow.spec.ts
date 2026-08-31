@@ -32,6 +32,14 @@ async function newProjectWithItem(
       data: { projectId: project.data.id, description: "Design", type, unitPrice: price },
     })
   ).json();
+  if (type === "PRINT") {
+    await signIn(page, "u_admin");
+    const reviewed = await page.request.post(`/api/printing-items/${item.data.id}/price`, {
+      data: { unitPrice: price, amount: price, confirm: true },
+    });
+    expect(reviewed.ok()).toBeTruthy();
+    await signIn(page, "u_hiroki");
+  }
   return { projectId: project.data.id as string, itemId: item.data.id as string };
 }
 
@@ -271,7 +279,10 @@ test("telegram registers a project and delivers it", async ({ request }) => {
     (i: { projectId: string }) => i.projectId === project.id,
   );
   expect(item.productionStatus).toBe("DELIVERED");
-  expect(item.billingStatus).toBe("READY_TO_INVOICE");
+  expect(item.billingStatus).toBe("NEEDS_REVIEW");
+  await request.post("/api/session", { data: { userId: "u_admin" } });
+  const notifications = await (await request.get("/api/notifications")).json();
+  expect(notifications.data.at(-1).text).toContain("Price review required before invoicing.");
 
   const unknown = await send("Unknown Project 納品済み");
   expect((await unknown.json()).data.reply).toContain("見つかりません");
@@ -347,4 +358,69 @@ test("a failed delivery notification can be resent", async ({ page }) => {
   );
   expect(item.productionStatus).toBe("DELIVERED");
   expect(item.billingStatus).toBe("READY_TO_INVOICE");
+});
+
+test("printing review confirms price before delivery and blocks unconfirmed invoices", async ({ page }) => {
+  await signIn(page, "u_admin");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Printing Workflow Check" },
+    })
+  ).json();
+  const print = await (
+    await page.request.post("/api/billing-items", {
+      data: {
+        projectId: project.data.id,
+        description: "Print ×900",
+        type: "PRINT",
+        quantity: 900,
+        unitPrice: 0.06,
+        amount: 54,
+        printSize: "Name Card",
+        priceSource: "Historical",
+        priceReason: "Previous FREE Voucher printing: 3000 = $180; 700 = $42",
+      },
+    })
+  ).json();
+  const design = await (
+    await page.request.post("/api/billing-items", {
+      data: { projectId: project.data.id, description: "Confidential Design", type: "DESIGN", unitPrice: 25 },
+    })
+  ).json();
+
+  await page.goto("/printing");
+  const card = page.getByTestId("printing-item-card").filter({ hasText: "Printing Workflow Check" });
+  await expect(card).toContainText("Print ×900");
+  await expect(card).toContainText("Suggested");
+  await expect(card).toContainText("$54");
+  await expect(page.getByText("Confidential Design")).toHaveCount(0);
+
+  await card.getByRole("button", { name: "Confirm this price" }).click();
+  const confirmed = await (await page.request.get("/api/state")).json();
+  expect(confirmed.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
+    expect.objectContaining({ productionStatus: "IN_PROGRESS", billingStatus: "NOT_READY", priceReviewStatus: "CONFIRMED" }),
+  );
+
+  await page.goto("/printing/ordering");
+  const orderingCard = page.getByTestId("printing-item-card").filter({ hasText: "Printing Workflow Check" });
+  await orderingCard.getByRole("button", { name: "Deliver" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Mark as delivered" }).click();
+  const delivered = await (await page.request.get("/api/state")).json();
+  expect(delivered.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
+    expect.objectContaining({ productionStatus: "DELIVERED", billingStatus: "READY_TO_INVOICE" }),
+  );
+
+  // A different unconfirmed print remains blocked at the invoice boundary.
+  const pending = await (
+    await page.request.post("/api/billing-items", {
+      data: { projectId: project.data.id, description: "Print pending", type: "PRINT", quantity: 2000, unitPrice: 0 },
+    })
+  ).json();
+  await page.request.post(`/api/billing-items/${pending.data.id}/delivery`);
+  const invoice = await page.request.post("/api/invoices", {
+    data: { clientId: "cl_ringer_hut", invoiceNumber: "PRINT-GATE-1", invoiceDate: "2026-08-31", billingItemIds: [pending.data.id] },
+  });
+  expect(invoice.status()).toBe(409);
+  expect((await invoice.json()).code).toBe("PRICE_REVIEW_REQUIRED");
+  expect(design.data.id).toBeTruthy();
 });
