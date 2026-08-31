@@ -525,6 +525,9 @@ export class Store implements Repository {
   setItemDelivery(id: string, delivered: boolean, actor = DEFAULT_ACTOR) {
     return this.transaction((db) => {
       const item = requireItem(db, id);
+      if (isHistoricalRecord(item)) {
+        throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.");
+      }
       if (productionAction(item) !== "DELIVER") {
         throw new RuleError(
           "WRONG_PRODUCTION_ACTION",

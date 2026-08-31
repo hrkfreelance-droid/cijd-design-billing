@@ -395,7 +395,14 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
   await expect(card).toContainText("$54");
   await expect(page.getByText("Confidential Design")).toHaveCount(0);
 
+  const priceResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/printing-items/${print.data.id}/price`) &&
+      response.request().method() === "POST" &&
+      response.status() === 200,
+  );
   await card.getByRole("button", { name: "Confirm this price" }).click();
+  await priceResponse;
   const confirmed = await (await page.request.get("/api/state")).json();
   expect(confirmed.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
     expect.objectContaining({ productionStatus: "IN_PROGRESS", billingStatus: "NOT_READY", priceReviewStatus: "CONFIRMED" }),
@@ -404,7 +411,14 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
   await page.goto("/printing/ordering");
   const orderingCard = page.getByTestId("printing-item-card").filter({ hasText: "Printing Workflow Check" });
   await orderingCard.getByRole("button", { name: "Deliver" }).click();
+  const deliveryResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/billing-items/${print.data.id}/delivery`) &&
+      response.request().method() === "POST" &&
+      response.status() === 200,
+  );
   await page.getByRole("dialog").getByRole("button", { name: "Mark as delivered" }).click();
+  await deliveryResponse;
   const delivered = await (await page.request.get("/api/state")).json();
   expect(delivered.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
     expect.objectContaining({ productionStatus: "DELIVERED", billingStatus: "READY_TO_INVOICE" }),

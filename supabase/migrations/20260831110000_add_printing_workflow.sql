@@ -86,11 +86,14 @@ create policy projects_read on public.projects for select to authenticated using
         and item.deleted_at is null
     )
   )
-  or exists (
-    select 1 from public.billing_items item
-    where item.project_id = projects.id
-      and item.production_status in ('DELIVERED', 'COMPLETED')
-      and item.deleted_at is null
+  or (
+    not is_printing()
+    and exists (
+      select 1 from public.billing_items item
+      where item.project_id = projects.id
+        and item.production_status in ('DELIVERED', 'COMPLETED')
+        and item.deleted_at is null
+    )
   )
 );
 
@@ -98,7 +101,7 @@ drop policy if exists billing_items_read on public.billing_items;
 create policy billing_items_read on public.billing_items for select to authenticated using (
   is_designer()
   or (is_printing() and type = 'PRINT')
-  or production_status in ('DELIVERED', 'COMPLETED')
+  or (not is_printing() and production_status in ('DELIVERED', 'COMPLETED'))
 );
 
 drop policy if exists billing_items_printing_update on public.billing_items;
@@ -266,6 +269,9 @@ begin
   select * into item from public.billing_items where id = p_item_id and deleted_at is null;
   if not found then
     raise exception 'NOT_FOUND' using detail = 'Billing item was not found.';
+  end if;
+  if lower(btrim(item.created_by)) = 'import' then
+    raise exception 'HISTORY_READ_ONLY' using detail = 'Imported history is read-only.';
   end if;
   if item.type <> 'PRINT' then
     raise exception 'WRONG_PRODUCTION_ACTION'
@@ -477,9 +483,18 @@ declare
   invoice public.invoices;
   item public.billing_items;
   total numeric(12, 2) := 0;
+  requested_count integer;
+  found_count integer;
 begin
   if p_invoice_number is null or btrim(p_invoice_number) = '' then raise exception 'INVALID' using detail = 'Invoice number is required.'; end if;
   if p_item_ids is null or array_length(p_item_ids, 1) is null then raise exception 'INVALID' using detail = 'Select at least one item.'; end if;
+  select count(*) into requested_count from unnest(p_item_ids) as requested(id);
+  select count(*) into found_count
+    from public.billing_items
+    where id = any (p_item_ids) and deleted_at is null;
+  if found_count <> requested_count then
+    raise exception 'NOT_FOUND' using detail = 'One or more billing items were not found.';
+  end if;
   if exists (select 1 from public.invoices where status <> 'VOID' and lower(invoice_number) = lower(btrim(p_invoice_number))) then
     raise exception 'DUPLICATE_INVOICE_NUMBER' using detail = 'That invoice number is already in use.';
   end if;

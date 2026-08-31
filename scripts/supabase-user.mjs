@@ -54,7 +54,7 @@ export function validateArgs(args) {
 function usage() {
   return [
     "Usage:",
-    "  npm run supabase:user -- --email person@example.com --role DESIGNER [--name \"Display name\"]",
+    "  npm run supabase:user -- --email person@example.com --role DESIGNER|BILLING|ACCOUNTING|PRINTING|ADMIN [--name \"Display name\"]",
     "",
     "The password is requested interactively and is never accepted as an argument.",
     "Set SUPABASE_SERVICE_ROLE_KEY only in the server-side environment or ignored .env.local.",

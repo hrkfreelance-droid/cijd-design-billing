@@ -35,6 +35,8 @@ const MATRIX: Record<Role, Permission[]> = {
     "invoice:write",
     "payment:read",
     "payment:write",
+    "printing:read",
+    "print:write",
     "notification:manage",
   ],
 };
