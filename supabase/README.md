@@ -30,13 +30,15 @@ In **SQL Editor**, run in order:
 4. `migrations/20260830165135_api_grants.sql` — explicit Data API grants for
    authenticated users and the server-side service role; anonymous access is
    not granted
+5. `migrations/20260831011623_harden_role_functions.sql` — fixed function
+   search paths, invoker-side role lookup, and Auth trigger execution rights
 
 Or with the Supabase CLI:
 
 ```bash
 npx supabase migration list --project-ref dldfhhcechzhkbvlnzld
-npx supabase db push --project-ref dldfhhcechzhkbvlnzld --dry-run
-npx supabase db push --project-ref dldfhhcechzhkbvlnzld
+npx supabase db push --project-ref dldfhhcechzhkbvlnzld --skip-vault --dry-run
+npx supabase db push --project-ref dldfhhcechzhkbvlnzld --skip-vault
 ```
 
 ## 3. Seed the real data
@@ -74,8 +76,11 @@ write to it.
 
 ## 5. Point the app at it
 
-Put the three keys in `.env.local` (see `.env.example`) and restart. The app
-switches to Supabase on its own — sign-in becomes email and password.
+Put `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
+`.env.local` (see `.env.example`) and restart. The app switches to Supabase on
+its own — sign-in becomes email and password. Add
+`SUPABASE_SERVICE_ROLE_KEY` only when enabling the server-side Telegram
+endpoint; never expose that key to the browser.
 
 ## What the database enforces on its own
 

@@ -193,3 +193,37 @@ test("monthly reconciliation CSV maps facts without trusting a guessed target", 
   assert.equal(classifyHistoryRecord(records[2]).outcome, "NEEDS_REVIEW");
   assert.match(records[0].note, /exact work date unknown/);
 });
+
+test("Supabase SQL resolves seeded local project slugs without merging the live item", () => {
+  const db = {
+    ...emptyDatabase(),
+    projects: [
+      {
+        id: "pj_rh_kids_promotion",
+        clientId: "client-rh",
+        name: "RH Kids Promotion",
+        createdBy: "Hiroki",
+      },
+    ],
+    billingItems: [
+      {
+        id: "historical-item",
+        projectId: "pj_rh_kids_promotion",
+        description: "A4 Design",
+        type: "DESIGN",
+        quantity: 1,
+        unitPrice: 75,
+        amount: 75,
+        productionStatus: "IN_PROGRESS",
+        billingStatus: "NEEDS_REVIEW",
+        createdBy: "Import",
+      },
+    ],
+  };
+
+  const sql = buildSupabaseSql(db, "Ringer Hut");
+  assert.doesNotMatch(sql, /'pj_rh_kids_promotion'/);
+  assert.match(sql, /select id from projects where client_id = \(select id from clients/);
+  assert.match(sql, /lower\(name\) = lower\('RH Kids Promotion'\)/);
+  assert.match(sql, /'historical-item'/);
+});
