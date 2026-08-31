@@ -378,6 +378,7 @@ export class Store implements Repository {
         item.description = trimmed;
       }
       const wasPrint = item.type === "PRINT";
+      const wasPriceConfirmed = wasPrint && item.priceReviewStatus === "CONFIRMED";
       if (patch.type !== undefined) item.type = patch.type;
       if (patch.quantity !== undefined) item.quantity = patch.quantity;
       if (patch.unitPrice !== undefined) item.unitPrice = patch.unitPrice;
@@ -400,6 +401,9 @@ export class Store implements Repository {
         patch.unitPrice !== undefined ||
         patch.amount !== undefined;
       if (item.type === "PRINT" && !isHistoricalRecordForStore(item) && (priceChanged || !wasPrint)) {
+        if (wasPriceConfirmed) {
+          log(db, patch.actor ?? DEFAULT_ACTOR, "price.confirmation_invalidated", "billing_item", item.id, item.description);
+        }
         item.priceReviewStatus = "REVIEW_REQUIRED";
         item.suggestedUnitPrice = item.unitPrice;
         item.suggestedAmount = item.amount;
@@ -420,6 +424,7 @@ export class Store implements Repository {
       const item = requireItem(db, id);
       assertCurrentPrintItem(item);
       const actor = patch.actor ?? DEFAULT_ACTOR;
+      const wasPriceConfirmed = item.priceReviewStatus === "CONFIRMED";
       if (patch.description !== undefined) {
         const description = patch.description.trim();
         if (!description) throw new RuleError("INVALID", "Description is required.", 400);
@@ -442,6 +447,9 @@ export class Store implements Repository {
       if (item.billingStatus === "READY_TO_INVOICE") item.billingStatus = "NEEDS_REVIEW";
       item.updatedAt = now();
       item.updatedBy = actor;
+      if (wasPriceConfirmed) {
+        log(db, actor, "price.confirmation_invalidated", "billing_item", item.id, item.description);
+      }
       log(db, actor, "print.spec.update", "billing_item", item.id, item.description);
       log(db, actor, "price.suggested", "billing_item", item.id, item.priceReason ?? item.description);
       return item;
@@ -458,6 +466,7 @@ export class Store implements Repository {
         throw new RuleError("INVALID", "A confirmed print price must be greater than zero.", 400);
       }
       const actor = input.actor ?? DEFAULT_ACTOR;
+      const wasPriceConfirmed = item.priceReviewStatus === "CONFIRMED";
       if (item.suggestedUnitPrice == null) item.suggestedUnitPrice = item.unitPrice;
       if (item.suggestedAmount == null) item.suggestedAmount = item.amount;
       item.unitPrice = money(unitPrice);
@@ -470,6 +479,9 @@ export class Store implements Repository {
       item.priceConfirmedAt = input.confirm ? now() : null;
       item.updatedAt = now();
       item.updatedBy = actor;
+      if (!input.confirm && wasPriceConfirmed) {
+        log(db, actor, "price.confirmation_invalidated", "billing_item", item.id, item.description);
+      }
       log(
         db,
         actor,

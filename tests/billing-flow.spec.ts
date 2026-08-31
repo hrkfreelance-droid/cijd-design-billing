@@ -438,3 +438,71 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
   expect((await invoice.json()).code).toBe("PRICE_REVIEW_REQUIRED");
   expect(design.data.id).toBeTruthy();
 });
+
+test("unconfirmed print price is prioritized over delivery in the designer list", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Price Review Priority Check" },
+    })
+  ).json();
+  await page.request.post("/api/billing-items", {
+    data: {
+      projectId: project.data.id,
+      description: "Print ×100",
+      type: "PRINT",
+      quantity: 100,
+      unitPrice: 0.15,
+      amount: 15,
+      printSize: "Name Card",
+      priceSource: "Historical",
+      priceReason: "Previous run: 100 = $15",
+    },
+  });
+
+  await page.goto("/designer/projects");
+  const item = page
+    .getByTestId("designer-project-group")
+    .filter({ hasText: "Price Review Priority Check" })
+    .getByTestId("designer-project-item")
+    .filter({ hasText: "Print ×100" });
+  const review = item.getByRole("link", { name: "Review price" });
+  const deliver = item.getByRole("button", { name: "Deliver" });
+
+  await expect(review).toBeVisible();
+  await expect(deliver).toBeVisible();
+  await expect(review).toHaveClass(/bg-accent/);
+  await expect(deliver).toHaveClass(/bg-panel/);
+
+  const actions = await item.locator("a,button").allTextContents();
+  expect(actions.indexOf("Review price")).toBeGreaterThanOrEqual(0);
+  expect(actions.indexOf("Deliver")).toBeGreaterThanOrEqual(0);
+  expect(actions.indexOf("Review price")).toBeLessThan(actions.indexOf("Deliver"));
+});
+
+test("designer price display does not infer certainty from note text", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Structured Price State Check" },
+    })
+  ).json();
+  await page.request.post("/api/billing-items", {
+    data: {
+      projectId: project.data.id,
+      description: "Design",
+      type: "DESIGN",
+      unitPrice: 25,
+      note: "Suggested by an old note, not a price review decision",
+    },
+  });
+
+  await page.goto("/designer/projects");
+  const item = page
+    .getByTestId("designer-project-group")
+    .filter({ hasText: "Structured Price State Check" })
+    .getByTestId("designer-project-item")
+    .filter({ hasText: "Design" });
+  await expect(item).toBeVisible();
+  await expect(item.getByText("Suggested", { exact: false })).toHaveCount(0);
+});

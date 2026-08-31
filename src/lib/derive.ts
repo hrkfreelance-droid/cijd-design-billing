@@ -64,25 +64,15 @@ export type PriceState = "CONFIRMED" | "SUGGESTED" | "PENDING";
  */
 export function printPriceReviewState(item: BillingItem): "NOT_REQUIRED" | "REVIEW_REQUIRED" | "CONFIRMED" {
   if (item.type !== "PRINT") return "NOT_REQUIRED";
-  if (item.priceReviewStatus) return item.priceReviewStatus;
   if (isHistoricalRecord(item)) return "NOT_REQUIRED";
-  const note = item.note?.toLowerCase() ?? "";
-  if (
-    item.amount <= 0 ||
-    item.billingStatus === "NEEDS_REVIEW" ||
-    note.includes("suggested") ||
-    note.includes("pricing review") ||
-    /price[^;,.]*unknown/.test(note)
-  ) {
-    return "REVIEW_REQUIRED";
-  }
-  // Legacy operational print rows with a positive, unflagged amount remain
-  // usable until their first edit; new rows always get an explicit review state.
-  return "CONFIRMED";
+  // A current PRINT row is billable only after an explicit human confirmation.
+  // NULL/NOT_REQUIRED are legacy or invalid current values, so fail closed until
+  // the controlled Printing review flow writes CONFIRMED.
+  return item.priceReviewStatus === "CONFIRMED" ? "CONFIRMED" : "REVIEW_REQUIRED";
 }
 
 export function isPrintPriceConfirmed(item: BillingItem): boolean {
-  return item.type !== "PRINT" || printPriceReviewState(item) === "CONFIRMED";
+  return item.type !== "PRINT" || isHistoricalRecord(item) || printPriceReviewState(item) === "CONFIRMED";
 }
 
 /** Display-only price certainty derived from the existing billing facts. */
@@ -91,19 +81,12 @@ export function priceState(item: BillingItem): PriceState {
     const review = printPriceReviewState(item);
     if (review === "REVIEW_REQUIRED") return item.amount > 0 ? "SUGGESTED" : "PENDING";
     if (review === "CONFIRMED") return "CONFIRMED";
+    return item.amount > 0 ? "SUGGESTED" : "PENDING";
   }
-  const note = item.note?.toLowerCase() ?? "";
-  if (item.amount <= 0 || /amount[^;,.]*unconfirmed|price[^;,.]*unknown/.test(note)) {
-    return "PENDING";
-  }
-  if (
-    item.billingStatus === "NEEDS_REVIEW" ||
-    note.includes("suggested") ||
-    note.includes("pricing review")
-  ) {
-    return "SUGGESTED";
-  }
-  return "CONFIRMED";
+  if (item.amount <= 0) return "PENDING";
+  // Creative items do not use the Printing review enum. NEEDS_REVIEW is the
+  // structured signal that their displayed amount still needs human review.
+  return item.billingStatus === "NEEDS_REVIEW" ? "SUGGESTED" : "CONFIRMED";
 }
 
 /** Kept for older callers: a project is terminal when every live item is done. */
