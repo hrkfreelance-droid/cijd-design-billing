@@ -16,6 +16,7 @@ import {
   Input,
   PageHeader,
   Sheet,
+  StatusTag,
 } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
 import { sum } from "@/lib/derive";
@@ -55,6 +56,15 @@ export default function OfficeBillingPage() {
       .sort((a, b) => sum(b.items) - sum(a.items));
   }, [scope]);
 
+  const reviewItems = useMemo(
+    () =>
+      scope?.items.filter(
+        (item) =>
+          item.productionStatus === "DELIVERED" && item.billingStatus === "NEEDS_REVIEW",
+      ) ?? [],
+    [scope],
+  );
+
   if (!scope || !allowed) return <PageSkeleton />;
 
   return (
@@ -76,8 +86,60 @@ export default function OfficeBillingPage() {
         </div>
       )}
 
+      {reviewItems.length > 0 && <ReviewQueue items={reviewItems} />}
+
       {user && can(user.role, "notification:manage") && <Notifications />}
     </div>
+  );
+}
+
+/** Delivered, but not safe to invoice until the source facts are confirmed. */
+function ReviewQueue({ items }: { items: BillingItem[] }) {
+  const { t } = useI18n();
+  const scope = useScope();
+
+  return (
+    <section className="pt-8">
+      <div className="px-5 pb-2 sm:px-8">
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
+          {t("billing.review")}
+        </h2>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-faint">
+          {t("billing.reviewHint")}
+        </p>
+      </div>
+      <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
+        {items.map((item) => {
+          const project = scope?.idx.projectById.get(item.projectId);
+          const client = project ? scope?.idx.clientById.get(project.clientId) : undefined;
+          const unknownAmount =
+            item.amount === 0 && /amount[^;,.]*unconfirmed/i.test(item.note ?? "");
+          return (
+            <div key={item.id} className="flex flex-col gap-2 px-5 py-3.5 sm:px-6">
+              <div className="flex items-start gap-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14.5px] font-medium">
+                    {project?.name ?? ""}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[12.5px] text-faint">
+                    {client?.name} · {item.description}
+                  </span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block text-[14.5px] tnum">
+                    {unknownAmount ? t("billing.amountUnknown") : money(item.amount)}
+                  </span>
+                  <StatusTag status="NEEDS_REVIEW" className="mt-1 justify-end" />
+                </span>
+              </div>
+              {item.note && (
+                <p className="text-[12.5px] leading-relaxed text-muted">{item.note}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

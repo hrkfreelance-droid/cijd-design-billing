@@ -105,6 +105,8 @@ localStorageや `.data/runtime/db.json` を業務DBとして使いません。�
 | `npm run test:import` | 過去履歴Importの判定・リンクテスト |
 | `npm run telegram` | Telegram Bot（long polling。公開 URL 不要） |
 | `npm run import:history` | 過去請求履歴の CSV 取り込み（後述） |
+| `npm run test:auth` | Auth provisioning引数の安全性テスト |
+| `npm run supabase:user -- ...` | 実メールアドレスでAuth Userを作成（trusted terminalのみ） |
 | `npm run shots` | 主要画面のスクリーンショット出力 |
 
 `npm test` は専用ポートと使い捨てデータでサーバーを起動するため、実行前に `npm run dev` を停止してください。
@@ -130,10 +132,10 @@ localStorageや `.data/runtime/db.json` を業務DBとして使いません。�
 本番接続は次の順序で行います。
 
 1. Supabase Projectを作成
-2. migrationsを実行（`0001_init.sql` → `0002_rls.sql` → `0003_functions.sql`）
+2. migrationsを実行（`0001_init.sql` → `0002_rls.sql` → `0003_functions.sql` → `20260830165135_api_grants.sql` → `20260831011623_harden_role_functions.sql` → `20260831012607_revoke_anon_access.sql` → `20260831015410_enforce_active_users_and_audit.sql` → `20260831020942_restrict_office_billing_item_updates.sql`）
 3. `seed.sql`を実行
-4. Supabase Auth Userを作成
-5. `users`へRoleを割り当て
+4. Supabase Auth Userを作成（Dashboardまたは `npm run supabase:user -- --email ... --role ...`）
+5. `public.users`のname / Role / activeを確認
 6. `.env.local`へSupabase credentialsを設定
 7. Applicationを起動
 8. Designer loginを確認
@@ -142,6 +144,8 @@ localStorageや `.data/runtime/db.json` を業務DBとして使いません。�
 11. RLSでRole別の取得範囲を確認
 
 Supabase接続後はlocalStorageや `.data/runtime/db.json` を業務データの保存先にしません。
+日々の運用、Authユーザーの追加・停止・パスワード再設定、NEEDS_REVIEW、
+障害時、バックアップ・復旧は [`docs/OPERATIONS.md`](docs/OPERATIONS.md) にまとめています。
 
 ## Telegram setup checklist
 
@@ -173,9 +177,10 @@ npm run import:history -- history.csv "Ringer Hut"
 月次照合形式（`client,month,project,billing_item,amount_usd,invoice_fact,payment_fact,target_status`）も取り込めます。月しか確定していない行は月バケットとして保持し、正確な作業日は不明のまま注記します。
 実行するとローカルストアへ取り込み、Supabase 用の SQL も生成します。
 
-## Not Implemented Yet
+## Remaining production prerequisites
 
 - **Ringer Hut の 2〜8 月の過去請求履歴**：今回の実データをローカル候補へ取り込み済み。Supabase本番への反映とAccounting確認は未実施
-- **Supabase プロジェクト本体**：SQL・RLS・関数・seed・接続コードは完成済み。credentials 設定後に実接続の検証が必要
+- **Supabase Auth User**：実際の社内メールアドレスで4 RoleのUserを作成し、各ログインとRLSを確認する必要があります
+- **Supabase本番接続の最終確認**：SQL・RLS・関数・seed・接続コードは準備済み。実ユーザー作成後にRole別ログインを確認してください
 - **納品通知の送信先**：ダイキテラシマさんの Chat ID 未確認（架空値は入れていません）
 - Invoice PDF、会計ソフト・銀行 API 連携、ファイル添付の実体

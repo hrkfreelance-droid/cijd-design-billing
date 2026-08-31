@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit --incremental false",
     "test": "playwright test",
     "test:import": "node --test scripts/import-history.test.mjs",
+    "test:auth": "node --test scripts/supabase-user.test.mjs",
+    "supabase:user": "node scripts/supabase-user.mjs",
     "shots": "node scripts/shots.mjs",
     "telegram": "node scripts/telegram-bot.mjs",
     "import:history": "node scripts/import-history.mjs"

@@ -28,6 +28,7 @@ export async function currentUser(): Promise<SessionUser | null> {
       .from("users")
       .select("id, name, role")
       .eq("id", data.user.id)
+      .eq("active", true)
       .maybeSingle();
     if (!profile.data) return null;
     return {

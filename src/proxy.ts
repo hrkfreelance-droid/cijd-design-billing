@@ -4,8 +4,11 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * Keeps the Supabase session cookie fresh so server components see a valid
  * session. Does nothing when Supabase is not configured.
+ *
+ * Next.js 16 calls this request boundary `proxy`; route handlers and layouts
+ * still perform their own authorization checks.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) return NextResponse.next();

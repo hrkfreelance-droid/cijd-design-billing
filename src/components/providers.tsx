@@ -19,6 +19,8 @@ import { translate, type Locale, type MessageKey } from "@/lib/i18n";
 import type { User } from "@/lib/types";
 import * as prefs from "@/lib/prefs";
 import type { Snapshot } from "@/lib/types";
+import { hasSupabaseBrowserConfig, isDemoMode } from "@/lib/runtime";
+import { supabaseBrowserClient } from "@/lib/supabase/browser";
 
 /* ------------------------------------------------------------------ api */
 
@@ -185,7 +187,9 @@ export function Providers({ children }: { children: ReactNode }) {
       }>("/api/session").catch(() => ({
         user: null,
         users: [],
-        auth: "local" as const,
+        // A production/Supabase outage must not fall back to the local user
+        // picker. The picker is only valid when Supabase is not configured.
+        auth: hasSupabaseBrowserConfig ? ("supabase" as const) : ("local" as const),
       }));
       if (!live) return;
       setSession(who);
@@ -202,6 +206,66 @@ export function Providers({ children }: { children: ReactNode }) {
     })();
     return () => {
       live = false;
+    };
+  }, [mounted]);
+
+  // Keep the UI aligned with Supabase Auth when a token expires, is refreshed,
+  // or the user signs out in another tab. The server still re-reads the role
+  // from public.users for every protected request.
+  useEffect(() => {
+    if (!mounted || isDemoMode || !hasSupabaseBrowserConfig) return;
+    const client = supabaseBrowserClient();
+    if (!client) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const sync = () => {
+      void api<{
+        user: SessionUser | null;
+        users: User[];
+        auth: "local" | "supabase";
+      }>("/api/session")
+        .then(async (who) => {
+          if (!live) return;
+          setSession(who);
+          setSessionReady(true);
+          if (!who.user) {
+            setSnapshot(null);
+            setLoading(false);
+            return;
+          }
+          const data = await api<Snapshot>("/api/state").catch(() => null);
+          if (!live) return;
+          if (data) setSnapshot(data);
+          else setError("OFFLINE");
+          setLoading(false);
+        })
+        .catch(() => {
+          if (!live) return;
+          setSession((current) => ({ ...current, user: null, auth: "supabase" }));
+          setSnapshot(null);
+          setError("OFFLINE");
+          setLoading(false);
+        });
+    };
+
+    const { data } = client.auth.onAuthStateChange((event) => {
+      if (!live) return;
+      if (event === "SIGNED_OUT") {
+        setSession((current) => ({ ...current, user: null, auth: "supabase" }));
+        setSnapshot(null);
+        setLoading(false);
+        return;
+      }
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        timer = setTimeout(sync, 0);
+      }
+    });
+
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+      data.subscription.unsubscribe();
     };
   }, [mounted]);
 
