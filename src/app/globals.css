@@ -85,41 +85,47 @@
 }
 
 /* ------------------------------------------------------------------ base */
-html {
-  -webkit-text-size-adjust: 100%;
-}
+/* These belong in the base layer. Unlayered rules outrank every layered
+   utility, so `font: inherit` on a bare `button` was beating `text-[12.5px]`
+   and `font-medium`: every button in the app rendered at the inherited 16px
+   / 400 while the same label on an anchor honoured its classes. */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
 
-body {
-  background: var(--c-bg);
-  color: var(--c-text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.01em;
-  overscroll-behavior-y: none;
-}
+  body {
+    background: var(--c-bg);
+    color: var(--c-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+    overscroll-behavior-y: none;
+  }
 
-::selection {
-  background: color-mix(in srgb, var(--c-accent) 22%, transparent);
-}
+  ::selection {
+    background: color-mix(in srgb, var(--c-accent) 22%, transparent);
+  }
 
-:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--c-accent) 65%, transparent);
-  outline-offset: 2px;
-  border-radius: 8px;
-}
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--c-accent) 65%, transparent);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
 
-input,
-select,
-textarea {
-  font: inherit;
-  letter-spacing: inherit;
-  color: inherit;
-}
+  input,
+  select,
+  textarea {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+  }
 
-button {
-  font: inherit;
-  letter-spacing: inherit;
+  button {
+    font: inherit;
+    letter-spacing: inherit;
+  }
 }
 
 /* Numbers must line up in columns. */
