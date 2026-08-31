@@ -42,8 +42,10 @@ existing legacy `DELIVERED` records preserved.
 
 `20260831120000_explicit_price_review_audit.sql` adds trigger-only audit entries
 for newly suggested prices, direct structured price-review transitions, and
-confirmation invalidation. It does not backfill or rewrite existing business
-rows.
+confirmation invalidation. It also closes the existing Billing update guard's
+gap around PRINT specification and price-review columns, so Billing cannot
+confirm a print price through a direct table update. It does not backfill or
+rewrite existing business rows.
 
 ## Verification boundary
 
