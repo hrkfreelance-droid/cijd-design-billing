@@ -125,10 +125,13 @@ const REVIEW_BUTTON =
  */
 function specLine(item: BillingItem, typeLabel: string): string {
   const parts: string[] = [];
-  // Descriptions are stored in English while the type label is localised, so
-  // "Print" under 印刷 has to be caught by the stored type too, not just the label.
+  // Real descriptions lead with the type ("Print x100", "Design & Map"), and
+  // are stored in English while the label is localised — so the stored type has
+  // to be matched too, or 印刷 reappears beside a name that already says Print.
   const name = item.description.trim().toLowerCase();
-  if (name !== typeLabel.trim().toLowerCase() && name !== item.type.toLowerCase()) {
+  const leadsWithType = (word: string) =>
+    name === word || name.startsWith(`${word} `) || name.startsWith(`${word}×`);
+  if (!leadsWithType(typeLabel.trim().toLowerCase()) && !leadsWithType(item.type.toLowerCase())) {
     parts.push(typeLabel);
   }
   if (item.quantity !== 1) {

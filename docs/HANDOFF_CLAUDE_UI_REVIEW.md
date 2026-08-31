@@ -42,6 +42,8 @@ Both locales (JA / EN), light theme, at 1440 / 390 / 320.
 ## Changed files
 
 ```
+.gitignore
+eslint.config.mjs
 playwright.config.ts
 src/app/globals.css
 src/app/designer/page.tsx
@@ -170,7 +172,7 @@ to `/printing` and sees only printing navigation.
 | `npm run lint` | PASS |
 | `npm run typecheck` | PASS |
 | `npm run build` | PASS |
-| `npx playwright test` | **PASS — 11/11** |
+| `npx playwright test` | **PASS — 11/11** (with dev server running) |
 | `npm run test:import` | PASS — 6/6 |
 | `npm run test:auth` | PASS — 1/1 |
 
@@ -180,7 +182,14 @@ Cause: `.env.local` now holds real Supabase credentials, so the test server
 booted in Supabase mode, where the development sign-in the suite depends on is
 correctly refused. `playwright.config.ts` now blanks the three Supabase vars for
 the test server, keeping the run on its throwaway store as the config always
-intended. No test expectation was weakened.
+intended.
+
+It also builds into its own `.next-test` dist dir. It previously shared
+`.next-local` with `npm run dev`, and Next refuses to start a second dev server
+on the same dist dir — so the suite only passed when no dev server was up. It
+now runs either way; verified passing with the dev server on port 3000 live.
+
+No test expectation was weakened.
 
 ## Current business data assumptions
 
@@ -203,10 +212,7 @@ intended. No test expectation was weakened.
 2. **Print spec fields are not editable from the designer side.** `printSize`,
    `priceSource`, `priceReason` are visible there but only editable in the
    Printing workspace. Probably correct by role design; confirm it is intended.
-3. **`playwright.config.ts` builds into `.next-local`**, the same dist dir as
-   `npm run dev`. Running the suite while a dev server is up makes them fight
-   over it. Worth giving the test server its own dist dir.
-4. **`priceState()` infers state from free-text notes** (`includes("suggested")`)
+3. **`priceState()` infers state from free-text notes** (`includes("suggested")`)
    for rows without an explicit `priceReviewStatus`. Fine as a compatibility
    path, fragile as a long-term rule.
 
@@ -225,13 +231,12 @@ wider-than-viewport element is the client bar, which scrolls by design.
 
 ## Remaining recommendations
 
-1. Give the Playwright server its own dist dir (known issue 3).
-2. Decide the legacy `DELIVERED`-creative migration (known issue 1).
-3. Move `priceReviewStatus` to always-explicit and retire the note-sniffing
+1. Decide the legacy `DELIVERED`-creative migration (known issue 1).
+2. Move `priceReviewStatus` to always-explicit and retire the note-sniffing
    fallback in `priceState()`.
-4. Office and Archive were left largely alone; give them the same amount-column
+3. Office and Archive were left largely alone; give them the same amount-column
    and status treatment when convenient.
-5. Add a Playwright case asserting *Review price* outranks *Deliver* while a
+4. Add a Playwright case asserting *Review price* outranks *Deliver* while a
    price is unconfirmed, so the hierarchy cannot silently regress.
 
 ## Do not regress
