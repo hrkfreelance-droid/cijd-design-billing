@@ -12,6 +12,7 @@ import {
 
 import { CheckIcon, ChevronDown } from "@/components/icons";
 import { useI18n } from "@/components/providers";
+import type { MessageKey } from "@/lib/i18n";
 import type { FlowStatus } from "@/lib/types";
 
 /* --------------------------------------------------------------- button */
@@ -42,7 +43,7 @@ export function Button({
     <button
       {...props}
       className={`inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
-        size === "sm" ? "h-8 px-3 text-[12.5px]" : "h-10 px-4 text-[13.5px]"
+        size === "sm" ? "h-9 min-w-[104px] px-3.5 text-[12.5px]" : "h-10 px-4 text-[13.5px]"
       } ${full ? "w-full" : ""} ${VARIANTS[variant]} ${className}`}
     />
   );
@@ -142,6 +143,46 @@ export function StatusTag({
     >
       <span className={`h-[6px] w-[6px] shrink-0 rounded-full ${STATUS_COLOR[status]}`} />
       {t(`status.${status}`)}
+    </span>
+  );
+}
+
+export type WorkStatus = FlowStatus | "COMPLETED" | "DELIVERED";
+
+const WORK_STATUS_KEY: Record<WorkStatus, MessageKey> = {
+  IN_PROGRESS: "status.IN_PROGRESS",
+  READY_TO_INVOICE: "status.READY_TO_INVOICE",
+  INVOICED: "status.INVOICED",
+  PAID: "status.PAID",
+  NEEDS_REVIEW: "status.NEEDS_REVIEW",
+  COMPLETED: "projects.completed",
+  DELIVERED: "projects.delivered",
+};
+
+const WORK_STATUS_PILL: Record<WorkStatus, string> = {
+  IN_PROGRESS: "bg-fill text-muted",
+  READY_TO_INVOICE: "bg-ready/10 text-ready",
+  INVOICED: "bg-awaiting/10 text-awaiting",
+  PAID: "bg-paid/10 text-paid",
+  NEEDS_REVIEW: "bg-review/10 text-review",
+  COMPLETED: "bg-paid/10 text-paid",
+  DELIVERED: "bg-ready/10 text-ready",
+};
+
+/** Compact, text-first status treatment for dense work lists. */
+export function StatusPill({
+  status,
+  className = "",
+}: {
+  status: WorkStatus;
+  className?: string;
+}) {
+  const { t } = useI18n();
+  return (
+    <span
+      className={`inline-flex h-6 w-fit max-w-full items-center rounded-full px-2.5 text-[11px] font-medium leading-none ${WORK_STATUS_PILL[status]} ${className}`}
+    >
+      <span className="truncate">{t(WORK_STATUS_KEY[status])}</span>
     </span>
   );
 }

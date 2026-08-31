@@ -45,7 +45,7 @@
   --c-line-strong: rgba(255, 255, 255, 0.2);
   --c-accent: #3b90ff;
   --c-accent-hover: #559dff;
-  --c-on-accent: #06121f;
+  --c-on-accent: #ffffff;
 
   --c-progress: #8e8e93;
   --c-ready: #3b90ff;
@@ -109,11 +109,15 @@ body {
 
 input,
 select,
-textarea,
-button {
+textarea {
   font: inherit;
   letter-spacing: inherit;
   color: inherit;
+}
+
+button {
+  font: inherit;
+  letter-spacing: inherit;
 }
 
 /* Numbers must line up in columns. */

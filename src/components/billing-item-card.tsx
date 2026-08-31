@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 
-import { ChevronRight } from "@/components/icons";
 import { ItemProductionAction } from "@/components/delivery";
 import { useI18n } from "@/components/providers";
+import { Amount, StatusPill, type WorkStatus } from "@/components/ui";
 import { isProductionComplete, priceState } from "@/lib/derive";
 import { money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
@@ -28,68 +28,66 @@ export function BillingItemCard({
     item.quantity !== 1
       ? `${item.quantity} × ${money(item.unitPrice)}`
       : item.note?.trim() || typeLabel;
-  const productionLabel = finished
+  const workStatus: WorkStatus = finished
     ? item.productionStatus === "DELIVERED"
-      ? t("projects.delivered")
-      : t("projects.completed")
-    : t("projects.inProgress");
+      ? "DELIVERED"
+      : "COMPLETED"
+    : state === "SUGGESTED" || state === "PENDING"
+      ? "NEEDS_REVIEW"
+      : "IN_PROGRESS";
 
   const info = (
-    <div className="flex min-w-0 flex-1 items-start gap-3 text-left">
+    <div className="min-w-0 flex-1 text-left">
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-faint">
-          {typeLabel}
-        </p>
         <p className="mt-1 truncate text-[15px] font-medium tracking-[-0.008em]">
           {item.description}
         </p>
-        <p className="mt-1 truncate text-[12.5px] text-muted">{detail}</p>
+        <p className="mt-1 truncate text-[12.5px] text-muted">{typeLabel} · {detail}</p>
       </div>
       <PriceStateLabel item={item} />
-      {!onOpen && <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-faint" />}
     </div>
   );
 
   return (
-    <article data-testid="designer-project-item" className="py-4">
-      {onOpen ? (
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex w-full items-start transition-colors duration-150 hover:bg-fill active:bg-fill"
-        >
-          {info}
-        </button>
-      ) : (
-        <Link
-          href={`/designer/projects/${projectId}`}
-          className="flex w-full items-start transition-colors duration-150 hover:bg-fill active:bg-fill"
-        >
-          {info}
-        </Link>
-      )}
+    <article data-testid="designer-project-item" className="py-5">
+      <div className="flex items-start justify-between gap-4">
+        <StatusPill status={workStatus} />
+        <Amount value={item.amount > 0 ? money(item.amount) : "—"} className="shrink-0 text-[15px]" />
+      </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line pt-3">
-        <span className={`inline-flex items-center gap-1.5 text-[12.5px] ${finished ? "text-paid" : "text-muted"}`}>
-          <span aria-hidden>{finished ? "✓" : "○"}</span>
-          {productionLabel}
-        </span>
+      <div className="mt-3 flex items-end justify-between gap-4 max-sm:flex-col max-sm:items-stretch">
+        {onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="min-w-0 flex-1 text-left transition-colors duration-150 hover:text-muted"
+          >
+            {info}
+          </button>
+        ) : (
+          <Link
+            href={`/designer/projects/${projectId}`}
+            className="min-w-0 flex-1 text-left transition-colors duration-150 hover:text-muted"
+          >
+            {info}
+          </Link>
+        )}
 
         {!history && (
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 max-sm:w-full">
             {state !== "CONFIRMED" && (
               onOpen ? (
                 <button
                   type="button"
                   onClick={onOpen}
-                  className="inline-flex min-h-8 items-center rounded-full px-2.5 text-[12px] font-medium text-review transition-colors hover:bg-review/10"
+                  className="inline-flex h-8 items-center rounded-full px-2.5 text-[12px] font-medium text-review transition-colors hover:bg-review/10"
                 >
                   {t("projects.reviewPrice")}
                 </button>
               ) : (
                 <Link
                   href={`/designer/projects/${projectId}?item=${encodeURIComponent(item.id)}`}
-                  className="inline-flex min-h-8 items-center rounded-full px-2.5 text-[12px] font-medium text-review transition-colors hover:bg-review/10"
+                  className="inline-flex h-8 items-center rounded-full px-2.5 text-[12px] font-medium text-review transition-colors hover:bg-review/10"
                 >
                   {t("projects.reviewPrice")}
                 </Link>
@@ -118,23 +116,17 @@ function PriceStateLabel({ item }: { item: BillingItem }) {
 
   if (state === "PENDING") {
     return (
-      <span className="flex w-[100px] shrink-0 flex-col items-end gap-0.5 text-right">
-        <span className="text-[13px] font-medium text-review">{t("projects.pricePending")}</span>
-        <span className="text-[11px] text-review">{t("projects.priceReview")}</span>
+      <span className="mt-2 inline-flex max-w-full rounded-full bg-review/10 px-2 py-1 text-[11px] font-medium text-review">
+        <span className="truncate">{t("projects.pricePending")} · {t("projects.priceReview")}</span>
       </span>
     );
   }
 
   return (
-    <span className="flex w-[100px] shrink-0 flex-col items-end gap-0.5 text-right">
-      <span className={`tnum text-[13.5px] font-medium ${state === "SUGGESTED" ? "text-review" : "text-text"}`}>
-        {t(state === "SUGGESTED" ? "projects.priceSuggested" : "projects.priceConfirmed", {
-          amount: money(item.amount),
-        })}
+    <span className={`mt-2 inline-flex max-w-full rounded-full px-2 py-1 text-[11px] font-medium ${state === "SUGGESTED" ? "bg-review/10 text-review" : "bg-fill text-muted"}`}>
+      <span className="truncate">
+        {state === "SUGGESTED" ? `${t("projects.priceSuggested", { amount: money(item.amount) })} · ${t("projects.priceReview")}` : t("projects.priceConfirmed", { amount: money(item.amount) })}
       </span>
-      {state === "SUGGESTED" && (
-        <span className="text-[11px] text-review">{t("projects.priceReview")}</span>
-      )}
     </span>
   );
 }

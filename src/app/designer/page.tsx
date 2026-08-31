@@ -6,7 +6,7 @@ import { ItemProductionAction } from "@/components/delivery";
 import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, StatusDot, StatusTag } from "@/components/ui";
+import { Amount, EmptyState, PageHeader, StatusDot, StatusPill } from "@/components/ui";
 import { flowStatus, isOperationalRecord, isProductionComplete, sum } from "@/lib/derive";
 import { longDate, money, todayIso } from "@/lib/format";
 import type { FlowStatus } from "@/lib/types";
@@ -157,20 +157,22 @@ function Row({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-3 px-5 py-3.5 sm:px-6">
-      <StatusTag status={status} className="shrink-0" />
-      <Link href={`/designer/projects/${projectId}`} className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">{title}</span>
-        <span className="mt-0.5 flex items-center gap-2 truncate text-[12.5px] text-faint">
-          {meta}
-        </span>
-      </Link>
-      <Amount value={amount} className="text-[15px]" />
-      {action ?? (
-        <Link href={`/designer/projects/${projectId}`} aria-hidden>
-          <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+    <div className="px-5 py-5 sm:px-6">
+      <div className="flex items-start justify-between gap-4">
+        <StatusPill status={status} />
+        <Amount value={amount} className="shrink-0 text-[15px]" />
+      </div>
+      <div className="mt-3 flex items-end justify-between gap-4">
+        <Link href={`/designer/projects/${projectId}`} className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">{title}</span>
+          <span className="mt-1 block truncate text-[12.5px] text-faint">{meta}</span>
         </Link>
-      )}
+        {action ?? (
+          <Link href={`/designer/projects/${projectId}`} aria-hidden>
+            <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

@@ -18,7 +18,7 @@ import {
   PageHeader,
   Select,
   Sheet,
-  StatusTag,
+  StatusPill,
 } from "@/components/ui";
 import {
   isOperationalRecord,
@@ -116,7 +116,7 @@ export default function ProjectsPage() {
                       {client?.name} · {monthLabel(project.date.slice(0, 7), locale)} · {t("projects.items", { count: items.length })}
                     </p>
                   </div>
-                  {status && <StatusTag status={status} className="text-[11.5px] uppercase tracking-[0.04em]" />}
+                  {status && <StatusPill status={status} />}
                 </div>
               </Link>
 

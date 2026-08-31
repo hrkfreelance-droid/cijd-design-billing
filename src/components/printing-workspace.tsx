@@ -6,7 +6,7 @@ import { ItemProductionAction } from "@/components/delivery";
 import { api, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
-import { Button, EmptyState, Field, Input, PageHeader, Sheet } from "@/components/ui";
+import { Amount, Button, EmptyState, Field, Input, PageHeader, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
 import {
   isHistoricalRecord,
   isProductionComplete,
@@ -121,6 +121,11 @@ function PrintItemCard({
   const suggestedAmount = item.suggestedAmount ?? item.amount;
   const confirmed = review === "CONFIRMED";
   const finished = isProductionComplete(item);
+  const workStatus: WorkStatus = finished
+    ? "DELIVERED"
+    : review === "REVIEW_REQUIRED"
+      ? "NEEDS_REVIEW"
+      : "IN_PROGRESS";
 
   const confirm = async () => {
     await run(
@@ -146,27 +151,32 @@ function PrintItemCard({
     >
       <div className="px-5 py-5 sm:px-6">
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-[17px] font-semibold tracking-[-0.012em]">
-              {project?.name ?? ""}
-            </h2>
-            <p className="mt-1 truncate text-[12.5px] text-faint">
-              {client?.name} · {project ? mediumDate(project.date, locale) : ""}
-            </p>
-          </div>
+          <StatusPill status={workStatus} />
           <span className="shrink-0 text-right">
             <span className="block text-[11px] font-medium uppercase tracking-[0.08em] text-faint">
-              {t("printing.itemType")}
+              {confirmed ? t("printing.confirmed") : t("printing.suggested")}
             </span>
-            <span className="mt-1 block text-[15px] font-semibold tnum">
-              ×{item.quantity}
-            </span>
+            <Amount
+              value={
+                (confirmed ? item.amount : suggestedAmount) > 0
+                  ? money(confirmed ? item.amount : suggestedAmount)
+                  : t("printing.pricePending")
+              }
+              className="mt-1 block text-[15px] font-semibold"
+            />
           </span>
         </div>
 
-        <div className="mt-4 border-t border-line pt-4">
-          <p className="text-[15px] font-medium tracking-[-0.006em]">{item.description}</p>
-          <p className="mt-1 text-[12.5px] text-muted">PRINT ×{item.quantity}</p>
+        <div className="mt-3 min-w-0">
+          <h2 className="truncate text-[17px] font-semibold tracking-[-0.012em]">
+            {project?.name ?? ""}
+          </h2>
+          <p className="mt-1 truncate text-[12.5px] text-faint">
+            {client?.name} · {project ? mediumDate(project.date, locale) : ""}
+          </p>
+          <p className="mt-3 truncate text-[15px] font-medium tracking-[-0.006em]">
+            {item.description} · PRINT ×{item.quantity}
+          </p>
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-line pt-4 sm:grid-cols-4">
@@ -190,14 +200,6 @@ function PrintItemCard({
         </div>
 
         <div className="mt-5 space-y-2 border-t border-line pt-4 text-[13px]">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className={`font-medium ${confirmed ? "text-paid" : "text-review"}`}>
-              {confirmed ? `✓ ${t("printing.confirmed")}` : `! ${t("printing.reviewRequired")}`}
-            </span>
-            <span className="text-muted">
-              {finished ? t("printing.deliveredTitle") : t("projects.inProgress")}
-            </span>
-          </div>
           {item.priceSource && (
             <p className="text-muted">
               <span className="text-faint">{t("printing.priceSource")}:</span> {item.priceSource}
@@ -222,7 +224,7 @@ function PrintItemCard({
       </div>
 
       {!history && (
-        <div className="flex flex-wrap items-center gap-2 border-t border-line px-5 py-3.5 sm:px-6">
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-line px-5 py-3.5 sm:px-6">
           <Button variant="secondary" size="sm" onClick={() => setEditing(true)} disabled={busy}>
             {t("printing.editSpec")}
           </Button>
