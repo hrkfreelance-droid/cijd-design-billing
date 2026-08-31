@@ -93,6 +93,10 @@ npm run dev          # http://localhost:3000
 `.next-local` に出力し、既存の `.next` も保全します。
 サインイン画面で担当（Hiroki / Billing Staff / Accounting / Admin）を選ぶと、Role ごとのワークスペースに入ります。
 
+## Codespaces Preview
+
+`integrate-production-workspace` でCodespaceを作成し、Terminalで `npm run preview:codespaces` を実行してください。Forwarded Port 3000をOpen in Browserすると、Supabase・Telegramなしのbrowser-only Demo ModeでUIを確認できます。Port visibilityはPrivateです。
+
 開発時にSupabase credentialsが無い場合は画面に `LOCAL MODE` と表示されます。
 `NODE_ENV=production` ではSupabase credentialsが無い場合にデータ層がfail closedし、
 localStorageや `.data/runtime/db.json` を業務DBとして使いません。接続後は開発者とAdminに

@@ -1,0 +1,13 @@
+{
+  "name": "CIJD DESIGN Billing Preview",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+  "postCreateCommand": "npm ci",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "CIJD DESIGN Billing Preview",
+      "onAutoForward": "openBrowser",
+      "visibility": "private"
+    }
+  }
+}
