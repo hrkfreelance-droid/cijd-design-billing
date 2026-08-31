@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { ChevronRight, PlusIcon, SearchIcon } from "@/components/icons";
+import { PlusIcon, SearchIcon } from "@/components/icons";
 import { api, useClientFilter, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
@@ -17,11 +17,16 @@ import {
   PageHeader,
   Select,
   Sheet,
-  StatusDot,
   StatusTag,
 } from "@/components/ui";
-import { isOperationalRecord, projectStatus, sum } from "@/lib/derive";
-import { money, shortDate } from "@/lib/format";
+import {
+  isOperationalRecord,
+  priceState,
+  projectStatus,
+  sum,
+} from "@/lib/derive";
+import { money, monthLabel } from "@/lib/format";
+import type { BillingItem } from "@/lib/types";
 
 export default function ProjectsPage() {
   const scope = useScope();
@@ -36,20 +41,21 @@ export default function ProjectsPage() {
       .map((project) => {
         const items = (scope.idx.itemsByProject.get(project.id) ?? []).filter(
           isOperationalRecord,
-        );
+        ).filter((item) => item.productionStatus !== "DELIVERED");
         return {
           project,
           items,
           client: scope.idx.clientById.get(project.clientId),
           status: projectStatus(items),
-          total: sum(items),
         };
       })
       .filter(({ items }) => items.length > 0)
-      .filter(({ project, client }) =>
+      .filter(({ project, client, items }) =>
         term
           ? project.name.toLowerCase().includes(term) ||
-            (client?.name ?? "").toLowerCase().includes(term)
+            (client?.name ?? "").toLowerCase().includes(term) ||
+            // Keep search at the project level while still finding an item.
+            items.some((item) => item.description.toLowerCase().includes(term))
           : true,
       )
       .sort((a, b) => b.project.date.localeCompare(a.project.date));
@@ -88,54 +94,132 @@ export default function ProjectsPage() {
       ) : rows.length === 0 ? (
         <EmptyState title={t("projects.noMatch")} />
       ) : (
-        <>
-          <div className="hidden px-6 pb-1.5 text-[11px] font-medium uppercase tracking-[0.06em] text-faint sm:mx-8 sm:flex sm:items-center sm:gap-4 sm:px-6">
-            <span className="w-[84px] shrink-0">{t("common.date")}</span>
-            <span className="flex-1">{t("common.project")}</span>
-            <span className="w-[140px] shrink-0">{t("common.status")}</span>
-            <span className="w-[84px] shrink-0 text-right">{t("common.amount")}</span>
-            <span className="w-4 shrink-0" />
-          </div>
-          <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
-            {rows.map(({ project, client, status, total }) => (
+        <div className="space-y-6 px-5 pb-8 sm:px-8">
+          {rows.map(({ project, client, status, items }) => (
+            <section
+              key={project.id}
+              data-testid="designer-project-group"
+              className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
+            >
               <Link
-                key={project.id}
                 href={`/designer/projects/${project.id}`}
-                className="flex items-center gap-3 px-5 py-3.5 transition-colors duration-150 hover:bg-fill active:bg-fill sm:gap-4 sm:px-6"
+                className="block border-b border-line px-5 py-5 transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
               >
-                <span className="tnum hidden w-[84px] shrink-0 text-[13px] text-faint sm:block">
-                  {shortDate(project.date, locale)}
-                </span>
-                {status && (
-                  <span className="sm:hidden">
-                    <StatusDot status={status} />
-                  </span>
-                )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">
-                    {project.name}
-                  </span>
-                  <span className="mt-0.5 block truncate text-[12.5px] text-faint sm:hidden">
-                    {[client?.name, shortDate(project.date, locale)]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                  <span className="mt-0.5 hidden truncate text-[12.5px] text-faint sm:block">
-                    {client?.name}
-                  </span>
-                </span>
-                <span className="hidden w-[140px] shrink-0 sm:block">
-                  {status && <StatusTag status={status} />}
-                </span>
-                <Amount value={money(total)} className="w-[84px] shrink-0 text-right text-[15px]" />
-                <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-[18px] font-semibold uppercase leading-tight tracking-[0.01em]">
+                      {project.name}
+                    </h2>
+                    <p className="mt-1.5 truncate text-[12.5px] text-faint">
+                      {client?.name} · {monthLabel(project.date.slice(0, 7), locale)} · {t("projects.items", { count: items.length })}
+                    </p>
+                  </div>
+                  {status && <StatusTag status={status} className="text-[11.5px] uppercase tracking-[0.04em]" />}
+                </div>
               </Link>
-            ))}
-          </div>
-        </>
+
+              <div className="px-5 sm:px-6">
+                <div className="hidden grid-cols-[minmax(0,1fr)_auto] gap-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-faint sm:grid">
+                  <span>{t("item.description")}</span>
+                  <span className="text-right">{t("common.amount")}</span>
+                </div>
+                <div className="divide-y divide-line">
+                  {items.map((item) => (
+                    <ProjectItemRow key={item.id} item={item} projectId={project.id} />
+                  ))}
+                </div>
+              </div>
+
+              <ProjectTotal items={items} />
+            </section>
+          ))}
+        </div>
       )}
 
       <NewProjectSheet open={creating} onClose={() => setCreating(false)} />
+    </div>
+  );
+}
+
+function ProjectItemRow({ item, projectId }: { item: BillingItem; projectId: string }) {
+  const { t } = useI18n();
+  const workState =
+    item.productionStatus === "DELIVERED"
+      ? t("projects.delivered")
+      : item.billingStatus === "NEEDS_REVIEW"
+        ? t("projects.review")
+        : t("projects.inProgress");
+
+  return (
+    <Link
+      data-testid="designer-project-item"
+      href={`/designer/projects/${projectId}`}
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4 transition-colors duration-150 hover:bg-fill active:bg-fill"
+    >
+      <span className="min-w-0">
+        <span className="block truncate text-[14.5px] tracking-[-0.005em]">{item.description}</span>
+        <span className="mt-1 flex flex-wrap items-center gap-x-2 text-[11.5px] text-faint">
+          <span>{t(`type.${item.type}`)}</span>
+          <span aria-hidden>·</span>
+          <span>{workState}</span>
+        </span>
+      </span>
+      <PriceStateLabel item={item} />
+    </Link>
+  );
+}
+
+function PriceStateLabel({ item }: { item: BillingItem }) {
+  const { t } = useI18n();
+  const state = priceState(item);
+
+  if (state === "PENDING") {
+    return (
+      <span className="flex min-w-[108px] flex-col items-end gap-0.5 text-right">
+        <span className="text-[13px] font-medium text-review">{t("projects.pricePending")}</span>
+        <span className="text-[11px] text-review">{t("projects.priceReview")}</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex min-w-[108px] flex-col items-end gap-0.5 text-right">
+      <span className={`tnum text-[14px] font-medium ${state === "SUGGESTED" ? "text-review" : "text-text"}`}>
+        {t(
+          state === "SUGGESTED" ? "projects.priceSuggested" : "projects.priceConfirmed",
+          { amount: money(item.amount) },
+        )}
+      </span>
+      {state === "SUGGESTED" && (
+        <span className="text-[11px] text-review">{t("projects.priceReview")}</span>
+      )}
+    </span>
+  );
+}
+
+function ProjectTotal({ items }: { items: BillingItem[] }) {
+  const { t } = useI18n();
+  const hasSuggested = items.some((item) => priceState(item) === "SUGGESTED");
+  const pendingCount = items.filter((item) => priceState(item) === "PENDING").length;
+  const knownTotal = sum(items.filter((item) => item.amount > 0));
+
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-line px-5 py-4 sm:px-6">
+      <div className="min-w-0">
+        <p className="text-[12px] font-medium uppercase tracking-[0.05em] text-muted">
+          {t(hasSuggested ? "projects.estimatedTotal" : "projects.total")}
+        </p>
+        {pendingCount > 0 && (
+          <p className="mt-0.5 text-[11.5px] text-review">
+            {t("projects.pendingPrices", { count: pendingCount })}
+          </p>
+        )}
+      </div>
+      <Amount
+        value={knownTotal > 0 ? money(knownTotal) : "—"}
+        strong
+        className="text-[16px]"
+      />
     </div>
   );
 }

@@ -35,6 +35,24 @@ export function isOperationalRecord(item: BillingItem): boolean {
   return !isHistoricalRecord(item);
 }
 
+export type PriceState = "CONFIRMED" | "SUGGESTED" | "PENDING";
+
+/** Display-only price certainty derived from the existing billing facts. */
+export function priceState(item: BillingItem): PriceState {
+  const note = item.note?.toLowerCase() ?? "";
+  if (item.amount <= 0 || /amount[^;,.]*unconfirmed|price[^;,.]*unknown/.test(note)) {
+    return "PENDING";
+  }
+  if (
+    item.billingStatus === "NEEDS_REVIEW" ||
+    note.includes("suggested") ||
+    note.includes("pricing review")
+  ) {
+    return "SUGGESTED";
+  }
+  return "CONFIRMED";
+}
+
 /** A project counts as delivered once every live item has been. */
 export function projectDelivered(items: BillingItem[]): boolean {
   return items.length > 0 && items.every(isDelivered);
