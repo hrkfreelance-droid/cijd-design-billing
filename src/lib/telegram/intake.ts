@@ -1,5 +1,6 @@
 import type { Repository } from "@/lib/data/repository";
 import { RuleError } from "@/lib/data/repository";
+import { isProductionComplete } from "@/lib/derive";
 import type { Client, Project } from "@/lib/types";
 import { notifyDelivery } from "./notify";
 
@@ -164,7 +165,7 @@ async function findDeliverableProjects(repo: Repository, term: string): Promise<
   const snapshot = await repo.getSnapshot();
   const open = new Set(
     snapshot.billingItems
-      .filter((item) => item.productionStatus !== "DELIVERED")
+      .filter((item) => !isProductionComplete(item))
       .map((item) => item.projectId),
   );
   const lower = term.toLowerCase();

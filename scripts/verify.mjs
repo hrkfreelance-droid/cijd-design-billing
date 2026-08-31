@@ -99,13 +99,18 @@ for (const [size, viewport] of Object.entries({
       })
     ).json();
     await ctx.request.post(`${BASE}/api/billing-items`, {
-      data: { projectId: project.data.id, description: "Poster Design", unitPrice: 60 },
+      data: {
+        projectId: project.data.id,
+        description: "Poster Design",
+        type: "PRINT",
+        unitPrice: 60,
+      },
     });
 
     await page.goto(`${BASE}/designer/projects/${project.data.id}`, {
       waitUntil: "networkidle",
     });
-    await page.getByRole("button", { name: "Mark as delivered" }).click();
+    await page.getByRole("button", { name: "Deliver" }).click();
     await page.waitForTimeout(400);
     const box = await page.getByRole("dialog").boundingBox();
     if (!box || box.y < 0 || box.y + box.height > 845) {

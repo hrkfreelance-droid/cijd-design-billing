@@ -16,7 +16,12 @@ async function signIn(page: Page, userId: string) {
   expect(response.ok()).toBeTruthy();
 }
 
-async function newProjectWithItem(page: Page, name: string, price = 40) {
+async function newProjectWithItem(
+  page: Page,
+  name: string,
+  price = 40,
+  type: "DESIGN" | "RESIZE" | "PRINT" | "OTHER" = "DESIGN",
+) {
   const project = await (
     await page.request.post("/api/projects", {
       data: { clientId: "cl_ringer_hut", name },
@@ -24,7 +29,7 @@ async function newProjectWithItem(page: Page, name: string, price = 40) {
   ).json();
   const item = await (
     await page.request.post("/api/billing-items", {
-      data: { projectId: project.data.id, description: "Design", unitPrice: price },
+      data: { projectId: project.data.id, description: "Design", type, unitPrice: price },
     })
   ).json();
   return { projectId: project.data.id as string, itemId: item.data.id as string };
@@ -79,13 +84,70 @@ test("undelivered work cannot reach billing", async ({ page }) => {
   expect((await invoice.json()).code).toBe("NOT_DELIVERED");
 });
 
+test("creative completion and print delivery are independent item actions", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Item Action Check" },
+    })
+  ).json();
+  const design = await (
+    await page.request.post("/api/billing-items", {
+      data: { projectId: project.data.id, description: "Design", type: "DESIGN", unitPrice: 25 },
+    })
+  ).json();
+  const print = await (
+    await page.request.post("/api/billing-items", {
+      data: {
+        projectId: project.data.id,
+        description: "Print ×100",
+        type: "PRINT",
+        quantity: 100,
+        unitPrice: 0.15,
+        billingStatus: "NEEDS_REVIEW",
+      },
+    })
+  ).json();
+
+  await page.goto(`/designer/projects/${project.data.id}`);
+  const designCard = page.getByTestId("designer-project-item").filter({ hasText: "Design" }).first();
+  await designCard.getByRole("button", { name: "Complete" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Mark as complete" }).click();
+  await expect(page.getByText("Marked as complete")).toBeVisible();
+  await expect(designCard.getByRole("button", { name: "Undo completion" })).toBeVisible();
+
+  const printCard = page.getByTestId("designer-project-item").filter({ hasText: "Print ×100" }).first();
+  await printCard.getByRole("button", { name: "Deliver" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Mark as delivered" }).click();
+  await expect(page.getByText("Marked as delivered")).toBeVisible();
+  await expect(printCard.getByRole("button", { name: "Undo delivery" })).toBeVisible();
+
+  const state = await (await page.request.get("/api/state")).json();
+  const changed = state.data.billingItems.filter(
+    (item: { id: string }) => [design.data.id, print.data.id].includes(item.id),
+  );
+  expect(changed).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: design.data.id, productionStatus: "COMPLETED", billingStatus: "READY_TO_INVOICE" }),
+      expect.objectContaining({ id: print.data.id, productionStatus: "DELIVERED", billingStatus: "NEEDS_REVIEW" }),
+    ]),
+  );
+
+  const wrongForPrint = await page.request.post(`/api/billing-items/${print.data.id}/complete`);
+  expect(wrongForPrint.status()).toBe(409);
+  expect((await wrongForPrint.json()).code).toBe("WRONG_PRODUCTION_ACTION");
+  const wrongForDesign = await page.request.post(`/api/billing-items/${design.data.id}/delivery`);
+  expect(wrongForDesign.status()).toBe(409);
+  expect((await wrongForDesign.json()).code).toBe("WRONG_PRODUCTION_ACTION");
+});
+
 test("delivering hands the work to billing and records a notification", async ({ page }) => {
   await signIn(page, "u_hiroki");
-  const { projectId } = await newProjectWithItem(page, "Handoff Poster", 80);
+  const { projectId } = await newProjectWithItem(page, "Handoff Poster", 80, "PRINT");
 
   await page.goto(`/designer/projects/${projectId}`);
-  await expect(page.getByText("Not delivered")).toBeVisible();
-  await page.getByRole("button", { name: "Mark as delivered" }).click();
+  await expect(page.getByText("In Progress", { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Deliver" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Mark as delivered" }).click();
   await expect(page.getByText("Marked as delivered")).toBeVisible();
   await expect(page.getByText("Delivered", { exact: false }).first()).toBeVisible();
@@ -93,14 +155,16 @@ test("delivering hands the work to billing and records a notification", async ({
   // Billing now sees it, and only it — nothing undelivered.
   await signIn(page, "u_billing");
   await page.goto("/office");
-  await expect(page.getByText("Only delivered work appears here.")).toBeVisible();
+  await expect(page.getByText("Only work with completed production appears here.")).toBeVisible();
   await expect(page.getByText("Handoff Poster")).toBeVisible();
   await expect(page.getByText("Gate Check")).toHaveCount(0);
 
   const state = await (await page.request.get("/api/state")).json();
   expect(state.data.scope).toEqual({ production: false, billing: true, payment: false });
   expect(
-    state.data.billingItems.every((item: { productionStatus: string }) => item.productionStatus === "DELIVERED"),
+    state.data.billingItems.every((item: { productionStatus: string }) =>
+      ["DELIVERED", "COMPLETED"].includes(item.productionStatus),
+    ),
   ).toBe(true);
 
   // The delivery notification is recorded even though Telegram is unconfigured.
@@ -196,7 +260,7 @@ test("telegram registers a project and delivers it", async ({ request }) => {
   );
   expect(project.createdBy).toBe("Hiroki");
   await request.post("/api/billing-items", {
-    data: { projectId: project.id, description: "Poster Design", unitPrice: 120 },
+    data: { projectId: project.id, description: "Poster Design", type: "PRINT", unitPrice: 120 },
   });
 
   const delivered = await send("納品済み");
@@ -223,7 +287,7 @@ test("the bot endpoint refuses a bad secret", async ({ request }) => {
 
 test("receipts move an invoice to completed", async ({ page }) => {
   await signIn(page, "u_hiroki");
-  const { projectId } = await newProjectWithItem(page, "Receipt Check", 30);
+  const { projectId } = await newProjectWithItem(page, "Receipt Check", 30, "PRINT");
   await page.request.post(`/api/projects/${projectId}/delivery`);
 
   await signIn(page, "u_admin");
@@ -259,7 +323,7 @@ test("receipts move an invoice to completed", async ({ page }) => {
 
 test("a failed delivery notification can be resent", async ({ page }) => {
   await signIn(page, "u_hiroki");
-  const { projectId } = await newProjectWithItem(page, "Notify Check", 20);
+  const { projectId } = await newProjectWithItem(page, "Notify Check", 20, "PRINT");
   await page.request.post(`/api/projects/${projectId}/delivery`);
 
   await signIn(page, "u_billing");

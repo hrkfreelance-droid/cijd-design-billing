@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 
-import { DeliveredMark } from "@/components/delivery";
+import { CompletedMark, DeliveredMark } from "@/components/delivery";
 import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, StatusTag } from "@/components/ui";
-import { flowStatus, isOperationalRecord, sum } from "@/lib/derive";
+import { flowStatus, isOperationalRecord, isProductionComplete, sum } from "@/lib/derive";
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
@@ -23,7 +23,7 @@ export default function DeliveredPage() {
       .filter(
         (item) =>
           isOperationalRecord(item) &&
-          item.productionStatus === "DELIVERED" &&
+          isProductionComplete(item) &&
           item.billingStatus !== "PAID",
       )
       .reduce((map, item) => {
@@ -54,13 +54,23 @@ export default function DeliveredPage() {
                 </span>
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12.5px] text-faint">
                   <span>{scope.clientOf(projectId)?.name}</span>
-                  <DeliveredMark
-                    date={
-                      items[0]?.deliveredAt
-                        ? mediumDate(items[0].deliveredAt.slice(0, 10), locale)
-                        : undefined
-                    }
-                  />
+                  {items[0]?.productionStatus === "COMPLETED" ? (
+                    <CompletedMark
+                      date={
+                        items[0]?.deliveredAt
+                          ? mediumDate(items[0].deliveredAt.slice(0, 10), locale)
+                          : undefined
+                      }
+                    />
+                  ) : (
+                    <DeliveredMark
+                      date={
+                        items[0]?.deliveredAt
+                          ? mediumDate(items[0].deliveredAt.slice(0, 10), locale)
+                          : undefined
+                      }
+                    />
+                  )}
                 </span>
               </span>
               <StatusTag status={flowStatus(items[0])} className="hidden sm:flex" />

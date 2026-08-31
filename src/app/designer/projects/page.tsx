@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { PlusIcon, SearchIcon } from "@/components/icons";
+import { BillingItemCard } from "@/components/billing-item-card";
 import { api, useClientFilter, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
@@ -21,6 +22,7 @@ import {
 } from "@/components/ui";
 import {
   isOperationalRecord,
+  isProductionComplete,
   priceState,
   projectStatus,
   sum,
@@ -41,7 +43,7 @@ export default function ProjectsPage() {
       .map((project) => {
         const items = (scope.idx.itemsByProject.get(project.id) ?? []).filter(
           isOperationalRecord,
-        ).filter((item) => item.productionStatus !== "DELIVERED");
+        ).filter((item) => !isProductionComplete(item));
         return {
           project,
           items,
@@ -119,13 +121,9 @@ export default function ProjectsPage() {
               </Link>
 
               <div className="px-5 sm:px-6">
-                <div className="hidden grid-cols-[minmax(0,1fr)_auto] gap-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-faint sm:grid">
-                  <span>{t("item.description")}</span>
-                  <span className="text-right">{t("common.amount")}</span>
-                </div>
                 <div className="divide-y divide-line">
                   {items.map((item) => (
-                    <ProjectItemRow key={item.id} item={item} projectId={project.id} />
+                    <BillingItemCard key={item.id} item={item} projectId={project.id} />
                   ))}
                 </div>
               </div>
@@ -138,62 +136,6 @@ export default function ProjectsPage() {
 
       <NewProjectSheet open={creating} onClose={() => setCreating(false)} />
     </div>
-  );
-}
-
-function ProjectItemRow({ item, projectId }: { item: BillingItem; projectId: string }) {
-  const { t } = useI18n();
-  const workState =
-    item.productionStatus === "DELIVERED"
-      ? t("projects.delivered")
-      : item.billingStatus === "NEEDS_REVIEW"
-        ? t("projects.review")
-        : t("projects.inProgress");
-
-  return (
-    <Link
-      data-testid="designer-project-item"
-      href={`/designer/projects/${projectId}`}
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4 transition-colors duration-150 hover:bg-fill active:bg-fill"
-    >
-      <span className="min-w-0">
-        <span className="block truncate text-[14.5px] tracking-[-0.005em]">{item.description}</span>
-        <span className="mt-1 flex flex-wrap items-center gap-x-2 text-[11.5px] text-faint">
-          <span>{t(`type.${item.type}`)}</span>
-          <span aria-hidden>·</span>
-          <span>{workState}</span>
-        </span>
-      </span>
-      <PriceStateLabel item={item} />
-    </Link>
-  );
-}
-
-function PriceStateLabel({ item }: { item: BillingItem }) {
-  const { t } = useI18n();
-  const state = priceState(item);
-
-  if (state === "PENDING") {
-    return (
-      <span className="flex min-w-[108px] flex-col items-end gap-0.5 text-right">
-        <span className="text-[13px] font-medium text-review">{t("projects.pricePending")}</span>
-        <span className="text-[11px] text-review">{t("projects.priceReview")}</span>
-      </span>
-    );
-  }
-
-  return (
-    <span className="flex min-w-[108px] flex-col items-end gap-0.5 text-right">
-      <span className={`tnum text-[14px] font-medium ${state === "SUGGESTED" ? "text-review" : "text-text"}`}>
-        {t(
-          state === "SUGGESTED" ? "projects.priceSuggested" : "projects.priceConfirmed",
-          { amount: money(item.amount) },
-        )}
-      </span>
-      {state === "SUGGESTED" && (
-        <span className="text-[11px] text-review">{t("projects.priceReview")}</span>
-      )}
-    </span>
   );
 }
 

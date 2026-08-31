@@ -28,6 +28,7 @@ import {
   toTelegramSession,
   toUser,
 } from "./rows";
+import { isProductionComplete } from "@/lib/derive";
 
 const DEFAULT_ACTOR = "Hiroki";
 
@@ -55,6 +56,7 @@ function fail(error: PostgrestError | null): never {
     "DUPLICATE_INVOICE_NUMBER",
     "ALREADY_INVOICED",
     "NOT_DELIVERED",
+    "WRONG_PRODUCTION_ACTION",
     "NOT_READY",
     "INVOICE_PAID",
     "ALREADY_VOID",
@@ -74,7 +76,7 @@ function fail(error: PostgrestError | null): never {
     throw new RuleError("DUPLICATE_INVOICE_NUMBER", "That value is already in use.");
   }
   if (error.code === "23514") {
-    throw new RuleError("NOT_DELIVERED", "Mark the work delivered before billing it.");
+    throw new RuleError("NOT_DELIVERED", "Finish the work before billing it.");
   }
   throw new RuleError("INTERNAL", error.message || "Database error", 500);
 }
@@ -220,7 +222,7 @@ export class SupabaseRepository implements Repository {
     if (billingStatus === "READY_TO_INVOICE") {
       throw new RuleError(
         "NOT_DELIVERED",
-        "Mark the work delivered to make it ready to invoice.",
+        "Finish the work to make it ready to invoice.",
         400,
       );
     }
@@ -314,10 +316,10 @@ export class SupabaseRepository implements Repository {
     if (current.billingStatus === "PAID") {
       throw new RuleError("ITEM_LOCKED", "This item is already paid.");
     }
-    if (status === "READY_TO_INVOICE" && current.productionStatus !== "DELIVERED") {
+    if (status === "READY_TO_INVOICE" && !isProductionComplete(current)) {
       throw new RuleError(
         "NOT_DELIVERED",
-        "Mark the work delivered before sending it to billing.",
+        "Finish the work before sending it to billing.",
       );
     }
     const result = await this.db
@@ -337,6 +339,16 @@ export class SupabaseRepository implements Repository {
     const result = await this.db.rpc("set_item_delivery", {
       p_item_id: id,
       p_delivered: delivered,
+      p_actor: actor,
+    });
+    if (result.error) fail(result.error);
+    return toItem(result.data as Record<string, unknown>);
+  }
+
+  async setItemCompletion(id: string, completed: boolean, actor = DEFAULT_ACTOR) {
+    const result = await this.db.rpc("set_item_completion", {
+      p_item_id: id,
+      p_completed: completed,
       p_actor: actor,
     });
     if (result.error) fail(result.error);

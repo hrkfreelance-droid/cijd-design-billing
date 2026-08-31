@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 
-import { DeliverButton } from "@/components/delivery";
+import { ItemProductionAction } from "@/components/delivery";
 import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, StatusDot } from "@/components/ui";
-import { isOperationalRecord, projectStatus, sum } from "@/lib/derive";
+import { Amount, EmptyState, PageHeader, StatusDot, StatusTag } from "@/components/ui";
+import { flowStatus, isOperationalRecord, isProductionComplete, sum } from "@/lib/derive";
 import { longDate, money, todayIso } from "@/lib/format";
-import type { BillingItem, FlowStatus } from "@/lib/types";
+import type { FlowStatus } from "@/lib/types";
 
 export default function DesignerTodayPage() {
   const scope = useScope();
@@ -18,23 +18,11 @@ export default function DesignerTodayPage() {
   if (!scope) return <PageSkeleton />;
 
   const currentWork = scope.items.filter(
-    (item) => isOperationalRecord(item) && item.productionStatus !== "DELIVERED",
+    (item) => isOperationalRecord(item) && !isProductionComplete(item),
   );
-  const inProgress = currentWork;
   const review = currentWork.filter((item) => item.billingStatus === "NEEDS_REVIEW");
   const ready = currentWork.filter((item) => item.billingStatus === "READY_TO_INVOICE");
-
-  const byProject = (items: BillingItem[]) =>
-    Array.from(
-      items.reduce((groups, item) => {
-        const list = groups.get(item.projectId) ?? [];
-        list.push(item);
-        groups.set(item.projectId, list);
-        return groups;
-      }, new Map<string, BillingItem[]>()),
-    );
-
-  const toDeliver = byProject(inProgress);
+  const actionable = currentWork.filter((item) => item.billingStatus !== "NEEDS_REVIEW");
 
   return (
     <div className="animate-rise">
@@ -44,8 +32,8 @@ export default function DesignerTodayPage() {
         <Stat
           label={t("status.IN_PROGRESS")}
           status="IN_PROGRESS"
-          count={inProgress.length}
-          amount={sum(inProgress)}
+          count={currentWork.length}
+          amount={sum(currentWork)}
         />
         <Stat
           label={t("status.NEEDS_REVIEW")}
@@ -71,22 +59,23 @@ export default function DesignerTodayPage() {
               meta={`${scope.clientOf(item.projectId)?.name ?? ""} · ${item.description}`}
               amount={item.amount > 0 ? money(item.amount) : "—"}
               status="NEEDS_REVIEW"
+              action={<ItemProductionAction item={item} size="sm" />}
             />
           ))}
-        </Section>
+      </Section>
       )}
 
-      {toDeliver.length > 0 ? (
+      {actionable.length > 0 ? (
         <Section title={t("designer.today.deliver")} hint={t("designer.today.deliverHint")}>
-          {toDeliver.map(([projectId, items]) => (
+          {actionable.map((item) => (
             <Row
-              key={projectId}
-              projectId={projectId}
-              title={scope.idx.projectById.get(projectId)?.name ?? ""}
-              meta={`${scope.clientOf(projectId)?.name ?? ""} · ${t("today.itemsInProject", { count: items.length })}`}
-              amount={money(sum(items))}
-              status={projectStatus(items) ?? "IN_PROGRESS"}
-              action={<DeliverButton projectId={projectId} size="sm" />}
+              key={item.id}
+              projectId={item.projectId}
+              title={scope.idx.projectById.get(item.projectId)?.name ?? ""}
+              meta={`${scope.clientOf(item.projectId)?.name ?? ""} · ${item.description}`}
+              amount={item.amount > 0 ? money(item.amount) : "—"}
+              status={flowStatus(item)}
+              action={<ItemProductionAction item={item} size="sm" />}
             />
           ))}
         </Section>
@@ -169,7 +158,7 @@ function Row({
 }) {
   return (
     <div className="flex items-center gap-3 px-5 py-3.5 sm:px-6">
-      <StatusDot status={status} />
+      <StatusTag status={status} className="shrink-0" />
       <Link href={`/designer/projects/${projectId}`} className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">{title}</span>
         <span className="mt-0.5 flex items-center gap-2 truncate text-[12.5px] text-faint">

@@ -1,4 +1,5 @@
 import { RuleError, type Repository } from "@/lib/data/repository";
+import { isProductionComplete } from "@/lib/derive";
 import type { BillingStatus, ReceiptStatus, Snapshot } from "@/lib/types";
 import { can, type Permission, type Role } from "./roles";
 import type { SessionUser } from "./session";
@@ -32,9 +33,9 @@ export class GuardedRepository {
     const payment = can(this.user.role, "payment:read");
 
     if (!production) {
-      // Undelivered work never leaves the designer side.
+      // Unfinished work never leaves the designer side.
       const delivered = snapshot.billingItems.filter(
-        (item) => item.productionStatus === "DELIVERED",
+        isProductionComplete,
       );
       const projectIds = new Set(delivered.map((item) => item.projectId));
       snapshot.billingItems = delivered;
@@ -88,6 +89,11 @@ export class GuardedRepository {
   setItemDelivery(id: string, delivered: boolean, actor?: string) {
     this.assert("delivery:write");
     return this.repo.setItemDelivery(id, delivered, this.actor(actor));
+  }
+
+  setItemCompletion(id: string, completed: boolean, actor?: string) {
+    this.assert("delivery:write");
+    return this.repo.setItemCompletion(id, completed, this.actor(actor));
   }
 
   setProjectDelivery(projectId: string, delivered: boolean, actor?: string) {

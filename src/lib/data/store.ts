@@ -22,6 +22,11 @@ import {
   type UpdateBillingItemInput,
 } from "./repository";
 import { buildSeed } from "./seed";
+import {
+  isProductionComplete,
+  productionAction,
+  terminalProductionStatus,
+} from "@/lib/derive";
 
 const DEFAULT_ACTOR = "Hiroki";
 
@@ -296,7 +301,7 @@ export class Store implements Repository {
       if (billingStatus === "READY_TO_INVOICE") {
         throw new RuleError(
           "NOT_DELIVERED",
-          "Mark the work delivered to make it ready to invoice.",
+          "Finish the work to make it ready to invoice.",
           400,
         );
       }
@@ -382,11 +387,11 @@ export class Store implements Repository {
       if (item.billingStatus === "PAID") {
         throw new RuleError("ITEM_LOCKED", "This item is already paid.");
       }
-      // The gate: undelivered work can never be queued for invoicing.
-      if (status === "READY_TO_INVOICE" && item.productionStatus !== "DELIVERED") {
+      // The gate: unfinished work can never be queued for invoicing.
+      if (status === "READY_TO_INVOICE" && !isProductionComplete(item)) {
         throw new RuleError(
           "NOT_DELIVERED",
-          "Mark the work delivered before sending it to billing.",
+          "Finish the work before sending it to billing.",
         );
       }
       item.billingStatus = status;
@@ -398,7 +403,29 @@ export class Store implements Repository {
   }
 
   setItemDelivery(id: string, delivered: boolean, actor = DEFAULT_ACTOR) {
-    return this.transaction((db) => this.applyDelivery(db, requireItem(db, id), delivered, actor));
+    return this.transaction((db) => {
+      const item = requireItem(db, id);
+      if (productionAction(item) !== "DELIVER") {
+        throw new RuleError(
+          "WRONG_PRODUCTION_ACTION",
+          "Creative work must be marked complete, not delivered.",
+        );
+      }
+      return this.applyProduction(db, item, delivered, actor);
+    });
+  }
+
+  setItemCompletion(id: string, completed: boolean, actor = DEFAULT_ACTOR) {
+    return this.transaction((db) => {
+      const item = requireItem(db, id);
+      if (productionAction(item) !== "COMPLETE") {
+        throw new RuleError(
+          "WRONG_PRODUCTION_ACTION",
+          "Print items must be marked delivered, not completed.",
+        );
+      }
+      return this.applyProduction(db, item, completed, actor);
+    });
   }
 
   setProjectDelivery(projectId: string, delivered: boolean, actor = DEFAULT_ACTOR) {
@@ -417,7 +444,7 @@ export class Store implements Repository {
       if (!open.length) {
         throw new RuleError("ITEM_LOCKED", "Every item here has already been invoiced.");
       }
-      const changed = open.map((item) => this.applyDelivery(db, item, delivered, actor));
+      const changed = open.map((item) => this.applyProduction(db, item, delivered, actor));
       log(
         db,
         actor,
@@ -430,8 +457,8 @@ export class Store implements Repository {
     });
   }
 
-  /** One place decides what delivering (or undoing it) does to an item. */
-  private applyDelivery(
+  /** One place decides what finishing (or undoing it) does to an item. */
+  private applyProduction(
     db: Database,
     item: BillingItem,
     delivered: boolean,
@@ -443,11 +470,11 @@ export class Store implements Repository {
         "This item has already been invoiced, so its delivery cannot change.",
       );
     }
-    const production: ProductionStatus = delivered ? "DELIVERED" : "IN_PROGRESS";
+    const production: ProductionStatus = terminalProductionStatus(item, delivered);
     item.productionStatus = production;
     item.deliveredAt = delivered ? now() : null;
     item.deliveredBy = delivered ? actor : null;
-    // Delivering sends work to billing; undoing pulls it back out.
+    // Finishing sends work to billing; undoing pulls it back out.
     if (item.billingStatus !== "NEEDS_REVIEW") {
       item.billingStatus = delivered ? "READY_TO_INVOICE" : "NOT_READY";
     }
@@ -456,7 +483,13 @@ export class Store implements Repository {
     log(
       db,
       actor,
-      delivered ? "item.deliver" : "item.undeliver",
+      delivered
+        ? productionAction(item) === "DELIVER"
+          ? "item.deliver"
+          : "item.complete"
+        : productionAction(item) === "DELIVER"
+          ? "item.undeliver"
+          : "item.uncomplete",
       "billing_item",
       item.id,
       item.description,
@@ -514,10 +547,10 @@ export class Store implements Repository {
           );
         }
         // Belt and braces: the gate is enforced here too, not just in the UI.
-        if (item.productionStatus !== "DELIVERED") {
+        if (!isProductionComplete(item)) {
           throw new RuleError(
             "NOT_DELIVERED",
-            `"${item.description}" has not been delivered yet.`,
+            `"${item.description}" has not been completed yet.`,
           );
         }
         if (item.billingStatus !== "READY_TO_INVOICE") {

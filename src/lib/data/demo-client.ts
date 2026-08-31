@@ -163,6 +163,12 @@ export async function demoRequest<T>(
         }
         if (method === "DELETE") return (await guarded.setItemDelivery(id, false)) as T;
       }
+      if (id && sub === "complete") {
+        if (method === "POST") {
+          return (await guarded.setItemCompletion(id, true)) as T;
+        }
+        if (method === "DELETE") return (await guarded.setItemCompletion(id, false)) as T;
+      }
       if (method === "PATCH" && id) {
         const billingStatus = str(body.billingStatus) as BillingStatus | undefined;
         if (billingStatus) return (await guarded.setBillingStatus(id, billingStatus)) as T;

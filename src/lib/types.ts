@@ -8,14 +8,14 @@
 
 /**
  * Making the work and billing for it are two different things, tracked
- * separately: nothing can be invoiced until it has been delivered.
+ * separately: nothing can be invoiced until production is complete.
  *
  *   IN_PROGRESS / NOT_READY
- *     -> delivered -> DELIVERED / READY_TO_INVOICE
- *     -> invoiced  -> DELIVERED / INVOICED
- *     -> paid      -> DELIVERED / PAID
+ *     -> delivered/completed -> DELIVERED or COMPLETED / READY_TO_INVOICE
+ *     -> invoiced  -> DELIVERED or COMPLETED / INVOICED
+ *     -> paid      -> DELIVERED or COMPLETED / PAID
  */
-export const PRODUCTION_STATUSES = ["IN_PROGRESS", "DELIVERED"] as const;
+export const PRODUCTION_STATUSES = ["IN_PROGRESS", "DELIVERED", "COMPLETED"] as const;
 export type ProductionStatus = (typeof PRODUCTION_STATUSES)[number];
 
 export const BILLING_STATUSES = [
@@ -74,7 +74,9 @@ export interface BillingItem {
   customAmount: boolean;
   productionStatus: ProductionStatus;
   billingStatus: BillingStatus;
+  /** Terminal production timestamp for either a physical delivery or creative completion. */
   deliveredAt?: string | null;
+  /** Actor who marked the item delivered or completed. */
   deliveredBy?: string | null;
   invoiceId?: string | null;
   note?: string;

@@ -5,6 +5,8 @@ import { useState } from "react";
 import { api, useI18n } from "@/components/providers";
 import { useAction } from "@/components/use-action";
 import { Button, ConfirmSheet } from "@/components/ui";
+import { isProductionComplete, productionAction } from "@/lib/derive";
+import type { BillingItem } from "@/lib/types";
 
 /**
  * The handoff. Pressing this is the moment work leaves the designer's side and
@@ -95,6 +97,81 @@ export function UndeliverButton({ projectId }: { projectId: string }) {
   );
 }
 
+/** Item-level production action. Creative work completes; PRINT is delivered. */
+export function ItemProductionAction({
+  item,
+  size = "sm",
+  full = false,
+  onDone,
+}: {
+  item: BillingItem;
+  size?: "sm" | "md";
+  full?: boolean;
+  onDone?: () => void;
+}) {
+  const { t } = useI18n();
+  const { run, busy } = useAction();
+  const [asking, setAsking] = useState(false);
+  const action = productionAction(item);
+  const finished = isProductionComplete(item);
+  const delivery = action === "DELIVER";
+  const endpoint = delivery ? "delivery" : "complete";
+  const activeLabel = delivery ? t("delivery.mark") : t("production.complete");
+  const undoLabel = delivery ? t("delivery.undo") : t("production.undoComplete");
+  const activeToast = delivery ? "delivery.toast" : "production.completeToast";
+  const undoToast = delivery ? "delivery.undoToast" : "production.undoCompleteToast";
+
+  const apply = async () => {
+    const ok = await run(
+      () => api(`/api/billing-items/${item.id}/${endpoint}`, { method: finished ? "DELETE" : "POST" }),
+      { key: finished ? undoToast : activeToast },
+    );
+    setAsking(false);
+    if (ok) onDone?.();
+  };
+
+  return (
+    <>
+      <Button
+        variant={finished ? "secondary" : "primary"}
+        size={size}
+        full={full}
+        disabled={busy}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setAsking(true);
+        }}
+      >
+        {finished ? undoLabel : size === "sm" ? (delivery ? t("delivery.markShort") : t("production.completeShort")) : activeLabel}
+      </Button>
+      <ConfirmSheet
+        open={asking}
+        onClose={() => setAsking(false)}
+        onConfirm={apply}
+        title={
+          finished
+            ? undoLabel
+            : delivery
+              ? t("delivery.confirmTitle")
+              : t("production.completeConfirmTitle")
+        }
+        message={
+          finished
+            ? delivery
+              ? t("delivery.undoConfirm")
+              : t("production.completeConfirmBody")
+            : delivery
+              ? t("delivery.confirmBody")
+              : t("production.completeConfirmBody")
+        }
+        confirmLabel={finished ? undoLabel : activeLabel}
+        busy={busy}
+      />
+    </>
+  );
+}
+
 /** The plain, unmistakable "this is done" marker. */
 export function DeliveredMark({ date }: { date?: string | null }) {
   const { t } = useI18n();
@@ -102,6 +179,16 @@ export function DeliveredMark({ date }: { date?: string | null }) {
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-paid">
       <span aria-hidden>✓</span>
       {date ? t("delivery.on", { date }) : t("delivery.done")}
+    </span>
+  );
+}
+
+export function CompletedMark({ date }: { date?: string | null }) {
+  const { t } = useI18n();
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-paid">
+      <span aria-hidden>✓</span>
+      {date ? `${t("production.completed")} · ${date}` : t("production.completed")}
     </span>
   );
 }

@@ -99,8 +99,10 @@ export interface Repository {
     status: BillingStatus,
     actor?: string,
   ): Promise<BillingItem>;
-  /** The delivery gate: only delivered work becomes ready to invoice. */
+  /** The production gate: only delivered or completed work becomes ready to invoice. */
   setItemDelivery(id: string, delivered: boolean, actor?: string): Promise<BillingItem>;
+  /** Completes a creative item; PRINT items must use setItemDelivery instead. */
+  setItemCompletion(id: string, completed: boolean, actor?: string): Promise<BillingItem>;
   setProjectDelivery(
     projectId: string,
     delivered: boolean,

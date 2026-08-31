@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
-import { DeliverButton, DeliveredMark, UndeliverButton } from "@/components/delivery";
+import { BillingItemCard } from "@/components/billing-item-card";
+import { ItemProductionAction } from "@/components/delivery";
 import { ChevronRight, PlusIcon } from "@/components/icons";
 import { api, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
@@ -23,7 +24,7 @@ import {
   flowStatus,
   isHistoricalRecord,
   isOperationalRecord,
-  projectDelivered,
+  priceState,
   sum,
 } from "@/lib/derive";
 import { mediumDate, money } from "@/lib/format";
@@ -60,10 +61,7 @@ export default function ProjectPage() {
     .filter(historyView ? isHistoricalRecord : isOperationalRecord)
     .slice()
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  const delivered = !historyView && projectDelivered(items);
-  const deliveredAt = items.find((item) => item.deliveredAt)?.deliveredAt ?? null;
-  const canUndo =
-    !historyView && delivered && items.every((item) => item.billingStatus === "READY_TO_INVOICE");
+  const hasSuggested = items.some((item) => priceState(item) === "SUGGESTED");
   const backHref = historyView ? "/designer/archive" : "/designer/projects";
   const backLabel = historyView ? t("productionArchive.title") : t("projects.title");
 
@@ -90,9 +88,11 @@ export default function ProjectPage() {
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-[12px] text-faint">{t("project.total")}</div>
+          <div className="text-[12px] text-faint">
+            {t(hasSuggested ? "projects.estimatedTotal" : "project.total")}
+          </div>
           <Amount
-            value={money(sum(items))}
+            value={money(sum(items.filter((item) => item.amount > 0)))}
             strong
             className="text-[24px] tracking-[-0.02em] sm:text-[26px]"
           />
@@ -105,28 +105,10 @@ export default function ProjectPage() {
           <p className="text-[13px] leading-relaxed text-muted">
             {t("productionArchive.historyNotice")}
           </p>
-        ) : delivered ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <DeliveredMark
-              date={deliveredAt ? mediumDate(deliveredAt.slice(0, 10), locale) : undefined}
-            />
-            {canUndo && <UndeliverButton projectId={project.id} />}
-          </div>
         ) : (
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-[14px] font-medium">{t("delivery.notYet")}</p>
-              <p className="mt-0.5 text-[12.5px] text-faint">
-                {items.length ? t("delivery.confirmBody") : t("delivery.needsItems")}
-              </p>
-            </div>
-            <DeliverButton
-              projectId={project.id}
-              disabled={items.length === 0}
-              full
-              size="md"
-            />
-          </div>
+          <p className="text-[13px] leading-relaxed text-muted">
+            {items.length ? t("projects.itemActionsHint") : t("delivery.needsItems")}
+          </p>
         )}
       </div>
 
@@ -137,40 +119,15 @@ export default function ProjectPage() {
             <p className="mt-1 text-[13px] text-faint">{t("project.noItemsHint")}</p>
           </div>
         ) : (
-          items.map((item) => {
-            const content = (
-              <>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] tracking-[-0.01em]">
-                    {item.description}
-                  </span>
-                  <span className="mt-0.5 flex items-center gap-2 text-[12.5px] text-faint">
-                    {item.quantity !== 1 && (
-                      <span className="tnum">
-                        {item.quantity} × {money(item.unitPrice)}
-                      </span>
-                    )}
-                    <StatusTag status={flowStatus(item)} />
-                  </span>
-                </span>
-                <Amount value={money(item.amount)} className="text-[15px]" />
-                {!historyView && <ChevronRight className="h-4 w-4 shrink-0 text-faint" />}
-              </>
-            );
-            return historyView ? (
-              <div key={item.id} className="flex w-full items-center gap-4 px-5 py-3.5 sm:px-6">
-                {content}
-              </div>
-            ) : (
-              <button
-                key={item.id}
-                onClick={() => setEditing(item)}
-                className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
-              >
-                {content}
-              </button>
-            );
-          })
+          items.map((item) => (
+            <BillingItemCard
+              key={item.id}
+              item={item}
+              projectId={project.id}
+              history={historyView}
+              onOpen={historyView ? undefined : () => setEditing(item)}
+            />
+          ))
         )}
 
         {!historyView && (
@@ -261,18 +218,6 @@ function ItemSheet({
         await api(`/api/billing-items/${item.id}`, { method: "PATCH", body: { billingStatus } });
       },
       { key: "toast.itemUpdated" },
-    );
-    if (ok) onClose();
-  };
-
-  const setDelivery = async (delivered: boolean) => {
-    if (!item) return;
-    const ok = await run(
-      () =>
-        api(`/api/billing-items/${item.id}/delivery`, {
-          method: delivered ? "POST" : "DELETE",
-        }),
-      { key: delivered ? "delivery.toast" : "delivery.undoToast" },
     );
     if (ok) onClose();
   };
@@ -407,15 +352,7 @@ function ItemSheet({
 
           {item && (
             <div className="space-y-2 border-t border-line pt-4">
-              {item.productionStatus === "DELIVERED" ? (
-                <Button full onClick={() => setDelivery(false)} disabled={busy}>
-                  {t("delivery.undo")}
-                </Button>
-              ) : (
-                <Button variant="primary" full onClick={() => setDelivery(true)} disabled={busy}>
-                  {t("delivery.mark")}
-                </Button>
-              )}
+              <ItemProductionAction item={item} size="md" full onDone={onClose} />
               {item.billingStatus !== "NEEDS_REVIEW" ? (
                 <Button full onClick={() => changeStatus("NEEDS_REVIEW")} disabled={busy}>
                   {t("item.markReview")}

@@ -19,11 +19,11 @@ import {
   StatusTag,
 } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
-import { sum } from "@/lib/derive";
+import { isProductionComplete, sum } from "@/lib/derive";
 import { mediumDate, money, todayIso } from "@/lib/format";
 import type { BillingItem, Client, Notification } from "@/lib/types";
 
-/** Everything here is delivered work. That is the whole rule for this screen. */
+/** Everything here has completed production. That is the whole rule for this screen. */
 export default function OfficeBillingPage() {
   const scope = useScope();
   const { t } = useI18n();
@@ -40,7 +40,7 @@ export default function OfficeBillingPage() {
     if (!scope) return [];
     const ready = scope.items.filter(
       (item) =>
-        item.productionStatus === "DELIVERED" && item.billingStatus === "READY_TO_INVOICE",
+        isProductionComplete(item) && item.billingStatus === "READY_TO_INVOICE",
     );
     const byClient = new Map<string, BillingItem[]>();
     for (const item of ready) {
@@ -60,7 +60,7 @@ export default function OfficeBillingPage() {
     () =>
       scope?.items.filter(
         (item) =>
-          item.productionStatus === "DELIVERED" && item.billingStatus === "NEEDS_REVIEW",
+          isProductionComplete(item) && item.billingStatus === "NEEDS_REVIEW",
       ) ?? [],
     [scope],
   );

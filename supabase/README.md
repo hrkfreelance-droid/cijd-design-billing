@@ -39,7 +39,10 @@ In **SQL Editor**, run in order:
    audited
 8. `migrations/20260831020942_restrict_office_billing_item_updates.sql` —
    Billing can change only the review/ready billing status of an unlocked
-   delivered item; Accounting cannot update billing items directly
+   completed-production item; Accounting cannot update billing items directly
+9. `migrations/20260831090000_add_completed_production_status.sql` — adds the
+   `COMPLETED` creative-production state, extends RLS and the invoice gate, and
+   keeps PRINT delivery separate from creative completion
 
 Or with the Supabase CLI:
 
@@ -126,8 +129,8 @@ Telegram停止時の手順は [`docs/OPERATIONS.md`](../docs/OPERATIONS.md) を�
 
 ## What the database enforces on its own
 
-- `billing_needs_delivery` — an item cannot be `READY_TO_INVOICE`, `INVOICED` or
-  `PAID` unless it is `DELIVERED`
+- `billing_needs_production_completion` — an item cannot be `READY_TO_INVOICE`,
+  `INVOICED` or `PAID` unless it is `DELIVERED` or `COMPLETED`
 - `invoice_items.billing_item_id` is unique — one item can never be on two
   invoices
 - `invoices_number_unique` — no two live invoices share a number

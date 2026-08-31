@@ -25,6 +25,26 @@ export function isDelivered(item: BillingItem): boolean {
   return item.productionStatus === "DELIVERED";
 }
 
+/** Both physical delivery and creative completion release an item to billing. */
+export function isProductionComplete(item: BillingItem): boolean {
+  return item.productionStatus === "DELIVERED" || item.productionStatus === "COMPLETED";
+}
+
+export type ProductionAction = "DELIVER" | "COMPLETE";
+
+/** Printing is physically delivered; every other creative item is completed. */
+export function productionAction(item: Pick<BillingItem, "type">): ProductionAction {
+  return item.type === "PRINT" ? "DELIVER" : "COMPLETE";
+}
+
+export function terminalProductionStatus(
+  item: Pick<BillingItem, "type">,
+  finished: boolean,
+): BillingItem["productionStatus"] {
+  if (!finished) return "IN_PROGRESS";
+  return productionAction(item) === "DELIVER" ? "DELIVERED" : "COMPLETED";
+}
+
 /** Imported rows are historical evidence, not current designer workload. */
 export function isHistoricalRecord(item: BillingItem): boolean {
   return item.createdBy.trim().toLowerCase() === "import";
@@ -53,9 +73,9 @@ export function priceState(item: BillingItem): PriceState {
   return "CONFIRMED";
 }
 
-/** A project counts as delivered once every live item has been. */
+/** Kept for older callers: a project is terminal when every live item is done. */
 export function projectDelivered(items: BillingItem[]): boolean {
-  return items.length > 0 && items.every(isDelivered);
+  return items.length > 0 && items.every(isProductionComplete);
 }
 
 export function projectStatus(items: BillingItem[]): FlowStatus | null {
