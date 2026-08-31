@@ -2,6 +2,7 @@
   "name": "CIJD DESIGN Billing Preview",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
   "postCreateCommand": "npm ci",
+  "postStartCommand": "sh -lc 'nohup npm run preview:codespaces > /tmp/cijd-design-billing-preview.log 2>&1 &'",
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": {
