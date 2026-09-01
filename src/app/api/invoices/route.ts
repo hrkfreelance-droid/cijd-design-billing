@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   return handleAs((repo) =>
     repo.createInvoice({
       clientId: str(body.clientId) ?? "",
-      invoiceNumber: str(body.invoiceNumber) ?? "",
+      invoiceNumber: str(body.invoiceNumber),
       invoiceDate: str(body.invoiceDate) ?? "",
       billingItemIds: ids,
     }),

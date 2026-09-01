@@ -2,7 +2,7 @@
 
 import type { Database } from "@/lib/types";
 import type { Persistence } from "./store";
-import { buildDemoSeed } from "./demo-seed";
+import { buildDemoSeed, removePreviewOnlyRecords } from "./demo-seed";
 
 const KEY = "cijd.demo.db";
 
@@ -15,9 +15,11 @@ export const browserPersistence: Persistence = {
   async read() {
     try {
       const raw = localStorage.getItem(KEY);
-      return raw ? (JSON.parse(raw) as Database) : buildDemoSeed();
+      return raw
+        ? removePreviewOnlyRecords(JSON.parse(raw) as Database)
+        : buildDemoSeed();
     } catch {
-      return null;
+      return buildDemoSeed();
     }
   },
   async write(db) {

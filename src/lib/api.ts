@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { GuardedRepository } from "@/lib/auth/guarded-repository";
 import { currentUser, type SessionUser } from "@/lib/auth/session";
 import { getRepository, RuleError } from "@/lib/data";
-import { isDemoMode } from "@/lib/runtime";
+import { isDemoMode, isPreviewRuntime } from "@/lib/runtime";
 
 /**
  * Wraps a handler so rule violations come back as a readable message.
@@ -12,7 +12,7 @@ import { isDemoMode } from "@/lib/runtime";
  * routes are switched off rather than left open as writable endpoints.
  */
 export async function handle<T>(fn: () => Promise<T>): Promise<NextResponse> {
-  if (isDemoMode) {
+  if (isDemoMode || isPreviewRuntime) {
     return NextResponse.json(
       { ok: false, code: "DEMO_MODE", message: "This preview runs on browser-local demo data." },
       { status: 404 },
@@ -40,7 +40,7 @@ export async function handle<T>(fn: () => Promise<T>): Promise<NextResponse> {
 export async function handleAs<T>(
   fn: (repo: GuardedRepository, user: SessionUser) => Promise<T>,
 ): Promise<NextResponse> {
-  if (isDemoMode) return handle(async () => null as T);
+  if (isDemoMode || isPreviewRuntime) return handle(async () => null as T);
   const user = await currentUser();
   if (!user) {
     return NextResponse.json(

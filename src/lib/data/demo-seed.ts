@@ -8,11 +8,13 @@ import { buildSeed } from "./seed";
  */
 export function buildDemoSeed(): Database {
   const db = buildSeed();
-  // Demo sign-in mirrors the real workspace split. Hiroki is the one Admin
-  // candidate and can exercise Design, Printing, and Billing without creating
-  // a second fake Admin account.
+  // The operational Correction $15 belongs to Production only. Preview keeps
+  // the other RH Kids prices as UI fixtures without copying that base record.
+  db.billingItems = db.billingItems.filter((item) => item.id !== "bi_rh_kids_correction");
+  // Hiroki owns the full Design → Printing → Billing → Accounting handoff in
+  // the preview while each supporting operator keeps a narrow workspace.
   db.users = [
-    { id: "u_hiroki", name: "Hiroki", role: "ADMIN" },
+    { id: "u_hiroki", name: "Hiroki", role: "DESIGNER" },
     { id: "u_printing", name: "Printing Staff", role: "PRINTING" },
     { id: "u_billing", name: "Billing Staff", role: "BILLING" },
     { id: "u_accounting", name: "Accounting", role: "ACCOUNTING" },
@@ -55,6 +57,26 @@ export function buildDemoSeed(): Database {
     ),
   );
 
+  return db;
+}
+
+/** Remove a legacy copy if this browser opened the preview before the fixture was corrected. */
+export function removePreviewOnlyRecords(db: Database): Database {
+  const removed = new Set(
+    db.billingItems
+      .filter((item) => item.id === "bi_rh_kids_correction")
+      .map((item) => item.id),
+  );
+  if (!removed.size) return db;
+  db.billingItems = db.billingItems.filter((item) => !removed.has(item.id));
+  const invoiceIds = new Set(
+    db.invoiceItems
+      .filter((link) => removed.has(link.billingItemId))
+      .map((link) => link.invoiceId),
+  );
+  db.invoiceItems = db.invoiceItems.filter((link) => !removed.has(link.billingItemId));
+  db.invoices = db.invoices.filter((invoice) => !invoiceIds.has(invoice.id));
+  db.payments = db.payments.filter((payment) => !invoiceIds.has(payment.invoiceId));
   return db;
 }
 

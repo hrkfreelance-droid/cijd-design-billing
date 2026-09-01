@@ -4,6 +4,7 @@ import { readJson, str } from "@/lib/api";
 import { SESSION_COOKIE, currentUser } from "@/lib/auth/session";
 import { getLocalRepository } from "@/lib/data";
 import { dataMode } from "@/lib/supabase/config";
+import { isPreviewRuntime } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,13 @@ function unavailable() {
       message: "Supabase credentials are required in production.",
     },
     { status: 503 },
+  );
+}
+
+function previewUnavailable() {
+  return NextResponse.json(
+    { ok: false, code: "DEMO_MODE", message: "This preview runs on browser-local demo data." },
+    { status: 404 },
   );
 }
 
@@ -33,6 +41,7 @@ function configuredMode() {
  * from the store, so it cannot be forged into extra permissions.
  */
 export async function GET() {
+  if (isPreviewRuntime) return previewUnavailable();
   const mode = configuredMode();
   if (!mode) return unavailable();
   const user = await currentUser();
@@ -55,6 +64,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (isPreviewRuntime) return previewUnavailable();
   const mode = configuredMode();
   if (!mode) return unavailable();
   if (mode === "supabase") {
@@ -87,6 +97,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
+  if (isPreviewRuntime) return previewUnavailable();
   const response = NextResponse.json({ ok: true, data: null });
   response.cookies.delete(SESSION_COOKIE);
   return response;

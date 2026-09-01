@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { api, useI18n } from "@/components/providers";
+import { useSession } from "@/components/providers";
 import { useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
 import {
@@ -14,6 +15,7 @@ import {
   Sheet,
 } from "@/components/ui";
 import { mediumDate, money, todayIso } from "@/lib/format";
+import { can } from "@/lib/auth/roles";
 import type { Invoice } from "@/lib/types";
 
 /**
@@ -28,6 +30,7 @@ export function InvoiceSheet({
   onClose: () => void;
 }) {
   const { t, locale } = useI18n();
+  const { user } = useSession();
   const scope = useScope();
   const { run, busy } = useAction();
   const [paying, setPaying] = useState(false);
@@ -40,6 +43,8 @@ export function InvoiceSheet({
 
   const client = scope.idx.clientById.get(invoice.clientId);
   const items = scope.idx.itemsByInvoice.get(invoice.id) ?? [];
+  const canInvoice = !!user && can(user.role, "invoice:write");
+  const canPay = !!user && can(user.role, "payment:write");
 
   const confirmPayment = async () => {
     const ok = await run(
@@ -96,12 +101,12 @@ export function InvoiceSheet({
         description={client?.name}
         footer={
           <div className="space-y-2">
-            {invoice.status === "ISSUED" && (
+            {invoice.status === "ISSUED" && canPay && (
               <Button variant="primary" full onClick={() => setPaying(true)}>
                 {t("billing.confirmPayment")}
               </Button>
             )}
-            {invoice.status === "PAID" && invoice.receiptStatus === "PENDING" && (
+            {invoice.status === "PAID" && invoice.receiptStatus === "PENDING" && canPay && (
               <Button variant="primary" full onClick={markReceiptSent} disabled={busy}>
                 {t("billing.receiptSent")}
               </Button>
@@ -109,7 +114,7 @@ export function InvoiceSheet({
             <Button variant="secondary" full onClick={onClose}>
               {t("common.close")}
             </Button>
-            {invoice.status === "ISSUED" && (
+            {invoice.status === "ISSUED" && canInvoice && (
               <button
                 onClick={() => setConfirmCancel(true)}
                 className="block w-full py-1.5 text-center text-[13px] text-faint transition-colors hover:text-review"
@@ -117,12 +122,12 @@ export function InvoiceSheet({
                 {t("billing.cancelInvoice")}
               </button>
             )}
-            {invoice.status === "PAID" && (
+            {invoice.status === "PAID" && canPay && (
               <button
                 onClick={() => setConfirmUndo(true)}
                 className="block w-full py-1.5 text-center text-[13px] text-faint transition-colors hover:text-review"
               >
-                {t("archive.restore")}
+                {t("billing.undoPayment")}
               </button>
             )}
           </div>
@@ -179,7 +184,7 @@ export function InvoiceSheet({
         title={t("billing.confirmPayment")}
         description={`${invoice.invoiceNumber ?? "Unknown"} · ${money(invoice.amount)}`}
         footer={
-          <div className="flex gap-2">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             <Button variant="secondary" full onClick={() => setPaying(false)}>
               {t("common.cancel")}
             </Button>
@@ -222,9 +227,9 @@ export function InvoiceSheet({
         open={confirmUndo}
         onClose={() => setConfirmUndo(false)}
         onConfirm={undoPayment}
-        title={t("archive.restore")}
-        message={t("archive.restoreConfirm")}
-        confirmLabel={t("archive.restore")}
+        title={t("billing.undoPayment")}
+        message={t("billing.undoPaymentConfirm")}
+        confirmLabel={t("billing.undoPayment")}
         busy={busy}
       />
     </>

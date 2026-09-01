@@ -14,12 +14,12 @@ import {
 
 import { ApiError } from "@/lib/api-error";
 import type { SessionUser } from "@/lib/auth/session";
-import { DEMO_MODE, demoRequest } from "@/lib/data/demo-client";
+import { demoRequest } from "@/lib/data/demo-client";
 import { translate, type Locale, type MessageKey } from "@/lib/i18n";
 import type { User } from "@/lib/types";
 import * as prefs from "@/lib/prefs";
 import type { Snapshot } from "@/lib/types";
-import { hasSupabaseBrowserConfig, isDemoMode } from "@/lib/runtime";
+import { hasSupabaseBrowserConfig, isBrowserDemoMode, isDemoMode } from "@/lib/runtime";
 import { supabaseBrowserClient } from "@/lib/supabase/browser";
 
 /* ------------------------------------------------------------------ api */
@@ -32,7 +32,7 @@ export async function api<T>(
 ): Promise<T> {
   const method = init?.method ?? "GET";
   // The public preview has no backend: the same repository runs in the browser.
-  if (DEMO_MODE) return demoRequest<T>(path, method, init?.body);
+  if (isBrowserDemoMode()) return demoRequest<T>(path, method, init?.body);
 
   let response: Response;
   try {

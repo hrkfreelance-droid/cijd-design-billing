@@ -45,7 +45,7 @@ async function newProjectWithItem(
   return { projectId: project.data.id as string, itemId: item.data.id as string };
 }
 
-test("designer sees production, not invoicing", async ({ page }) => {
+test("designer Hiroki can move work through downstream workspaces", async ({ page }) => {
   await signIn(page, "u_hiroki");
   await page.goto("/designer");
   await expect(page).toHaveURL(/\/designer\/projects$/);
@@ -55,23 +55,21 @@ test("designer sees production, not invoicing", async ({ page }) => {
   await expect(designerNav.getByRole("link", { name: "Design", exact: true })).toHaveCount(1);
   await expect(designerNav.getByRole("link", { name: "Archive", exact: true })).toHaveCount(1);
   await expect(designerNav.getByRole("link", { name: /Today|Projects|Delivered/ })).toHaveCount(0);
-  // No billing navigation anywhere on the designer side.
-  await expect(page.getByRole("link", { name: "Payments" })).toHaveCount(0);
+  // The designer page stays focused, while the workspace switcher exposes the
+  // downstream workspaces to Hiroki.
+  await expect(page.getByRole("link", { name: "Accounting" })).toHaveCount(0);
+  await page.getByRole("button", { name: /Switch workspace/ }).click();
+  const workspaces = page.getByRole("dialog", { name: "Switch workspace" });
+  await expect(workspaces.getByRole("button", { name: "Printing", exact: true })).toBeVisible();
+  await expect(workspaces.getByRole("button", { name: "Billing", exact: true })).toBeVisible();
 
   const state = await (await page.request.get("/api/state")).json();
-  expect(state.data.scope).toEqual({ production: true, billing: false, payment: false });
+  expect(state.data.scope).toEqual({ production: true, billing: true, payment: true });
   expect(state.data.invoices).toEqual([]);
 
-  // And no way to invoice, even by calling the endpoint directly.
-  const attempt = await page.request.post("/api/invoices", {
-    data: {
-      clientId: "cl_ringer_hut",
-      invoiceNumber: "X-1",
-      invoiceDate: "2026-01-01",
-      billingItemIds: ["bi_rh_kids_correction"],
-    },
-  });
-  expect(attempt.status()).toBe(403);
+  await workspaces.getByRole("button", { name: "Billing", exact: true }).click();
+  await expect(page).toHaveURL(/\/office$/);
+  await expect(page.getByRole("link", { name: "Accounting", exact: true })).toBeVisible();
 });
 
 test("undelivered work cannot reach billing", async ({ page }) => {
@@ -170,11 +168,11 @@ test("delivering hands the work to billing and records a notification", async ({
   await signIn(page, "u_billing");
   await page.goto("/office");
   await expect(page.getByText("Only work with completed production appears here.")).toBeVisible();
-  await expect(page.getByText("Handoff Poster")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Handoff Poster Design" })).toBeVisible();
   await expect(page.getByText("Gate Check")).toHaveCount(0);
 
   const state = await (await page.request.get("/api/state")).json();
-  expect(state.data.scope).toEqual({ production: false, billing: true, payment: false });
+  expect(state.data.scope).toEqual({ production: false, billing: true, payment: true });
   expect(
     state.data.billingItems.every((item: { productionStatus: string }) =>
       ["DELIVERED", "COMPLETED"].includes(item.productionStatus),
@@ -219,14 +217,17 @@ test("invoice once, pay once", async ({ page }) => {
   const group = page.locator("section").filter({ hasText: "Ringer Hut" });
   await expect(group.getByText("RH Kids Promotion").first()).toBeVisible();
   await group.getByRole("button", { name: "Mark as Invoiced" }).click();
-  await page.getByLabel("Invoice number").fill("TEST-0001");
-  await page.getByRole("button", { name: "Create invoice" }).click();
-  await expect(page.getByText("Invoice TEST-0001 created")).toBeVisible();
+  await expect(page).toHaveURL(/\/office\/payments$/);
+  const invoicedState = await (await page.request.get("/api/state")).json();
+  const created = invoicedState.data.invoices.find(
+    (invoice: { status: string }) => invoice.status === "ISSUED",
+  );
+  expect(created.invoiceNumber).toMatch(/^CIJD-/);
 
   const duplicate = await page.request.post("/api/invoices", {
     data: {
       clientId: "cl_ringer_hut",
-      invoiceNumber: "test-0001",
+      invoiceNumber: created.invoiceNumber.toLowerCase(),
       invoiceDate: "2026-01-01",
       billingItemIds: ["bi_rh_kids_correction"],
     },
@@ -237,18 +238,37 @@ test("invoice once, pay once", async ({ page }) => {
   // Accounting takes it from here.
   await signIn(page, "u_accounting");
   await page.goto("/office/payments");
-  await page.getByRole("button", { name: /TEST-0001/ }).click();
+  await page.getByRole("button", { name: new RegExp(created.invoiceNumber) }).click();
   await page.getByRole("button", { name: "Confirm payment" }).click();
   await page.getByRole("button", { name: "Confirm", exact: true }).click();
   await expect(page.getByText("Payment confirmed")).toBeVisible();
 
-  const state = await (await page.request.get("/api/state")).json();
-  const paid = state.data.invoices.find((i: { status: string }) => i.status === "PAID");
+  const paidState = await (await page.request.get("/api/state")).json();
+  const paid = paidState.data.invoices.find((i: { id: string; status: string }) => i.id === created.id);
   const again = await page.request.post(`/api/invoices/${paid.id}/payment`, {
     data: { paymentDate: "2026-01-01" },
   });
   expect(again.status()).toBe(409);
   expect((await again.json()).code).toBe("ALREADY_PAID");
+
+  await page.getByRole("tab", { name: /Payment/ }).click();
+  await page.getByRole("button", { name: new RegExp(created.invoiceNumber) }).click();
+  await page.getByRole("button", { name: "Undo payment" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Undo payment" }).click();
+  await expect(page.getByText("Payment undone")).toBeVisible();
+  await page.getByRole("tab", { name: /Invoiced/ }).click();
+  await expect(page.getByRole("button", { name: new RegExp(created.invoiceNumber) })).toBeVisible();
+
+  // Billing owns invoice cancellation; Accounting owns payment confirmation.
+  await signIn(page, "u_billing");
+  await page.goto("/office/payments");
+  await page.getByRole("button", { name: new RegExp(created.invoiceNumber) }).click();
+  await page.getByRole("button", { name: "Cancel invoice" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Cancel invoice" }).click();
+  await expect(page.getByText("Invoice cancelled")).toBeVisible();
+  await page.goto("/office");
+  await expect(page.getByRole("button", { name: "Mark as Invoiced" }).first()).toBeVisible();
+
 });
 
 test("telegram registers a project and delivers it", async ({ request }) => {
@@ -329,7 +349,7 @@ test("receipts move an invoice to completed", async ({ page }) => {
   await expect(page.getByText("Payment confirmed")).toBeVisible();
 
   // Paid, receipt still pending.
-  await page.getByRole("tab", { name: /Receipt/ }).click();
+  await page.getByRole("tab", { name: /Payment/ }).click();
   await page.getByRole("button", { name: /RCPT-1/ }).click();
   await page.getByRole("button", { name: "Receipt sent" }).click();
   await expect(page.getByText("Receipt updated")).toBeVisible();
@@ -397,8 +417,11 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
   await page.goto("/printing");
   const card = page.getByTestId("printing-item-card").filter({ hasText: "Printing Workflow Check" });
   await expect(card).toContainText("Print ×900");
-  await expect(card).toContainText("Suggested");
+  await expect(card).toContainText("Needs Review");
   await expect(card).toContainText("$54");
+  await expect(card).toContainText("Set price");
+  await expect(card).not.toContainText("Historical");
+  await expect(card).not.toContainText("Previous FREE Voucher");
   await expect(page.getByText("Confidential Design")).toHaveCount(0);
 
   const priceResponse = page.waitForResponse(
@@ -407,15 +430,16 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
       response.request().method() === "POST" &&
       response.status() === 200,
   );
-  await card.getByRole("button", { name: "Confirm this price" }).click();
+  await card.getByRole("button", { name: "Set price" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Set price" }).click();
   await priceResponse;
   const confirmed = await (await page.request.get("/api/state")).json();
   expect(confirmed.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
     expect.objectContaining({ productionStatus: "IN_PROGRESS", billingStatus: "NOT_READY", priceReviewStatus: "CONFIRMED" }),
   );
 
-  await page.goto("/printing/ordering");
   const orderingCard = page.getByTestId("printing-item-card").filter({ hasText: "Printing Workflow Check" });
+  await expect(orderingCard.getByRole("button", { name: "Deliver" })).toBeVisible();
   await orderingCard.getByRole("button", { name: "Deliver" }).click();
   const deliveryResponse = page.waitForResponse(
     (response) =>
@@ -428,6 +452,14 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
   const delivered = await (await page.request.get("/api/state")).json();
   expect(delivered.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
     expect.objectContaining({ productionStatus: "DELIVERED", billingStatus: "READY_TO_INVOICE" }),
+  );
+
+  await orderingCard.getByRole("button", { name: "Undo delivery" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Undo delivery" }).click();
+  await expect(page.getByText("Delivery undone")).toBeVisible();
+  const undone = await (await page.request.get("/api/state")).json();
+  expect(undone.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
+    expect.objectContaining({ productionStatus: "IN_PROGRESS" }),
   );
 
   // A different unconfirmed print remains blocked at the invoice boundary.
@@ -470,7 +502,7 @@ test("printing total derives from quantity and unit price and stays review-requi
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/printing");
     const card = page.getByTestId("printing-item-card").filter({ hasText: "Printing Calculation Check" });
-    await card.getByRole("button", { name: "Edit specs & price" }).click();
+    await card.getByRole("button", { name: "Set price" }).click();
     const dialog = page.getByRole("dialog");
     const dialogBox = await dialog.boundingBox();
     expect(dialogBox).not.toBeNull();
@@ -652,13 +684,17 @@ test("printing navigation stays focused on printing and history", async ({ page 
   await expect(printingNav.getByRole("link", { name: /Review|Ordering|Delivered/ })).toHaveCount(0);
 });
 
-test("demo users keep one Admin and separated operational roles", () => {
-  const users = buildDemoSeed().users;
+test("demo users keep Hiroki as the downstream-capable Designer", () => {
+  const preview = buildDemoSeed();
+  const users = preview.users;
   expect(users).toEqual([
-    { id: "u_hiroki", name: "Hiroki", role: "ADMIN" },
+    { id: "u_hiroki", name: "Hiroki", role: "DESIGNER" },
     { id: "u_printing", name: "Printing Staff", role: "PRINTING" },
     { id: "u_billing", name: "Billing Staff", role: "BILLING" },
     { id: "u_accounting", name: "Accounting", role: "ACCOUNTING" },
   ]);
-  expect(users.filter((user) => user.role === "ADMIN")).toHaveLength(1);
+  expect(users.filter((user) => user.role === "DESIGNER")).toHaveLength(1);
+  const kidsItems = preview.billingItems.filter((item) => item.projectId === "pj_rh_kids_promotion");
+  expect(kidsItems.map((item) => item.description)).toEqual(expect.arrayContaining(["Revision", "iStand"]));
+  expect(kidsItems.some((item) => item.id === "bi_rh_kids_correction")).toBe(false);
 });

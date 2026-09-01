@@ -79,10 +79,21 @@ export interface ReviewPrintPriceInput {
 
 export interface CreateInvoiceInput {
   clientId: string;
-  invoiceNumber: string;
+  /** Optional compatibility input for imported/internal callers. The UI never asks for it. */
+  invoiceNumber?: string;
   invoiceDate: string;
   billingItemIds: string[];
   actor?: string;
+}
+
+/** Internal invoice reference. User-facing billing no longer asks for a number. */
+export function autoInvoiceNumber(): string {
+  const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  const suffix =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID().slice(0, 8).toUpperCase()
+      : Math.random().toString(36).slice(2, 10).toUpperCase();
+  return `CIJD-${date}-${suffix}`;
 }
 
 export interface ConfirmPaymentInput {

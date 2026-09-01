@@ -8,10 +8,6 @@ import type { BillingStatus, ItemType, ReceiptStatus } from "@/lib/types";
 import { browserPersistence, clearDemoData } from "./browser-persistence";
 import { RuleError, type Repository } from "./repository";
 import { Store } from "./store";
-import { isDemoMode } from "@/lib/runtime";
-
-/** True only for a development/public preview, never for a production build. */
-export const DEMO_MODE = isDemoMode;
 
 const USER_KEY = "cijd.demo.user";
 let store: Repository | null = null;
@@ -215,7 +211,7 @@ export async function demoRequest<T>(
           : [];
         return (await guarded.createInvoice({
           clientId: str(body.clientId) ?? "",
-          invoiceNumber: str(body.invoiceNumber) ?? "",
+          invoiceNumber: str(body.invoiceNumber),
           invoiceDate: str(body.invoiceDate) ?? "",
           billingItemIds: ids,
         })) as T;

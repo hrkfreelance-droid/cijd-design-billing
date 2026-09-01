@@ -12,15 +12,12 @@ import {
   Button,
   Checkbox,
   EmptyState,
-  Field,
-  Input,
   PageHeader,
-  Sheet,
   StatusTag,
 } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
 import { isProductionComplete, sum } from "@/lib/derive";
-import { mediumDate, money, todayIso } from "@/lib/format";
+import { money, todayIso } from "@/lib/format";
 import type { BillingItem, Client, Notification } from "@/lib/types";
 
 /** Everything here has completed production. That is the whole rule for this screen. */
@@ -146,9 +143,10 @@ function ReviewQueue({ items }: { items: BillingItem[] }) {
 function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] }) {
   const { t } = useI18n();
   const scope = useScope();
+  const router = useRouter();
+  const { run, busy } = useAction();
   const [open, setOpen] = useState(true);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
-  const [invoicing, setInvoicing] = useState(false);
 
   // Work is billed per project, the way it is quoted and remembered.
   const projects = useMemo(() => {
@@ -172,6 +170,23 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
 
   const selectedProjects = projects.filter((project) => !skipped.has(project.id));
   const selectedItems = selectedProjects.flatMap((project) => project.items);
+
+  const markInvoiced = async () => {
+    if (!selectedItems.length) return;
+    const ok = await run(
+      () =>
+        api("/api/invoices", {
+          method: "POST",
+          body: {
+            clientId: client.id,
+            invoiceDate: todayIso(),
+            billingItemIds: selectedItems.map((item) => item.id),
+          },
+        }),
+      { key: "toast.invoiceCreated" },
+    );
+    if (ok) router.push("/office/payments");
+  };
 
   const toggle = (id: string) => {
     setSkipped((current) => {
@@ -244,8 +259,8 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
             </span>
             <Button
               variant="primary"
-              onClick={() => setInvoicing(true)}
-              disabled={selectedItems.length === 0}
+              onClick={markInvoiced}
+              disabled={selectedItems.length === 0 || busy}
               className="w-full sm:w-auto"
             >
               {t("billing.markInvoiced")}
@@ -254,103 +269,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
         </>
       )}
 
-      {invoicing && (
-        <CreateInvoiceSheet
-          client={client}
-          items={selectedItems}
-          onClose={() => setInvoicing(false)}
-        />
-      )}
     </section>
-  );
-}
-
-function CreateInvoiceSheet({
-  client,
-  items,
-  onClose,
-}: {
-  client: Client;
-  items: BillingItem[];
-  onClose: () => void;
-}) {
-  const { t, locale } = useI18n();
-  const { run, busy } = useAction();
-  const [number, setNumber] = useState("");
-  const [date, setDate] = useState(todayIso());
-
-  const submit = async () => {
-    if (!number.trim()) return;
-    const ok = await run(
-      () =>
-        api("/api/invoices", {
-          method: "POST",
-          body: {
-            clientId: client.id,
-            invoiceNumber: number,
-            invoiceDate: date,
-            billingItemIds: items.map((item) => item.id),
-          },
-        }),
-      { key: "toast.invoiceCreated", vars: { number: number.trim() } },
-    );
-    if (ok) onClose();
-  };
-
-  return (
-    <Sheet
-      open
-      onClose={onClose}
-      title={t("billing.markInvoiced")}
-      description={t("billing.invoiceFor", { client: client.name })}
-      footer={
-        <div className="flex gap-2">
-          <Button variant="secondary" full onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button variant="primary" full onClick={submit} disabled={!number.trim() || busy}>
-            {t("billing.createInvoice")}
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-4 pb-2">
-        <Field label={t("billing.invoiceNumber")}>
-          <Input
-            value={number}
-            onChange={(event) => setNumber(event.target.value)}
-            placeholder={t("billing.invoiceNumberPlaceholder")}
-          />
-        </Field>
-        <Field label={t("billing.invoiceDate")}>
-          <Input
-            type="date"
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-            className="tnum"
-          />
-        </Field>
-
-        <div className="rounded-xl bg-fill px-4 py-3">
-          <div className="divide-y divide-line">
-            {items.map((item) => (
-              <div key={item.id} className="flex items-center gap-3 py-2 text-[13.5px]">
-                <span className="min-w-0 flex-1 truncate">{item.description}</span>
-                <Amount value={money(item.amount)} />
-              </div>
-            ))}
-          </div>
-          <div className="mt-1 flex items-center justify-between border-t border-line-strong pt-2.5">
-            <span className="text-[13.5px] font-medium">{t("common.total")}</span>
-            <Amount value={money(sum(items))} strong className="text-[15px]" />
-          </div>
-        </div>
-
-        <p className="text-[12.5px] text-faint">
-          {mediumDate(date, locale)} · {t("billing.items", { count: items.length })}
-        </p>
-      </div>
-    </Sheet>
   );
 }
 

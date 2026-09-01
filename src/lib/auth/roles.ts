@@ -21,8 +21,26 @@ export type Permission =
   | "notification:manage";
 
 const MATRIX: Record<Role, Permission[]> = {
-  DESIGNER: ["designer:read", "production:read", "production:write", "delivery:write", "client:write"],
-  BILLING: ["billing:read", "invoice:write", "notification:manage"],
+  // Hiroki owns the full handoff in this workspace: Design → Printing →
+  // Billing → Accounting. The UI still keeps each workspace focused, while
+  // the Designer account can move downstream work forward or undo it.
+  DESIGNER: [
+    "designer:read",
+    "production:read",
+    "production:write",
+    "delivery:write",
+    "client:write",
+    "printing:read",
+    "print:write",
+    "billing:read",
+    "invoice:write",
+    "payment:read",
+    "payment:write",
+    "notification:manage",
+  ],
+  // Billing hands the user directly to the Accounting view after invoicing;
+  // it can read that queue but payment confirmation remains Accounting-only.
+  BILLING: ["billing:read", "invoice:write", "payment:read", "notification:manage"],
   ACCOUNTING: ["payment:read", "payment:write"],
   PRINTING: ["production:read", "printing:read", "print:write", "delivery:write"],
   ADMIN: [

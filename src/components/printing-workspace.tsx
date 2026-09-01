@@ -6,7 +6,7 @@ import { ItemProductionAction } from "@/components/delivery";
 import { api, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
-import { Amount, Button, EmptyState, Field, Input, PageHeader, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
+import { Button, EmptyState, Field, Input, PageHeader, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
 import {
   isHistoricalRecord,
   isProductionComplete,
@@ -27,12 +27,7 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
       .filter((item) => item.type === "PRINT")
       .filter((item) => {
         if (view === "history") return isHistoricalRecord(item);
-        if (isHistoricalRecord(item)) return false;
-        if (view === "review") return printPriceReviewState(item) !== "CONFIRMED";
-        if (view === "ordering") {
-          return printPriceReviewState(item) === "CONFIRMED" && !isProductionComplete(item);
-        }
-        return isProductionComplete(item);
+        return !isHistoricalRecord(item);
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [scope, view]);
@@ -63,24 +58,14 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
         subtitle={
           <span>
             {subtitle}
-            {view === "review" && (
-              <span className="ml-2 text-review">{t("printing.reviewCount", { count: items.length })}</span>
-            )}
+            {view === "review" && <span className="ml-2 text-review">{t("printing.reviewCount", { count: items.length })}</span>}
           </span>
         }
       />
 
       {items.length === 0 ? (
         <EmptyState
-          title={
-            view === "review"
-              ? t("printing.emptyReview")
-              : view === "ordering"
-                ? t("printing.emptyOrdering")
-                : view === "delivered"
-                  ? t("printing.emptyDelivered")
-                  : t("printing.emptyHistory")
-          }
+          title={view === "history" ? t("printing.emptyHistory") : t("printing.emptyReview")}
         />
       ) : (
         <div className="space-y-4 px-5 pb-10 sm:px-8">
@@ -114,7 +99,6 @@ function PrintItemCard({
   history: boolean;
 }) {
   const { t } = useI18n();
-  const { run, busy } = useAction();
   const [editing, setEditing] = useState(false);
   const review = printPriceReviewState(item);
   const suggestedUnit = item.suggestedUnitPrice ?? item.unitPrice;
@@ -124,26 +108,7 @@ function PrintItemCard({
   const finished = isProductionComplete(item);
   const workStatus: WorkStatus = finished
     ? "DELIVERED"
-    : review === "REVIEW_REQUIRED"
-      ? "NEEDS_REVIEW"
-      : "IN_PROGRESS";
-
-  const confirm = async () => {
-    await run(
-      () =>
-        api(`/api/printing-items/${item.id}/price`, {
-          method: "POST",
-          body: {
-            unitPrice: item.unitPrice,
-            amount: item.amount,
-            confirm: true,
-            priceSource: item.priceSource,
-            priceReason: item.priceReason,
-          },
-        }),
-      { key: "toast.itemUpdated" },
-    );
-  };
+    : confirmed ? "IN_PROGRESS" : "NEEDS_REVIEW";
 
   return (
     <article
@@ -151,23 +116,6 @@ function PrintItemCard({
       className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
     >
       <div className="px-5 py-5 sm:px-6">
-        <div className="flex items-start justify-between gap-4">
-          <StatusPill status={workStatus} />
-          {/* With no figure yet there is nothing to call suggested — the
-              headline says the price is missing rather than labelling a blank. */}
-          <span className="shrink-0 text-right">
-            {shown > 0 && (
-              <span className="block text-[11px] font-medium uppercase tracking-[0.08em] text-faint">
-                {confirmed ? t("printing.confirmed") : t("printing.suggested")}
-              </span>
-            )}
-            <Amount
-              value={shown > 0 ? money(shown) : t("printing.pricePending")}
-              className={`mt-1 block text-[15px] font-semibold ${shown > 0 ? "" : "text-review"}`}
-            />
-          </span>
-        </div>
-
         <div className="mt-3 min-w-0">
           <h2 className="truncate text-[17px] font-semibold tracking-[-0.012em]">
             {project?.name ?? ""}
@@ -180,59 +128,30 @@ function PrintItemCard({
           </p>
         </div>
 
-        {/* The total already sits in the header — this row is the working out
-            behind it, which is what a price reviewer actually checks. */}
         <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-line pt-4 sm:grid-cols-3">
-          <Info label={t("printing.size")} value={item.printSize || "—"} />
-          <Info label={t("printing.quantity")} value={String(item.quantity)} numeric />
+          {item.printSize && <Info label={t("printing.size")} value={item.printSize} />}
+          {suggestedUnit > 0 && (
+            <Info label={t("printing.unitPrice")} value={`${money(suggestedUnit)} / pc`} numeric />
+          )}
           <Info
-            label={t("printing.unitPrice")}
-            value={suggestedUnit > 0 ? `${money(suggestedUnit)} / pc` : "—"}
-            numeric={suggestedUnit > 0}
+            label={t("common.amount")}
+            value={shown > 0 ? money(shown) : t("printing.pricePending")}
+            emphasis={shown <= 0}
+            numeric={shown > 0}
           />
-        </div>
-
-        <div className="mt-5 space-y-2 border-t border-line pt-4 text-[13px]">
-          {item.priceSource && (
-            <p className="text-muted">
-              <span className="text-faint">{t("printing.priceSource")}:</span> {item.priceSource}
-            </p>
-          )}
-          {item.priceReason && (
-            <p className="leading-relaxed text-muted">
-              <span className="text-faint">{t("printing.reason")}:</span> {item.priceReason}
-            </p>
-          )}
-          {item.note && (
-            <p className="leading-relaxed text-muted">
-              <span className="text-faint">{t("printing.note")}:</span> {item.note}
-            </p>
-          )}
-          {item.priceConfirmedBy && (
-            <p className="text-faint">
-              {t("printing.confirmedBy", { name: item.priceConfirmedBy })}
-            </p>
-          )}
+          <StatusPill status={workStatus} className="justify-self-start" />
         </div>
       </div>
 
       {!history && (
-        <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-2 border-t border-line px-5 py-3.5 sm:px-6">
-          {/* Confirming a price we do not have is the one thing this screen
-              cannot do, so it says what is missing instead of going quiet. */}
-          {!confirmed && item.amount <= 0 && (
-            <p className="mr-auto text-[12px] text-review">{t("printing.needsSpec")}</p>
-          )}
-          <Button variant="secondary" size="sm" onClick={() => setEditing(true)} disabled={busy}>
-            {t("printing.editSpec")}
-          </Button>
+        <div className="flex min-w-0 items-center justify-end border-t border-line px-5 py-3.5 sm:px-6">
           {!confirmed ? (
-            <Button variant="primary" size="sm" onClick={confirm} disabled={busy || item.amount <= 0}>
+            <Button variant="primary" size="sm" onClick={() => setEditing(true)}>
               {t("printing.confirmPrice")}
             </Button>
-          ) : !finished ? (
+          ) : (
             <ItemProductionAction item={item} size="sm" />
-          ) : null}
+          )}
         </div>
       )}
 
@@ -282,33 +201,15 @@ function PrintEditSheet({
   const [size, setSize] = useState(item.printSize ?? "");
   const [quantity, setQuantity] = useState(String(item.quantity));
   const [unitPrice, setUnitPrice] = useState(String(item.unitPrice || ""));
-  const [source, setSource] = useState(item.priceSource ?? "");
-  const [reason, setReason] = useState(item.priceReason ?? "");
-  const [note, setNote] = useState(item.note ?? "");
 
   const quantityValue = parseNumber(quantity);
   const unitPriceValue = parseNumber(unitPrice);
   const calculatedAmount = calculatePrintTotal(quantity, unitPrice);
   const validQuantity = quantityValue !== null && quantityValue > 0;
-  const validUnitPrice =
-    unitPrice.trim() === "" || (unitPriceValue !== null && unitPriceValue >= 0);
   const validPrice =
     validQuantity && unitPriceValue !== null && unitPriceValue > 0 && calculatedAmount !== "";
 
-  const saveSpec = async () => {
-    if (quantityValue === null || quantityValue <= 0 || !validUnitPrice) return;
-    const ok = await run(
-      () =>
-        api(`/api/printing-items/${item.id}/spec`, {
-          method: "PATCH",
-          body: { printSize: size, quantity: quantityValue, note },
-        }),
-      { key: "toast.itemUpdated" },
-    );
-    if (ok) onClose();
-  };
-
-  const savePrice = async (confirm: boolean) => {
+  const setPrice = async () => {
     if (
       !validQuantity ||
       unitPriceValue === null ||
@@ -318,17 +219,16 @@ function PrintEditSheet({
       return;
     }
     const ok = await run(
-      () =>
-        api(`/api/printing-items/${item.id}/price`, {
+      async () => {
+        await api(`/api/printing-items/${item.id}/spec`, {
+          method: "PATCH",
+          body: { printSize: size, quantity: quantityValue },
+        });
+        await api(`/api/printing-items/${item.id}/price`, {
           method: "POST",
-          body: {
-            unitPrice: unitPriceValue,
-            amount: Number(calculatedAmount),
-            confirm,
-            priceSource: source,
-            priceReason: reason,
-          },
-        }),
+          body: { unitPrice: unitPriceValue, amount: Number(calculatedAmount), confirm: true },
+        });
+      },
       { key: "toast.itemUpdated" },
     );
     if (ok) onClose();
@@ -338,20 +238,13 @@ function PrintEditSheet({
     <Sheet
       open={open}
       onClose={onClose}
-      title={t("printing.specEdit")}
-      description={t("printing.confirmHint")}
+      title={t("printing.confirmTitle")}
       footer={
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
           <Button variant="secondary" full onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" full onClick={saveSpec} disabled={busy || !validQuantity || !validUnitPrice}>
-            {t("printing.saveSpec")}
-          </Button>
-          <Button variant="secondary" full onClick={() => savePrice(false)} disabled={busy || !validPrice}>
-            {t("printing.savePrice")}
-          </Button>
-          <Button variant="primary" full onClick={() => savePrice(true)} disabled={busy || !validPrice}>
+          <Button variant="primary" full onClick={setPrice} disabled={busy || !validPrice}>
             {t("printing.confirmPrice")}
           </Button>
         </div>
@@ -379,15 +272,6 @@ function PrintEditSheet({
             />
           </Field>
         </div>
-        <Field label={t("printing.priceSource")} hint={t("common.optional")}>
-          <Input value={source} onChange={(event) => setSource(event.target.value)} placeholder="Historical / Pricing DB / AI" />
-        </Field>
-        <Field label={t("printing.reason")} hint={t("common.optional")}>
-          <Input value={reason} onChange={(event) => setReason(event.target.value)} />
-        </Field>
-        <Field label={t("printing.note")} hint={t("common.optional")}>
-          <Input value={note} onChange={(event) => setNote(event.target.value)} />
-        </Field>
       </div>
     </Sheet>
   );

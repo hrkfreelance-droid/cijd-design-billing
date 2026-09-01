@@ -273,7 +273,7 @@ function ItemSheet({
         onClose={onClose}
         title={item ? t("item.edit") : t("item.new")}
         footer={
-          <div className="flex gap-2">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             <Button variant="secondary" full onClick={onClose}>
               {t("common.cancel")}
             </Button>

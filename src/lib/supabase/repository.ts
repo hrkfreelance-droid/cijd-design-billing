@@ -8,6 +8,7 @@ import {
   type CreateProjectInput,
   type Repository,
   type UpdateBillingItemInput,
+  autoInvoiceNumber,
 } from "@/lib/data/repository";
 import type {
   BillingItem,
@@ -433,9 +434,10 @@ export class SupabaseRepository implements Repository {
   }
 
   async createInvoice(input: CreateInvoiceInput) {
+    const invoiceNumber = input.invoiceNumber?.trim() || autoInvoiceNumber();
     const result = await this.db.rpc("create_invoice", {
       p_client_id: input.clientId,
-      p_invoice_number: input.invoiceNumber,
+      p_invoice_number: invoiceNumber,
       p_invoice_date: input.invoiceDate || today(),
       p_item_ids: input.billingItemIds,
       p_actor: input.actor ?? "Billing Staff",

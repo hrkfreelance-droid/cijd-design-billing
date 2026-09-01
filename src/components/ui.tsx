@@ -51,7 +51,7 @@ export function Button({
         size === "sm"
           ? "h-9 px-3.5 text-[12.5px]"
           : "h-10 px-[18px] text-[13.5px]"
-      } ${full ? "w-full" : size === "sm" ? "min-w-[84px]" : "min-w-[104px]"} ${
+      } ${full ? "min-w-0 w-full" : size === "sm" ? "min-w-[84px]" : "min-w-[104px]"} ${
         VARIANTS[variant]
       } ${className}`}
     />
@@ -469,7 +469,7 @@ export function ConfirmSheet({
       onClose={onClose}
       title={title}
       footer={
-        <div className="flex gap-2">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
           <Button variant="secondary" full onClick={onClose}>
             {t("common.cancel")}
           </Button>

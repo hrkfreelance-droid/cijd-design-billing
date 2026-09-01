@@ -1,26 +1,22 @@
 # CIJD DESIGN Billing
 
-CIJD DESIGN の案件・請求・入金管理 Web アプリ。
-制作と請求を別のワークスペースに分け、その境界を **納品** に置いています。
+CIJD DESIGN の案件・請求・経理管理 Web アプリ。
+制作 → 印刷 → 請求 → 経理を、納品を境界に一本道で管理します。
 
 ## Preview
 
-現在、公開・実行基盤は未確定です。Cloudflare Freeを第一候補として成立方法を検証しており、公開設定はまだ変更していません。
-Netlifyを前提にせず、ローカルでの起動方法は [Local Development](#local-development) を参照してください。
+公開PreviewはCloudflare Workersの固定URLで実行し、Previewの操作状態はbrowser-local Demo Storeに保存します。
+[Open Cloudflare Preview](https://cijd-design-billing-preview.hrk-freelance.workers.dev/)
+ローカルでの起動方法は [Local Development](#local-development) を参照してください。
 
-正本Repositoryに設定されていた GitHub Pages Preview の案内は保持しています。
-[Open GitHub Pages Preview](https://hrkfreelance-droid.github.io/cijd-design-billing/)
-
-この統合branchでは公開・deployは実行していません。Pages用の設定は正本起点のまま保持し、業務用のserver/API機能はローカルで検証します。
-
-> 以前公開した `preview--cijd-billing.netlify.app` は旧バージョンのままです（役割分離・納品ゲート・Telegram は含まれていません）。
+`CIJD_PREVIEW_MODE=1` のPreviewではサーバーAPIを状態保存に使わず、Supabase本番データにも接続しません。
 
 ## Overview
 
 ```
-Designer                              Office
-────────────────                      ────────────────
-作る  →  納品する      ──DELIVERED──▶  請求する → 入金確認 → 領収書 → 完了
+Designer / Printing                   Office
+────────────────────                  ────────────────
+作る・価格を決める → 納品 ──DELIVERED──▶ 請求済みにする → 経理 → 入金確認 → 完了
 ```
 
 納品前の案件は請求担当から見えません。**Office に出ているものは、すべて納品済みで請求してよいもの**です。
@@ -28,14 +24,14 @@ Designer                              Office
 ## Features
 
 **Designer（`/designer/projects`。`/designer` からもリダイレクト）**
-- Design / Archive
-- 案件と請求項目の登録、`納品済みにする` の実行、`✓ 納品済み` の表示
-- 請求書・入金・領収書は表示も操作もしない
+- 制作・印刷・請求・経理をワークスペース切替で確認・操作
+- 案件と請求項目の登録、完了・納品、価格決定、請求済み、入金確認
+- 各工程のUndoを確認付きで実行
 
 **Office（`/office`）**
-- Billing（請求待ち）/ Payments（入金待ち・領収書・完了）/ Archive
+- 請求（請求待ち）/ 経理（請求済み・入金確認・完了）/ アーカイブ
 - 納品済みの項目だけが請求候補に出る
-- Invoice Number は請求書発行時に入力（必須・重複禁止）
+- Invoice ID/Number は内部で自動生成
 
 **守っているルール**
 - `productionStatus` が `DELIVERED` または `COMPLETED` でない項目は、請求待ちにも Invoice にもできない（UI・API・データ層すべてで拒否）
@@ -53,10 +49,10 @@ Designer                              Office
 
 | Role | 見られるもの |
 | --- | --- |
-| `DESIGNER` | Designer 全画面、納品操作 |
+| `DESIGNER` | 制作・印刷・請求・経理の確認と操作 |
 | `PRINTING` | 印刷仕様・価格確認、印刷物の納品操作 |
-| `BILLING` | 請求待ち、Invoice 作成、Invoice Archive、納品通知の再送 |
-| `ACCOUNTING` | 入金待ち、領収書、完了、Archive |
+| `BILLING` | 請求待ち、請求済み、請求取消、経理の閲覧、納品通知の再送 |
+| `ACCOUNTING` | 経理、入金確認、入金取消、完了、Archive |
 | `ADMIN` | 全画面（ワークスペース切替つき） |
 
 Navigation を隠すだけではありません。`/designer` と `/office` はサーバー側でも判定してリダイレクトし、
@@ -91,7 +87,7 @@ npm run dev          # http://localhost:3000
 初回起動時に `.data/runtime/db.json` が作成されます。既存の `.data/db.json` は
 手動検証・Import証拠として保全され、自動Runtimeでは使用しません。ローカルのNext生成物は
 `.next-local` に出力し、既存の `.next` も保全します。
-サインイン画面で担当（Hiroki / Printing Staff / Billing Staff / Accounting）を選ぶと、Role ごとのワークスペースに入ります。Hiroki は Demo では ADMIN として Design / Printing / Billing を切り替えられます。
+サインイン画面で担当（Hiroki / Printing Staff / Billing Staff / Accounting）を選ぶと、Role ごとのワークスペースに入ります。Hiroki は Designer として制作から経理まで切り替えて操作できます。
 
 ## Cloudflare Preview
 
@@ -100,10 +96,11 @@ vinextを使用します。`integrate-production-workspace` へのpushをPreview
 接続できます。ユーザーはCloudflareが発行した固定Worker URLを開くだけで、Terminal・
 git pull・Port操作は不要です。
 
-Preview buildはserver-onlyの `CIJD_PREVIEW_MODE=1` で一時Demo storeを選び、Supabase credentials・
-Telegram secretsを含めません。通常のcookie、route guard、GuardedRepositoryはPreviewでも有効です。
-本番Supabase未設定の本番Workerは引き続きfail closedし、localStorageや `.data/runtime/db.json` を
-業務DBとして使いません。固定URLはCloudflare Workerとaccountのworkers.dev設定が確定した後に決まります。
+Preview buildはserver-onlyの `CIJD_PREVIEW_MODE=1` でserver APIを閉じ、固定URLではbrowser-localの
+Demo Storeを使います。Supabase credentials・Telegram secretsを含めず、localStorageの操作状態は
+ブラウザごとに保持します。通常のcookie、route guard、GuardedRepositoryは本番側で有効です。
+本番Supabase未設定の本番Workerは引き続きfail closedし、PreviewのlocalStorageや `.data/runtime/db.json`
+を本番業務DBとして使いません。
 
 Cloudflare Workers Buildsの一度きりの接続設定は次の値です。
 
@@ -181,7 +178,7 @@ BotはProject登録、納品、Billing handoffまで処理します。実Botの�
 
 - クライアントは **Ringer Hut** と **DAISHIN**（追加・改名・非表示に対応）
 - 実データのみ。サンプル・架空の案件や金額は入れていません
-- 現在の請求対象：`RH Kids Promotion / Correction / $15`（納品済み・請求待ち）
+- Productionの現在の請求対象：`RH Kids Promotion / Correction / $15`（納品済み・請求待ち）。Previewには表示しません
 
 ## Importing past invoices
 

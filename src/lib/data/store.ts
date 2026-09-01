@@ -20,6 +20,7 @@ import {
   type CreateProjectInput,
   type Repository,
   type UpdateBillingItemInput,
+  autoInvoiceNumber,
 } from "./repository";
 import { buildSeed } from "./seed";
 import {
@@ -657,17 +658,27 @@ export class Store implements Repository {
   createInvoice(input: CreateInvoiceInput) {
     return this.transaction((db) => {
       const actor = input.actor ?? "Billing Staff";
-      const invoiceNumber = input.invoiceNumber?.trim();
-      if (!invoiceNumber) throw new RuleError("INVALID", "Invoice number is required.", 400);
+      const requestedInvoiceNumber = input.invoiceNumber?.trim();
+      let invoiceNumber = requestedInvoiceNumber || autoInvoiceNumber();
       if (!input.billingItemIds?.length) {
         throw new RuleError("INVALID", "Select at least one item.", 400);
       }
-      const duplicate = db.invoices.find(
-        (i) =>
-          i.status !== "VOID" &&
-          typeof i.invoiceNumber === "string" &&
-          i.invoiceNumber.toLowerCase() === invoiceNumber.toLowerCase(),
-      );
+      const hasNumber = (candidate: string) =>
+        db.invoices.some(
+          (i) =>
+            i.status !== "VOID" &&
+            typeof i.invoiceNumber === "string" &&
+            i.invoiceNumber.toLowerCase() === candidate.toLowerCase(),
+        );
+      while (!requestedInvoiceNumber && hasNumber(invoiceNumber)) invoiceNumber = autoInvoiceNumber();
+      const duplicate = hasNumber(invoiceNumber)
+        ? db.invoices.find(
+            (i) =>
+              i.status !== "VOID" &&
+              typeof i.invoiceNumber === "string" &&
+              i.invoiceNumber.toLowerCase() === invoiceNumber.toLowerCase(),
+          )
+        : undefined;
       if (duplicate) {
         throw new RuleError(
           "DUPLICATE_INVOICE_NUMBER",

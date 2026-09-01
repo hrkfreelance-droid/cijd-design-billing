@@ -219,7 +219,7 @@ function NewProjectSheet({ open, onClose }: { open: boolean; onClose: () => void
       onClose={close}
       title={t("projects.new")}
       footer={
-        <div className="flex gap-2">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
           <Button variant="secondary" full onClick={close}>
             {t("common.cancel")}
           </Button>
