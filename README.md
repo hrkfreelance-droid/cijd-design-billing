@@ -54,8 +54,8 @@ Navigation を隠すだけではありません。`/designer` と `/office` は�
 API は `GuardedRepository` を通すため、**権限外のデータはそもそも返りません**
 （例：BILLING の `/api/state` には進行状況確認のための項目が含まれますが、制作・印刷の書き込みAPIは403になります）。
 
-認証は Supabase Auth + Google OAuthです（未設定時の担当選択はローカル開発専用）。
-Role は常にサーバー側で `users` テーブルから読み直すため、Cookie やトークンの改ざんで権限は増えません。
+認証は Supabase Auth + Google OAuth、またはCloudflare Secretで発行する担当者別Access Linkです。
+Access Linkは一度だけRole Session Cookieへ交換し、元のTokenはCookieへ保存しません。Role判定と操作権限は常にサーバー側で行います。
 
 ## Tech Stack
 
@@ -103,10 +103,18 @@ Cloudflare Workers Buildsの一度きりの接続設定は次の値です。
 - Deploy command: `npm run deploy:vinext`
 - Worker: `cijd-design-billing-preview`
 
-For real operation, set these as Cloudflare Workers Builds environment variables
-before the build (never commit them): `NEXT_PUBLIC_SUPABASE_URL` and
-`NEXT_PUBLIC_SUPABASE_ANON_KEY`. Keep `SUPABASE_SERVICE_ROLE_KEY` server-only;
-it is not a `NEXT_PUBLIC_*` value.
+For real operation, set `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` as Cloudflare Workers Builds environment
+variables. Secret-link operation also needs the server-only
+`SUPABASE_SERVICE_ROLE_KEY`; it is never a `NEXT_PUBLIC_*` value.
+
+To start without Google, keep `CIJD_ACCESS_LINKS_ENABLED=1` and add five
+Cloudflare Secrets: `CIJD_ADMIN_ACCESS_TOKEN`, `CIJD_DESIGNER_ACCESS_TOKEN`,
+`CIJD_PRINTING_ACCESS_TOKEN`, `CIJD_BILLING_ACCESS_TOKEN`, and
+`CIJD_ACCOUNTING_ACCESS_TOKEN`. Each value must be a long random token (at
+least 32 characters). Share only the resulting `/access/<token>` link with its
+担当者. Set `CIJD_ACCESS_LINKS_ENABLED=0` later to disable this method while
+leaving Google Login and all business data untouched.
 
 Production branchはこのPreview設定に含めません。Cloudflare account側のGitHub接続と
 workers.dev設定が完了した後は、対象branchへのpushだけでPreviewが更新されます。
@@ -131,11 +139,13 @@ workers.dev設定が完了した後は、対象branchへのpushだけでPreview�
 | 変数 | 用途 |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 設定すると Supabase（DB + Auth）に切り替わります |
-| `SUPABASE_SERVICE_ROLE_KEY` | Auth User provisioning CLI専用。ブラウザやWorkerには設定しません |
+| `SUPABASE_SERVICE_ROLE_KEY` | Access Link利用時にWorkerだけがSupabaseへ接続するためのserver-only key。ブラウザへは送らない |
 | `CIJD_DATA_FILE` | ローカル JSON ストアの保存先（既定：`.data/runtime/db.json`） |
 | `CIJD_NEXT_DIST_DIR` | Next生成物の保存先（npm scriptsの既定：`.next-local`） |
 | `NEXT_PUBLIC_DEMO_MODE` | 開発時のみブラウザ内デモデータへ切り替え（Production Previewでは使用しない） |
 | `CIJD_PREVIEW_MODE` | Cloudflare Preview識別用。Demo Storeを選択するフラグではありません |
+| `CIJD_ACCESS_LINKS_ENABLED` | 担当者別Access Linkの有効/無効。後で `0` にして停止可能 |
+| `CIJD_*_ACCESS_TOKEN` | 各RoleのCloudflare Secret。GitHubへcommitしない |
 
 ## Production setup checklist
 

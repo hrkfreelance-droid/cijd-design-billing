@@ -1,16 +1,28 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { currentAccessUser } from "@/lib/auth/access-links";
 import { supabaseConfig } from "./config";
 
 /**
- * A client bound to the caller's session, so every query runs under that
- * person's row level security policies rather than a privileged key.
+ * Google sessions use a client bound to the caller's session. Access-link
+ * sessions have no Supabase Auth JWT, so the server-only service key is used
+ * for the database request and GuardedRepository remains the application-level
+ * Role boundary for every read and write.
  */
 export async function supabaseServerClient(): Promise<SupabaseClient | null> {
   const config = supabaseConfig();
   if (!config) return null;
+  const accessUser = await currentAccessUser();
+  if (accessUser) {
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+    if (!serviceRoleKey) return null;
+    return createClient(config.url, serviceRoleKey, {
+      auth: { autoRefreshToken: false, detectSessionInUrl: false, persistSession: false },
+    });
+  }
   const store = await cookies();
   return createServerClient(config.url, config.anonKey, {
     cookies: {

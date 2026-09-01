@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { readJson, str } from "@/lib/api";
+import { clearAccessSession, currentAccessUser } from "@/lib/auth/access-links";
 import { SESSION_COOKIE, currentUser } from "@/lib/auth/session";
 import { getLocalRepository } from "@/lib/data";
 import { dataMode } from "@/lib/supabase/config";
@@ -36,15 +37,15 @@ function configuredMode() {
 }
 
 /**
- * With Supabase configured, signing in happens through Supabase Auth and this
- * route only reports who is signed in. Without it, the development stand-in
- * lets you pick a person: the cookie names a user and the role is always read
- * from the store, so it cannot be forged into extra permissions.
+ * With Supabase configured, this route reports either the signed-in Supabase
+ * user or the active server-verified Access Link session. Without it, the
+ * development stand-in lets you pick a person from the local store.
  */
 export async function GET() {
   if (isLocalDemoRuntime) return previewUnavailable();
   const mode = configuredMode();
   if (!mode) return unavailable();
+  const accessUser = await currentAccessUser();
   const user = await currentUser();
   if (mode === "supabase") {
     const client = await supabaseServerClient();
@@ -55,7 +56,7 @@ export async function GET() {
         user,
         users: [],
         auth: "supabase",
-        access: identity ? (user ? "active" : "denied") : "signed_out",
+        access: accessUser ? "active" : identity ? (user ? "active" : "denied") : "signed_out",
       },
     });
   }
@@ -112,5 +113,6 @@ export async function DELETE() {
   if (isLocalDemoRuntime) return previewUnavailable();
   const response = NextResponse.json({ ok: true, data: null });
   response.cookies.delete(SESSION_COOKIE);
+  clearAccessSession(response);
   return response;
 }

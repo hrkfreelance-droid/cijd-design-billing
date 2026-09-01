@@ -13,7 +13,8 @@
   },
   "workers_dev": true,
   "vars": {
-    "CIJD_PREVIEW_MODE": "1"
+    "CIJD_PREVIEW_MODE": "1",
+    "CIJD_ACCESS_LINKS_ENABLED": "1"
   },
   "cache": {
     "enabled": true

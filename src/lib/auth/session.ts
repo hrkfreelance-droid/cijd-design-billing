@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getLocalRepository } from "@/lib/data";
 import { dataMode } from "@/lib/supabase/config";
 import { supabaseServerClient } from "@/lib/supabase/server";
+import { currentAccessUser } from "./access-links";
 import type { Role } from "./roles";
 
 export const SESSION_COOKIE = "cijd.session";
@@ -16,11 +17,14 @@ export interface SessionUser {
 }
 
 /**
- * With Supabase configured this is a real authenticated session. Without it,
- * a development stand-in: the cookie only names a user and the role is always
- * read back from the store, so a tampered cookie cannot grant permissions.
+ * Access-link sessions are signed by the matching server Secret and never carry
+ * the original URL token. Google/Supabase sessions remain the normal path when
+ * no access-link session is present.
  */
 export async function currentUser(): Promise<SessionUser | null> {
+  const accessUser = await currentAccessUser();
+  if (accessUser) return accessUser;
+
   if (dataMode() === "supabase") {
     const client = await supabaseServerClient();
     if (!client) return null;

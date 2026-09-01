@@ -8,8 +8,8 @@ import { isLocalDemoRuntime } from "@/lib/runtime";
 /**
  * Wraps a handler so rule violations come back as a readable message.
  *
- * On the public preview the store lives in the visitor's browser, so these
- * routes are switched off rather than left open as writable endpoints.
+ * In explicit local demo mode the store lives in the visitor's browser, so
+ * these routes are switched off rather than left open as writable endpoints.
  */
 export async function handle<T>(fn: () => Promise<T>): Promise<NextResponse> {
   if (isLocalDemoRuntime) {

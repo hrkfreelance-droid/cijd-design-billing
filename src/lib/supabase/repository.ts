@@ -10,6 +10,7 @@ import {
   type UpdateBillingItemInput,
   autoInvoiceNumber,
 } from "@/lib/data/repository";
+import type { Role } from "@/lib/auth/roles";
 import type {
   BillingItem,
   BillingStatus,
@@ -98,7 +99,11 @@ function unwrap<T>(result: { data: T | null; error: PostgrestError | null }): T 
 export class SupabaseRepository implements Repository {
   readonly mode = "supabase" as const;
 
-  constructor(private readonly db: SupabaseClient) {}
+  constructor(
+    private readonly db: SupabaseClient,
+    /** Access-link sessions use the server-only service key without a Supabase JWT. */
+    private readonly accessRole: Role | null = null,
+  ) {}
 
   async getSnapshot(): Promise<Snapshot> {
     const [clients, projects, items, invoices, invoiceItems, users] = await Promise.all([
@@ -348,7 +353,127 @@ export class SupabaseRepository implements Repository {
     return updated;
   }
 
+  private async updatePrintSpecWithAccess(
+    id: string,
+    patch: Parameters<Repository["updatePrintSpec"]>[1],
+  ) {
+    const current = toItem(
+      unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()),
+    );
+    if (current.type !== "PRINT") {
+      throw new RuleError("INVALID_PRINT", "This operation is only available for print items.", 400);
+    }
+    if (current.createdBy.trim().toLowerCase() === "import") {
+      throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.", 403);
+    }
+    if (current.billingStatus === "INVOICED" || current.billingStatus === "PAID") {
+      throw new RuleError("ITEM_LOCKED", "This item has already been invoiced.");
+    }
+    const description = patch.description === undefined ? current.description : patch.description.trim();
+    if (!description) throw new RuleError("INVALID", "Description is required.", 400);
+    const printSize = patch.printSize === undefined ? current.printSize : patch.printSize.trim() || null;
+    const note = patch.note === undefined ? current.note : patch.note.trim() || null;
+    const quantity = patch.quantity ?? current.quantity;
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      throw new RuleError("INVALID", "Quantity must be greater than zero.", 400);
+    }
+    const actor = patch.actor ?? DEFAULT_ACTOR;
+    const amount = money(quantity * current.unitPrice);
+    const updatedAt = new Date().toISOString();
+    const result = await this.db
+      .from("billing_items")
+      .update({
+        description,
+        print_size: printSize,
+        quantity,
+        note,
+        amount,
+        price_review_status: "REVIEW_REQUIRED",
+        suggested_unit_price: current.unitPrice,
+        suggested_amount: amount,
+        price_confirmed_by: null,
+        price_confirmed_at: null,
+        billing_status: current.billingStatus === "READY_TO_INVOICE" ? "NEEDS_REVIEW" : current.billingStatus,
+        updated_at: updatedAt,
+        updated_by: actor,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    const updated = toItem(unwrap(result));
+    const audit = await this.db.from("audit_logs").insert({
+      actor,
+      action: "print.spec.update",
+      entity: "billing_item",
+      entity_id: id,
+      detail: updated.description,
+    });
+    if (audit.error) fail(audit.error);
+    return updated;
+  }
+
+  private async reviewPrintPriceWithAccess(
+    id: string,
+    input: Parameters<Repository["reviewPrintPrice"]>[1],
+  ) {
+    const current = toItem(
+      unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()),
+    );
+    if (current.type !== "PRINT") {
+      throw new RuleError("INVALID_PRINT", "This operation is only available for print items.", 400);
+    }
+    if (current.createdBy.trim().toLowerCase() === "import") {
+      throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.", 403);
+    }
+    if (current.billingStatus === "INVOICED" || current.billingStatus === "PAID") {
+      throw new RuleError("ITEM_LOCKED", "This item has already been invoiced.");
+    }
+    const unitPrice = Number(input.unitPrice);
+    const amount = Number(input.amount);
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(amount) || amount <= 0) {
+      throw new RuleError("INVALID", "A confirmed print price must be greater than zero.", 400);
+    }
+    if (money(amount) !== money(current.quantity * unitPrice)) {
+      throw new RuleError("INVALID", "Print total must equal quantity × unit price.", 400);
+    }
+    const actor = input.actor ?? DEFAULT_ACTOR;
+    const confirm = input.confirm ?? false;
+    const updatedAt = new Date().toISOString();
+    const priceSource = input.priceSource === undefined ? current.priceSource : input.priceSource.trim() || null;
+    const priceReason = input.priceReason === undefined ? current.priceReason : input.priceReason.trim() || null;
+    const result = await this.db
+      .from("billing_items")
+      .update({
+        suggested_unit_price: current.suggestedUnitPrice ?? current.unitPrice,
+        suggested_amount: current.suggestedAmount ?? current.amount,
+        unit_price: money(unitPrice),
+        amount: money(amount),
+        custom_amount: money(amount) !== money(current.quantity * unitPrice),
+        price_source: priceSource,
+        price_reason: priceReason,
+        price_review_status: confirm ? "CONFIRMED" : "REVIEW_REQUIRED",
+        price_confirmed_by: confirm ? actor : null,
+        price_confirmed_at: confirm ? updatedAt : null,
+        updated_at: updatedAt,
+        updated_by: actor,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    const updated = toItem(unwrap(result));
+    const audit = await this.db.from("audit_logs").insert({
+      actor,
+      action: confirm ? "price.confirm" : "price.edit",
+      entity: "billing_item",
+      entity_id: id,
+      detail: `${updated.unitPrice}/${updated.amount}`,
+    });
+    if (audit.error) fail(audit.error);
+    return updated;
+  }
+
   async updatePrintSpec(id: string, patch: Parameters<Repository["updatePrintSpec"]>[1]) {
+    if (this.accessRole) return this.updatePrintSpecWithAccess(id, patch);
     const result = await this.db.rpc("update_print_spec", {
       p_item_id: id,
       p_description: patch.description ?? null,
@@ -362,6 +487,7 @@ export class SupabaseRepository implements Repository {
   }
 
   async reviewPrintPrice(id: string, input: Parameters<Repository["reviewPrintPrice"]>[1]) {
+    if (this.accessRole) return this.reviewPrintPriceWithAccess(id, input);
     const unitPrice = Number(input.unitPrice);
     const amount = Number(input.amount);
     if (!Number.isFinite(unitPrice) || unitPrice <= 0 || !Number.isFinite(amount) || amount <= 0) {

@@ -1,13 +1,14 @@
 import { filePersistence } from "./file-persistence";
 import { Store } from "./store";
 import type { Repository } from "./repository";
+import { currentAccessUser } from "@/lib/auth/access-links";
 
 /**
  * Single switch point for the data layer.
  *
- * With Supabase configured every request gets a client bound to the caller's
- * session, so row level security applies. Without it the app runs on the local
- * JSON store, which keeps development and the demo usable with no credentials.
+ * With Supabase configured, Google sessions use the caller's RLS-bound client;
+ * Access Link sessions use the server-only service key and the GuardedRepository
+ * role boundary. A local JSON store is only selected during local development.
  */
 let localStore: Repository | null = null;
 
@@ -23,7 +24,8 @@ export async function getRepository(): Promise<Repository> {
   const client = await supabaseServerClient();
   if (!client) throw new Error("Supabase server client is unavailable.");
   const { SupabaseRepository } = await import("@/lib/supabase/repository");
-  return new SupabaseRepository(client);
+  const accessUser = await currentAccessUser();
+  return new SupabaseRepository(client, accessUser?.role ?? null);
 }
 
 export { RuleError } from "./repository";
