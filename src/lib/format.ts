@@ -64,6 +64,7 @@ export function mediumDate(date: string | null | undefined, locale: Locale): str
 }
 
 export function monthLabel(monthKey: string, locale: Locale): string {
+  if (!/^\d{4}-\d{2}$/.test(monthKey)) return "";
   const [year, month] = monthKey.split("-");
   return new Intl.DateTimeFormat(intlLocale(locale), {
     year: "numeric",

@@ -48,7 +48,10 @@ export default function ArchivePage() {
       if (date) keys.add(monthKey(date));
     }
     for (const group of historical) {
-      for (const item of group.items) keys.add(historicalMonth(item));
+      for (const item of group.items) {
+        const key = historicalMonth(item);
+        if (key) keys.add(key);
+      }
     }
     return Array.from(keys).sort().reverse();
   }, [paid, historical]);

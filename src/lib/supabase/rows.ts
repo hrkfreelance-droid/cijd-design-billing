@@ -16,6 +16,13 @@ type Row = Record<string, unknown>;
 const str = (value: unknown) => (value == null ? "" : String(value));
 const numeric = (value: unknown) => Number(value ?? 0);
 
+function historicalMonthFromRow(row: Row): string | null {
+  const explicit = str(row.historical_month).trim();
+  if (/^\d{4}-\d{2}$/.test(explicit)) return explicit;
+  const note = str(row.note);
+  return note.match(/historical\s+month\s+(\d{4}-\d{2})/i)?.[1] ?? null;
+}
+
 export const toClient = (row: Row): Client => ({
   id: str(row.id),
   name: str(row.name),
@@ -56,6 +63,7 @@ export const toItem = (row: Row): BillingItem => ({
   deliveredAt: (row.delivered_at as string) ?? null,
   deliveredBy: (row.delivered_by as string) ?? null,
   invoiceId: (row.invoice_id as string) ?? null,
+  historicalMonth: historicalMonthFromRow(row),
   printSize: (row.print_size as string) ?? null,
   priceReviewStatus: (row.price_review_status as BillingItem["priceReviewStatus"]) ?? null,
   suggestedUnitPrice: row.suggested_unit_price == null ? null : numeric(row.suggested_unit_price),

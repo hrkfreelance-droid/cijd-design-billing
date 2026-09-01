@@ -30,7 +30,8 @@ export default function ProductionArchivePage() {
     const keys = new Set<string>();
     for (const group of groups) {
       for (const item of group.items) {
-        keys.add(historicalMonth(item));
+        const key = historicalMonth(item);
+        if (key) keys.add(key);
       }
     }
     return Array.from(keys).sort().reverse();
