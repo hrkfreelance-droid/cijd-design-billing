@@ -40,6 +40,11 @@ Designer / Printing                   Office
 - 同じ請求書番号は登録できない。入金済みへの再入金確認はエラー
 - 請求・入金の取り消しは確認付きで、履歴は消さずに残す
 
+**表示言語（JA / EN / KH）**
+- `src/lib/i18n.ts` の英語辞書がキーの正本。`ja` / `kh` は `Record<MessageKey, string>` で宣言されているため、
+  キーが1つでも抜けると `npm run typecheck` がエラーになる（スプレッドによるフォールバックは使っていない）。
+- 案件名・クライアント名・自由記述（Description/Note）は翻訳しない。UI文言（ボタン・状態・空表示・確認・エラー）のみ翻訳対象。
+
 ## Access Control
 
 | Role | 見られるもの |
