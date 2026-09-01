@@ -1,8 +1,7 @@
 -- Real records only. No sample clients, projects or amounts.
 --
--- The Ringer Hut history for February–August 2026 is deliberately absent: those
--- records have not been supplied, and guessing them would be worse than an
--- empty archive. Import them with `npm run import:history` once available.
+-- The 71-row Ringer Hut history is a read-only local/Preview fixture. It is
+-- intentionally not applied to the production seed or production Supabase.
 
 insert into clients (id, name, active)
 values

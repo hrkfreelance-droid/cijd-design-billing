@@ -43,7 +43,7 @@ CIJD DESIGN is the product name. The service is labeled Billing. Ringer Hut is a
 
 ## Evidence on Hand
 
-The implementation brief and the user-supplied RH Kids Promotion record are the confirmed sources for this build. Ringer Hut historical 2–8 month records were not available in the current workspace, so they were not fabricated.
+The implementation brief, the user-supplied RH Kids Promotion record, and `ringer_hut_history_2026_02_08.csv` are the confirmed sources for this build. The 71 Ringer Hut rows from February through August are kept as read-only imported history in the Archive; their `NEEDS_REVIEW` and `INVOICED` facts are not promoted to a current workload or changed to `PAID`.
 
 ## Product Principles
 

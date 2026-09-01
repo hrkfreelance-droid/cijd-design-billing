@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { buildDemoSeed } from "../src/lib/data/demo-seed";
+import { money } from "../src/lib/format";
 
 /**
  * The two rules this app exists to keep:
@@ -855,4 +856,151 @@ test("demo users keep Hiroki as the downstream-capable Designer", () => {
   const kidsItems = preview.billingItems.filter((item) => item.projectId === "pj_rh_kids_promotion");
   expect(kidsItems.map((item) => item.description)).toEqual(expect.arrayContaining(["Revision", "iStand"]));
   expect(kidsItems.some((item) => item.id === "bi_rh_kids_correction")).toBe(false);
+});
+
+test("progress keeps embedded print quantities to one display", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Progress Quantity Display Check" },
+    })
+  ).json();
+  const rows = [
+    ["Print ×2000", 2000],
+    ["Print x900", 900],
+    ["Print 100", 100],
+    ["Additional Print 1500", 1500],
+  ] as const;
+  const created: { id: string; description: string; quantity: number }[] = [];
+  for (const [description, quantity] of rows) {
+    const response = await page.request.post("/api/billing-items", {
+      data: {
+        projectId: project.data.id,
+        description,
+        type: "PRINT",
+        quantity,
+        unitPrice: 0,
+      },
+    });
+    const body = await response.json();
+    created.push({ id: body.data.id, description, quantity });
+  }
+
+  await signIn(page, "u_billing");
+  await page.goto("/office/progress");
+  const progressProject = page.getByTestId(`progress-project-${project.data.id}`);
+  for (const row of created) {
+    await expect(progressProject.getByText(row.description, { exact: true })).toHaveCount(1);
+    await expect(progressProject).not.toContainText(`${row.description} ×${row.quantity}`);
+  }
+
+  const state = await (await page.request.get("/api/state")).json();
+  for (const row of created) {
+    expect(state.data.billingItems.find((item: { id: string }) => item.id === row.id)).toEqual(
+      expect.objectContaining({ description: row.description, quantity: row.quantity }),
+    );
+  }
+});
+
+test("Billing and Accounting totals follow the selected client and tab", async ({ page }) => {
+  async function createReady(clientId: string, name: string, amount: number) {
+    const project = await (
+      await page.request.post("/api/projects", { data: { clientId, name } })
+    ).json();
+    const item = await (
+      await page.request.post("/api/billing-items", {
+        data: { projectId: project.data.id, description: "Design", type: "DESIGN", unitPrice: amount },
+      })
+    ).json();
+    const completed = await page.request.post(`/api/billing-items/${item.data.id}/complete`);
+    expect(completed.ok()).toBeTruthy();
+    return { clientId, itemId: item.data.id as string };
+  }
+
+  await signIn(page, "u_hiroki");
+  const ringer = await createReady("cl_ringer_hut", "Billing Total Ringer Hut", 40);
+  const daishin = await createReady("cl_daishin", "Billing Total DAISHIN", 25);
+
+  await signIn(page, "u_billing");
+  const readyState = await (await page.request.get("/api/state")).json();
+  const projectClients = new Map(
+    readyState.data.projects.map((project: { id: string; clientId: string }) => [project.id, project.clientId]),
+  );
+  const readyItems = readyState.data.billingItems.filter(
+    (item: { projectId: string; createdBy: string; productionStatus: string; billingStatus: string }) =>
+      item.createdBy !== "Import" &&
+      ["COMPLETED", "DELIVERED"].includes(item.productionStatus) &&
+      item.billingStatus === "READY_TO_INVOICE",
+  );
+  const totalFor = (clientId?: string) =>
+    readyItems
+      .filter((item: { projectId: string }) => !clientId || projectClients.get(item.projectId) === clientId)
+      .reduce((total: number, item: { amount: number }) => total + item.amount, 0);
+
+  await page.goto("/office");
+  await expect(page.getByTestId("page-total")).toContainText(money(totalFor()));
+  await page.getByRole("button", { name: "Ringer Hut", exact: true }).click();
+  await expect(page.getByTestId("page-total")).toContainText(money(totalFor("cl_ringer_hut")));
+  await page.getByRole("button", { name: "All Clients", exact: true }).click();
+
+  const ringerInvoice = await (
+    await page.request.post("/api/invoices", {
+      data: { clientId: ringer.clientId, invoiceNumber: "TOTAL-RH-1", invoiceDate: "2026-09-01", billingItemIds: [ringer.itemId] },
+    })
+  ).json();
+  const daishinInvoice = await (
+    await page.request.post("/api/invoices", {
+      data: { clientId: daishin.clientId, invoiceNumber: "TOTAL-DAISHIN-1", invoiceDate: "2026-09-01", billingItemIds: [daishin.itemId] },
+    })
+  ).json();
+
+  await signIn(page, "u_accounting");
+  await page.goto("/office/payments");
+  const invoices = await (await page.request.get("/api/state")).json();
+  const invoiceTotal = (status: string, receiptStatus?: string, clientId?: string) =>
+    invoices.data.invoices
+      .filter((invoice: { status: string; receiptStatus: string; clientId: string }) =>
+        invoice.status === status && (!receiptStatus || invoice.receiptStatus === receiptStatus) && (!clientId || invoice.clientId === clientId),
+      )
+      .reduce((total: number, invoice: { amount: number }) => total + invoice.amount, 0);
+  await expect(page.getByTestId("page-total")).toContainText(money(invoiceTotal("ISSUED")));
+  await page.getByRole("button", { name: "Ringer Hut", exact: true }).click();
+  await expect(page.getByTestId("page-total")).toContainText(money(invoiceTotal("ISSUED", undefined, "cl_ringer_hut")));
+  await page.getByRole("button", { name: "All Clients", exact: true }).click();
+
+  const paid = await page.request.post(`/api/invoices/${ringerInvoice.data.id}/payment`, {
+    data: { paymentDate: "2026-09-01", slip: "" },
+  });
+  expect(paid.ok()).toBeTruthy();
+  await page.reload();
+  await page.getByRole("tab", { name: /Payment/ }).click();
+  const receiptState = await (await page.request.get("/api/state")).json();
+  const receiptTotal = receiptState.data.invoices
+    .filter((invoice: { status: string; receiptStatus: string }) => invoice.status === "PAID" && invoice.receiptStatus === "PENDING")
+    .reduce((total: number, invoice: { amount: number }) => total + invoice.amount, 0);
+  await expect(page.getByTestId("page-total")).toContainText(money(receiptTotal));
+
+  const receiptUpdated = await page.request.patch(`/api/invoices/${ringerInvoice.data.id}`, {
+    data: { receiptStatus: "RECEIVED" },
+  });
+  expect(receiptUpdated.ok()).toBeTruthy();
+  await page.reload();
+  await page.getByRole("tab", { name: /Completed/ }).click();
+  const completedState = await (await page.request.get("/api/state")).json();
+  const completedTotal = completedState.data.invoices
+    .filter((invoice: { status: string; receiptStatus: string }) => invoice.status === "PAID" && invoice.receiptStatus !== "PENDING")
+    .reduce((total: number, invoice: { amount: number }) => total + invoice.amount, 0);
+  await expect(page.getByTestId("page-total")).toContainText(money(completedTotal));
+  expect(daishinInvoice.data.id).toBeTruthy();
+
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const path of ["/office", "/office/payments"]) {
+      await page.goto(path);
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, `${path} horizontal overflow at ${width}px`).toBe(0);
+    }
+  }
 });

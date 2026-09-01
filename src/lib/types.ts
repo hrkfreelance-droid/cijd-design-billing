@@ -81,6 +81,8 @@ export interface BillingItem {
   /** Actor who marked the item delivered or completed. */
   deliveredBy?: string | null;
   invoiceId?: string | null;
+  /** Month bucket retained for imported history whose exact work date is unknown. */
+  historicalMonth?: string | null;
   /** Printing-only specification and price certainty fields. */
   printSize?: string | null;
   priceReviewStatus?: PriceReviewStatus | null;

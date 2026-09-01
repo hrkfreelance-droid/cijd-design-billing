@@ -1,12 +1,8 @@
 import type { Database } from "@/lib/types";
+import { buildRingerHutHistory } from "./ringer-hut-history";
 
 /**
  * Initial data. Real records only — no sample clients, projects or amounts.
- *
- * The Ringer Hut history for February–August has not been supplied yet, so it
- * is deliberately absent rather than guessed. When those records are available
- * they belong in `historicalInvoices` below, with anything unconfirmed entered
- * as NEEDS_REVIEW instead of INVOICED or PAID.
  */
 
 function isoDate(offsetDays = 0): string {
@@ -77,10 +73,9 @@ export function buildSeed(): Database {
     auditLogs: [],
   };
 
-  // Confirmed historical invoices go here once the records are handed over.
-  // Nothing is invented: an empty archive is the honest state until then.
-  const historicalInvoices: never[] = [];
-  void historicalInvoices;
+  const history = buildRingerHutHistory(now);
+  db.projects.push(...history.projects);
+  db.billingItems.push(...history.billingItems);
 
   return db;
 }

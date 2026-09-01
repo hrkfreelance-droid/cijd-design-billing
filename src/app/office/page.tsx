@@ -13,10 +13,11 @@ import {
   Checkbox,
   EmptyState,
   PageHeader,
+  PageTotal,
   StatusTag,
 } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
-import { isProductionComplete, sum } from "@/lib/derive";
+import { isOperationalRecord, isProductionComplete, sum } from "@/lib/derive";
 import { money, todayIso } from "@/lib/format";
 import type { BillingItem, Client, Notification } from "@/lib/types";
 
@@ -37,6 +38,7 @@ export default function OfficeBillingPage() {
     if (!scope) return [];
     const ready = scope.items.filter(
       (item) =>
+        isOperationalRecord(item) &&
         isProductionComplete(item) && item.billingStatus === "READY_TO_INVOICE",
     );
     const byClient = new Map<string, BillingItem[]>();
@@ -57,6 +59,7 @@ export default function OfficeBillingPage() {
     () =>
       scope?.items.filter(
         (item) =>
+          isOperationalRecord(item) &&
           isProductionComplete(item) && item.billingStatus === "NEEDS_REVIEW",
       ) ?? [],
     [scope],
@@ -69,6 +72,11 @@ export default function OfficeBillingPage() {
       <PageHeader
         title={t("billing.ready")}
         subtitle={scope.client ? scope.client.name : t("client.all")}
+        action={
+          <PageTotal
+            value={money(groups.flatMap((group) => group.items).reduce((total, item) => total + item.amount, 0))}
+          />
+        }
       />
 
       <p className="px-5 pb-4 text-[12.5px] text-faint sm:px-8">{t("office.deliveredOnly")}</p>

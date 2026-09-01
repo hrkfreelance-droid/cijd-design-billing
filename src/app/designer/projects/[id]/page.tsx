@@ -101,7 +101,9 @@ export default function ProjectPage() {
             {t(hasSuggested ? "projects.estimatedTotal" : "project.total")}
           </div>
           <Amount
-            value={money(sum(items.filter((item) => item.amount > 0)))}
+            value={sum(items.filter((item) => item.amount > 0)) > 0
+              ? money(sum(items.filter((item) => item.amount > 0)))
+              : "—"}
             strong
             className="text-[24px] tracking-[-0.02em] sm:text-[26px]"
           />

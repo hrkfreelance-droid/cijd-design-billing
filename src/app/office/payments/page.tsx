@@ -7,7 +7,7 @@ import { InvoiceSheet } from "@/components/invoice-sheet";
 import { ChevronRight } from "@/components/icons";
 import { useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, Segmented } from "@/components/ui";
+import { Amount, EmptyState, PageHeader, PageTotal, Segmented } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
 import { mediumDate, money } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
@@ -46,6 +46,7 @@ function Payments() {
     (invoice) => invoice.status === "PAID" && invoice.receiptStatus !== "PENDING",
   );
   const shown = tab === "awaiting" ? awaiting : tab === "receipts" ? receipts : completed;
+  const total = shown.reduce((value, invoice) => value + invoice.amount, 0);
   const emptyLabel =
     tab === "awaiting"
       ? t("billing.awaitingEmpty")
@@ -58,6 +59,7 @@ function Payments() {
       <PageHeader
         title={t("office.payments")}
         subtitle={scope.client ? scope.client.name : t("client.all")}
+        action={<PageTotal value={money(total)} />}
       />
 
       <div className="px-5 pb-5 sm:px-8">

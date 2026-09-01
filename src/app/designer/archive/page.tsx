@@ -40,19 +40,33 @@ export default function ProductionArchivePage() {
 
   const months = useMemo(() => {
     const keys = new Set<string>();
-    for (const group of groups) if (group.project) keys.add(monthKey(group.project.date));
+    for (const group of groups) {
+      for (const item of group.items) {
+        keys.add(item.historicalMonth ?? monthKey(group.project?.date ?? ""));
+      }
+    }
     return Array.from(keys).sort().reverse();
   }, [groups]);
 
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return groups.filter((group) => {
-      if (month && group.project && monthKey(group.project.date) !== month) return false;
-      if (!term) return true;
-      return `${group.project?.name ?? ""} ${group.client?.name ?? ""}`
-        .toLowerCase()
-        .includes(term);
-    });
+    return groups
+      .map((group) => ({
+        ...group,
+        items: month
+          ? group.items.filter(
+              (item) =>
+                (item.historicalMonth ?? monthKey(group.project?.date ?? "")) === month,
+            )
+          : group.items,
+      }))
+      .filter((group) => {
+        if (month && group.items.length === 0) return false;
+        if (!term) return true;
+        return `${group.project?.name ?? ""} ${group.client?.name ?? ""}`
+          .toLowerCase()
+          .includes(term);
+      });
   }, [groups, query, month]);
 
   if (!scope) return <PageSkeleton />;
@@ -122,7 +136,10 @@ export default function ProductionArchivePage() {
                   ))}
                 </span>
               </span>
-              <Amount value={money(sum(group.items))} className="text-[15px]" />
+              <Amount
+                value={sum(group.items) > 0 ? money(sum(group.items)) : "—"}
+                className="text-[15px]"
+              />
               <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
             </Link>
           ))}

@@ -20,6 +20,7 @@ const eslintConfig = defineConfig([
     "legacy/**",
     // Build output left by hosting tooling.
     ".netlify/**",
+    "dist/**",
   ]),
 ]);
 

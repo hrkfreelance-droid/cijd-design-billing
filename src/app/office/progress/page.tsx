@@ -95,7 +95,11 @@ export default function ProgressPage() {
       ) : (
         <div className="space-y-6 pb-10">
           {groups.map((group) => (
-            <section key={group.project.id} className="px-5 sm:px-8">
+            <section
+              key={group.project.id}
+              data-testid={`progress-project-${group.project.id}`}
+              className="px-5 sm:px-8"
+            >
               <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{group.client.name}</h2>
               <div className="mt-2 overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border">
                 <div className="border-b border-line px-5 py-3.5 sm:px-6">
@@ -144,6 +148,9 @@ function progressState(item: BillingItem): ProgressState {
 
 function itemLabel(item: BillingItem): string {
   if (item.type !== "PRINT") return item.description;
-  if (/\b[x×]\s*\d+/i.test(item.description)) return item.description;
+  if (/\bprint(?:ing)?\b\s+(?:[x×]\s*)?\d+\b/i.test(item.description)) {
+    return item.description;
+  }
+  if (/\b[x×]\s*\d+\b/i.test(item.description)) return item.description;
   return `${item.description} ×${item.quantity}`;
 }

@@ -368,6 +368,9 @@ export class Store implements Repository {
   updateBillingItem(id: string, patch: UpdateBillingItemInput) {
     return this.transaction((db) => {
       const item = requireItem(db, id);
+      if (isHistoricalRecord(item)) {
+        throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.");
+      }
       if (isLocked(item)) {
         throw new RuleError(
           "ITEM_LOCKED",
@@ -521,6 +524,9 @@ export class Store implements Repository {
   setBillingStatus(id: string, status: BillingStatus, actor = DEFAULT_ACTOR) {
     return this.transaction((db) => {
       const item = requireItem(db, id);
+      if (isHistoricalRecord(item)) {
+        throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.");
+      }
       if (!MANUAL_STATUSES.includes(status)) {
         throw new RuleError(
           "INVALID_STATUS",
@@ -577,6 +583,9 @@ export class Store implements Repository {
   setItemCompletion(id: string, completed: boolean, actor = DEFAULT_ACTOR) {
     return this.transaction((db) => {
       const item = requireItem(db, id);
+      if (isHistoricalRecord(item)) {
+        throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.");
+      }
       if (productionAction(item) !== "COMPLETE") {
         throw new RuleError(
           "WRONG_PRODUCTION_ACTION",
@@ -599,7 +608,7 @@ export class Store implements Repository {
         );
       }
       // Already invoiced work is left exactly as it is.
-      const open = items.filter((item) => !isLocked(item));
+      const open = items.filter((item) => !isLocked(item) && !isHistoricalRecord(item));
       if (!open.length) {
         throw new RuleError("ITEM_LOCKED", "Every item here has already been invoiced.");
       }
@@ -661,6 +670,9 @@ export class Store implements Repository {
   deleteBillingItem(id: string, actor = DEFAULT_ACTOR) {
     return this.transaction((db) => {
       const item = requireItem(db, id);
+      if (isHistoricalRecord(item)) {
+        throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.");
+      }
       if (isLocked(item)) {
         throw new RuleError(
           "ITEM_LOCKED",
@@ -707,6 +719,9 @@ export class Store implements Repository {
 
       const items = input.billingItemIds.map((id) => requireItem(db, id));
       for (const item of items) {
+        if (isHistoricalRecord(item)) {
+          throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.");
+        }
         const project = db.projects.find((p) => p.id === item.projectId);
         if (!project || project.clientId !== input.clientId) {
           throw new RuleError("INVALID", "All items must belong to the same client.", 400);

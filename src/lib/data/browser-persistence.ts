@@ -3,6 +3,7 @@
 import type { Database } from "@/lib/types";
 import type { Persistence } from "./store";
 import { buildDemoSeed, removePreviewOnlyRecords } from "./demo-seed";
+import { mergeRingerHutHistory } from "./ringer-hut-history";
 
 const KEY = "cijd.demo.db";
 
@@ -15,9 +16,16 @@ export const browserPersistence: Persistence = {
   async read() {
     try {
       const raw = localStorage.getItem(KEY);
-      return raw
+      const db = raw
         ? removePreviewOnlyRecords(JSON.parse(raw) as Database)
         : buildDemoSeed();
+      const merged = mergeRingerHutHistory(db, new Date().toISOString());
+      try {
+        localStorage.setItem(KEY, JSON.stringify(merged));
+      } catch {
+        // Keep the merged in-memory state even when storage is read-only/full.
+      }
+      return merged;
     } catch {
       return buildDemoSeed();
     }

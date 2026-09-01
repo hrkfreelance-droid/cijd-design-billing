@@ -222,8 +222,8 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex items-end justify-between gap-4 px-5 pb-5 pt-7 sm:px-8 sm:pt-10">
-      <div className="min-w-0">
+    <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3 px-5 pb-5 pt-7 sm:px-8 sm:pt-10">
+      <div className="min-w-0 flex-1 basis-[min(100%,14rem)]">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.021em] sm:text-[30px]">
           {title}
         </h1>
@@ -232,6 +232,20 @@ export function PageHeader({
         )}
       </div>
       {action}
+    </div>
+  );
+}
+
+export function PageTotal({ value }: { value: string }) {
+  const { t } = useI18n();
+  return (
+    <div data-testid="page-total" className="shrink-0 text-right">
+      <span className="block text-[11px] font-medium uppercase tracking-[0.08em] text-muted">
+        {t("common.total")}
+      </span>
+      <span className="tnum block text-[19px] font-semibold leading-tight tracking-[-0.02em]">
+        {value}
+      </span>
     </div>
   );
 }
