@@ -24,6 +24,16 @@ export const hasSupabaseBrowserConfig = Boolean(
 export const isLocalDemoRuntime = isDemoMode;
 
 /**
+ * Pilot access is an explicit server-side deployment switch. It intentionally
+ * does not live in NEXT_PUBLIC_* and is never used to select browser-local
+ * data; the server treats an unauthenticated request as ADMIN only while this
+ * flag is enabled.
+ */
+export function isPilotMode(): boolean {
+  return process.env.CIJD_PILOT_MODE === "1";
+}
+
+/**
  * A hostname alone must never select demo data. Preview is operational whenever
  * Supabase variables are present, and otherwise stays behind the auth gate.
  */

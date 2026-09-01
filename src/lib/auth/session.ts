@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 
 import { getLocalRepository } from "@/lib/data";
 import { dataMode } from "@/lib/supabase/config";
+import { isPilotMode } from "@/lib/runtime";
 import { supabaseServerClient } from "@/lib/supabase/server";
 import { currentAccessUser } from "./access-links";
 import type { Role } from "./roles";
@@ -24,6 +25,10 @@ export interface SessionUser {
 export async function currentUser(): Promise<SessionUser | null> {
   const accessUser = await currentAccessUser();
   if (accessUser) return accessUser;
+
+  if (isPilotMode()) {
+    return { id: "pilot:admin", name: "Pilot Admin", role: "ADMIN" };
+  }
 
   if (dataMode() === "supabase") {
     const client = await supabaseServerClient();

@@ -2,6 +2,8 @@ import { filePersistence } from "./file-persistence";
 import { Store } from "./store";
 import type { Repository } from "./repository";
 import { currentAccessUser } from "@/lib/auth/access-links";
+import { isPilotMode } from "@/lib/runtime";
+import type { Role } from "@/lib/auth/roles";
 
 /**
  * Single switch point for the data layer.
@@ -25,7 +27,8 @@ export async function getRepository(): Promise<Repository> {
   if (!client) throw new Error("Supabase server client is unavailable.");
   const { SupabaseRepository } = await import("@/lib/supabase/repository");
   const accessUser = await currentAccessUser();
-  return new SupabaseRepository(client, accessUser?.role ?? null);
+  const accessRole: Role | null = accessUser?.role ?? (isPilotMode() ? "ADMIN" : null);
+  return new SupabaseRepository(client, accessRole);
 }
 
 export { RuleError } from "./repository";

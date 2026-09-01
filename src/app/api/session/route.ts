@@ -5,7 +5,7 @@ import { clearAccessSession, currentAccessUser } from "@/lib/auth/access-links";
 import { SESSION_COOKIE, currentUser } from "@/lib/auth/session";
 import { getLocalRepository } from "@/lib/data";
 import { dataMode } from "@/lib/supabase/config";
-import { isLocalDemoRuntime } from "@/lib/runtime";
+import { isLocalDemoRuntime, isPilotMode } from "@/lib/runtime";
 import { supabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +56,14 @@ export async function GET() {
         user,
         users: [],
         auth: "supabase",
-        access: accessUser ? "active" : identity ? (user ? "active" : "denied") : "signed_out",
+        access:
+          accessUser || isPilotMode()
+            ? "active"
+            : identity
+              ? user
+                ? "active"
+                : "denied"
+              : "signed_out",
       },
     });
   }

@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { currentAccessUser } from "@/lib/auth/access-links";
+import { isPilotMode } from "@/lib/runtime";
 import { supabaseConfig } from "./config";
 
 /**
@@ -12,11 +13,17 @@ import { supabaseConfig } from "./config";
  * for the database request and GuardedRepository remains the application-level
  * Role boundary for every read and write.
  */
-export async function supabaseServerClient(): Promise<SupabaseClient | null> {
+export async function supabaseServerClient(
+  options?: { forAuth?: boolean },
+): Promise<SupabaseClient | null> {
   const config = supabaseConfig();
   if (!config) return null;
   const accessUser = await currentAccessUser();
-  if (accessUser) {
+  // Pilot and Access Link requests have no Supabase Auth JWT. Use the
+  // server-only service key for their shared-database request. OAuth callback
+  // exchange explicitly opts out so Google Auth remains available while Pilot
+  // Mode is enabled.
+  if ((accessUser || isPilotMode()) && !options?.forAuth) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
     if (!serviceRoleKey) return null;
     return createClient(config.url, serviceRoleKey, {

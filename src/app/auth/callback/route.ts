@@ -19,7 +19,7 @@ export async function GET(request: Request) {
   const code = requestUrl.searchParams.get("code");
   if (!code) return callbackError(requestUrl);
 
-  const client = await supabaseServerClient();
+  const client = await supabaseServerClient({ forAuth: true });
   if (!client) return callbackError(requestUrl);
 
   const { error } = await client.auth.exchangeCodeForSession(code);
