@@ -342,6 +342,7 @@ const en = {
   "toast.receiptUpdated": "Receipt updated",
 
   "error.generic": "Something went wrong. Please try again.",
+  "error.INTERNAL": "This action could not be completed right now. Please try again.",
   "error.offline": "Could not reach the server.",
   "error.DUPLICATE_INVOICE_NUMBER": "That invoice number is already in use.",
   "error.ALREADY_PAID": "This invoice has already been paid.",
@@ -710,6 +711,7 @@ const ja: Record<MessageKey, string> = {
   "toast.receiptUpdated": "領収書の状態を更新しました",
 
   "error.generic": "処理できませんでした。もう一度お試しください。",
+  "error.INTERNAL": "現在この操作を完了できません。もう一度お試しください。",
   "error.offline": "サーバーに接続できませんでした。",
   "error.DUPLICATE_INVOICE_NUMBER": "この請求書番号はすでに使われています。",
   "error.ALREADY_PAID": "この請求はすでに入金確認済みです。",
@@ -1076,6 +1078,7 @@ const kh: Record<MessageKey, string> = {
   "toast.receiptUpdated": "បានធ្វើបច្ចុប្បន្នភាពបង្កាន់ដៃ",
 
   "error.generic": "មានបញ្ហាកើតឡើង។ សូមព្យាយាមម្ដងទៀត។",
+  "error.INTERNAL": "មិនអាចបញ្ចប់សកម្មភាពនេះឥឡូវនេះទេ។ សូមព្យាយាមម្ដងទៀត។",
   "error.offline": "មិនអាចភ្ជាប់ទៅម៉ាស៊ីនមេបានទេ។",
   "error.DUPLICATE_INVOICE_NUMBER": "លេខវិក្កយបត្រនោះកំពុងប្រើរួចហើយ។",
   "error.ALREADY_PAID": "វិក្កយបត្រនេះបានទូទាត់រួចហើយ។",
