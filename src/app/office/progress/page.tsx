@@ -11,7 +11,7 @@ import {
   isProductionComplete,
   isPrintPriceConfirmed,
 } from "@/lib/derive";
-import { mediumDate } from "@/lib/format";
+import { mediumDate, money } from "@/lib/format";
 import type { BillingItem, Client, Project } from "@/lib/types";
 
 type ProgressState =
@@ -55,7 +55,8 @@ interface ProjectGroup {
 /**
  * A deliberately passive view for Billing and Accounting. It exposes the
  * same client → project → item hierarchy as Design, but has no links,
- * controls, amounts, notes, or audit metadata to accidentally operate.
+ * controls, notes, or audit metadata to accidentally operate. Amounts are
+ * display-only evidence and never become an editing control here.
  */
 export default function ProgressPage() {
   const scope = useScope();
@@ -114,9 +115,16 @@ export default function ProgressPage() {
                       .slice()
                       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
                       .map((item) => (
-                        <div key={item.id} className="flex min-w-0 items-center gap-4 py-3 first:pt-0 last:pb-0">
+                        <div
+                          key={item.id}
+                          data-testid={`progress-item-${item.id}`}
+                          className="flex min-w-0 items-center gap-3 py-3 first:pt-0 last:pb-0"
+                        >
                           <span className="min-w-0 flex-1 truncate text-[14px] text-text">
                             {itemLabel(item)}
+                          </span>
+                          <span className="tnum shrink-0 text-[13.5px] font-medium text-text">
+                            {itemAmount(item)}
                           </span>
                           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium leading-none ${STATE_STYLE[progressState(item)]}`}>
                             {t(STATE_KEY[progressState(item)])}
@@ -153,4 +161,14 @@ function itemLabel(item: BillingItem): string {
   }
   if (/\b[x×]\s*\d+\b/i.test(item.description)) return item.description;
   return `${item.description} ×${item.quantity}`;
+}
+
+/** Show known current or suggested money without implying price certainty. */
+function itemAmount(item: BillingItem): string {
+  const values =
+    item.type === "PRINT" && !isPrintPriceConfirmed(item)
+      ? [item.suggestedAmount, item.amount]
+      : [item.amount, item.suggestedAmount];
+  const amount = values.find((value): value is number => value != null && value > 0);
+  return amount == null ? "—" : money(amount);
 }

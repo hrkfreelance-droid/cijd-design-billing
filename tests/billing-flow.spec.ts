@@ -871,6 +871,51 @@ test("progress keeps embedded print quantities to one display", async ({ page })
   }
 });
 
+test("progress shows known amounts before readonly status", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Progress Amount Display Check" },
+    })
+  ).json();
+  const entries = [
+    { description: "Design & Map", type: "DESIGN", quantity: 1, unitPrice: 35, amount: "$35", status: "In Progress" },
+    { description: "Print", type: "PRINT", quantity: 900, unitPrice: 0.06, amount: "$54", status: "Price Check" },
+    { description: "Print", type: "PRINT", quantity: 2000, unitPrice: 0, amount: "—", status: "Price Check" },
+  ] as const;
+  const created = [] as { id: string; amount: string; status: string }[];
+  for (const entry of entries) {
+    const response = await page.request.post("/api/billing-items", {
+      data: {
+        projectId: project.data.id,
+        description: entry.description,
+        type: entry.type,
+        quantity: entry.quantity,
+        unitPrice: entry.unitPrice,
+      },
+    });
+    const body = await response.json();
+    created.push({ id: body.data.id, amount: entry.amount, status: entry.status });
+  }
+
+  await signIn(page, "u_billing");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/office/progress");
+  const progressProject = page.getByTestId(`progress-project-${project.data.id}`);
+  for (const entry of created) {
+    const row = progressProject.getByTestId(`progress-item-${entry.id}`);
+    await expect(row).toContainText(entry.amount);
+    await expect(row).toContainText(entry.status);
+    const rowText = await row.innerText();
+    expect(rowText.indexOf(entry.amount)).toBeLessThan(rowText.indexOf(entry.status));
+  }
+  const overflow = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(overflow.scrollWidth).toBe(overflow.clientWidth);
+});
+
 test("Billing and Accounting totals follow the selected client and tab", async ({ page }) => {
   async function createReady(clientId: string, name: string, amount: number) {
     const project = await (
