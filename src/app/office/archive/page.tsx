@@ -116,6 +116,7 @@ export default function ArchivePage() {
     )
       ? paidRows.reduce((total, invoice) => total + khrAmount(invoice.amount, invoice.exchangeRate!), 0)
       : null;
+  const exchangeRate = scope?.snapshot.exchangeRate;
 
   if (!scope) return <PageSkeleton />;
 
@@ -132,6 +133,9 @@ export default function ArchivePage() {
             value={knownTotal > 0 ? money(knownTotal) : "—"}
             label={t("projects.knownTotal")}
             secondaryValue={khrTotal == null ? undefined : `៛${khrTotal.toLocaleString("en-US")}`}
+            secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rateEffectiveDate={exchangeRate?.effectiveDate}
+            rateFetchedAt={exchangeRate?.fetchedAt}
           />
         }
       />

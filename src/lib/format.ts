@@ -63,6 +63,25 @@ export function mediumDate(date: string | null | undefined, locale: Locale): str
   }).format(parse(date));
 }
 
+/** Format a real exchange-rate fetch timestamp in Phnom Penh time. */
+export function formatPhnomPenhDateTime(
+  timestamp: string | null | undefined,
+  locale: Locale,
+): string {
+  if (!timestamp) return "";
+  const value = new Date(timestamp);
+  if (Number.isNaN(value.getTime())) return "";
+  return new Intl.DateTimeFormat(intlLocale(locale), {
+    timeZone: "Asia/Phnom_Penh",
+    year: "numeric",
+    month: locale === "ja" ? "numeric" : "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: locale === "en",
+  }).format(value);
+}
+
 export function monthLabel(monthKey: string, locale: Locale): string {
   if (!/^\d{4}-\d{2}$/.test(monthKey)) return "";
   const [year, month] = monthKey.split("-");

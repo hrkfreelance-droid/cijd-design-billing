@@ -53,6 +53,8 @@ export default function DeliveredPage() {
                 ? t("currency.rate", { rate: scope.snapshot.exchangeRate.rate })
                 : undefined
             }
+            rateEffectiveDate={scope.snapshot.exchangeRate?.effectiveDate}
+            rateFetchedAt={scope.snapshot.exchangeRate?.fetchedAt}
           />
         }
       />

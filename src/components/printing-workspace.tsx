@@ -60,7 +60,7 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
       : items.some((item) => printPriceReviewState(item) !== "CONFIRMED")
         ? t("projects.estimatedTotal")
         : undefined;
-  const currentRate = scope.snapshot.exchangeRate?.rate;
+  const exchangeRate = scope.snapshot.exchangeRate;
 
   return (
     <div className="animate-rise">
@@ -76,8 +76,10 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
           <PageTotal
             value={knownTotal > 0 ? money(knownTotal) : "—"}
             label={totalLabel}
-            secondaryValue={currentRate ? formatKhr(knownTotal, currentRate) : undefined}
-            secondaryLabel={currentRate ? t("currency.rate", { rate: currentRate }) : undefined}
+            secondaryValue={exchangeRate ? formatKhr(knownTotal, exchangeRate.rate) : undefined}
+            secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rateEffectiveDate={exchangeRate?.effectiveDate}
+            rateFetchedAt={exchangeRate?.fetchedAt}
           />
         }
       />

@@ -12,6 +12,8 @@ import {
 
 import { CheckIcon, ChevronDown } from "@/components/icons";
 import { useI18n } from "@/components/providers";
+import { phnomPenhDate } from "@/lib/exchange-rate";
+import { formatPhnomPenhDateTime } from "@/lib/format";
 import type { MessageKey } from "@/lib/i18n";
 import type { FlowStatus } from "@/lib/types";
 
@@ -245,15 +247,21 @@ export function PageTotal({
   label,
   secondaryValue,
   secondaryLabel,
+  rateEffectiveDate,
+  rateFetchedAt,
   meta,
 }: {
   value: string;
   label?: string;
   secondaryValue?: string;
   secondaryLabel?: string;
+  rateEffectiveDate?: string | null;
+  rateFetchedAt?: string | null;
   meta?: ReactNode;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const updatedAt = formatPhnomPenhDateTime(rateFetchedAt, locale);
+  const isCurrentRate = rateEffectiveDate === phnomPenhDate();
   return (
     <div data-testid="page-total" className="shrink-0 text-right">
       <span className="block text-[11px] font-medium uppercase tracking-[0.08em] text-muted">
@@ -262,13 +270,19 @@ export function PageTotal({
       <span className="tnum block text-[19px] font-semibold leading-tight tracking-[-0.02em]">
         {value}
       </span>
-      {secondaryValue && (
-        <span className="tnum mt-0.5 block whitespace-nowrap text-[12px] font-medium text-muted">
+      {(secondaryValue || secondaryLabel) && (
+        <span className="tnum mt-0.5 block max-w-full text-[12px] font-medium text-muted">
           {secondaryValue}
-          {secondaryLabel ? ` · ${secondaryLabel}` : ""}
+          {secondaryValue && secondaryLabel ? " · " : ""}
+          {secondaryLabel}
         </span>
       )}
-      {meta && <span className="mt-1 block whitespace-nowrap text-[12px] font-medium text-review">{meta}</span>}
+      {updatedAt && (
+        <span className="mt-0.5 block max-w-full text-[11px] leading-snug text-faint">
+          {t(isCurrentRate ? "currency.updated" : "currency.lastUpdated", { date: updatedAt })}
+        </span>
+      )}
+      {meta && <span className="mt-1 block max-w-full text-[12px] font-medium text-review">{meta}</span>}
     </div>
   );
 }

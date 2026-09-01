@@ -76,7 +76,7 @@ export default function OfficeBillingPage() {
   const readyTotal = groups
     .flatMap((group) => group.items)
     .reduce((total, item) => total + item.amount, 0);
-  const currentRate = scope.snapshot.exchangeRate?.rate;
+  const exchangeRate = scope.snapshot.exchangeRate;
 
   return (
     <div className="animate-rise">
@@ -86,8 +86,10 @@ export default function OfficeBillingPage() {
         action={
           <PageTotal
             value={money(readyTotal)}
-            secondaryValue={currentRate ? formatKhr(readyTotal, currentRate) : undefined}
-            secondaryLabel={currentRate ? t("currency.rate", { rate: currentRate }) : undefined}
+            secondaryValue={exchangeRate ? formatKhr(readyTotal, exchangeRate.rate) : undefined}
+            secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rateEffectiveDate={exchangeRate?.effectiveDate}
+            rateFetchedAt={exchangeRate?.fetchedAt}
           />
         }
       />

@@ -75,8 +75,7 @@ export function Workspace({
   const pathname = usePathname();
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
-  const { user, ready, auth } = useSession();
-  const { snapshot } = useData();
+  const { user, ready } = useSession();
   const router = useRouter();
 
   useEffect(() => {
@@ -89,41 +88,21 @@ export function Workspace({
     return <div className="min-h-dvh bg-bg" />;
   }
 
-  const mode = snapshot?.mode ?? (auth === "supabase" ? "supabase" : "local");
-  const showMode = mode === "supabase" && (process.env.NODE_ENV !== "production" || user.role === "ADMIN");
   const spaces = workspacesFor(user.role);
 
   return (
     <div className="min-h-dvh bg-bg">
       <header className="header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-4 px-5 sm:px-8">
-          <div className="min-w-0 shrink-0 leading-none">
-            <span className="block text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">
-              {t("brand.company")}
-            </span>
-            <WorkspaceSelector current={workspace} spaces={spaces} />
-          </div>
+        <div className="mx-auto max-w-4xl">
+          <div className="no-scrollbar flex min-w-0 items-center justify-between gap-4 overflow-x-auto px-5 py-3 sm:px-8">
+            <div className="min-w-max shrink-0 leading-none">
+              <span className="block text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">
+                {t("brand.company")}
+              </span>
+              <WorkspaceSelector current={workspace} spaces={spaces} />
+            </div>
 
-          <nav aria-label="Workspace navigation" className="hidden items-center gap-1 sm:flex">
-            {nav.map(({ href, key }) => {
-              const active = isActive(pathname, href, nav);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  aria-current={active ? "page" : undefined}
-                  className={`rounded-full px-3.5 py-1.5 text-[13.5px] transition-colors duration-150 ${
-                    active ? "bg-fill font-medium text-text" : "text-muted hover:text-text"
-                  }`}
-                >
-                  {t(key)}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="flex shrink-0 items-center gap-1">
-            {showMode && <ModeBadge mode={mode} className="hidden sm:inline-flex" />}
+            <div className="flex shrink-0 items-center gap-1">
             <div className="flex items-center rounded-full bg-fill p-[2px]">
               {(["ja", "en", "kh"] as const).map((code) => (
                 <button
@@ -149,51 +128,35 @@ export function Workspace({
               {theme === "dark" ? <SunIcon /> : <MoonIcon />}
             </IconButton>
             <UserMenu />
+            </div>
           </div>
+          <ClientBar canAdd={workspace === "designer"} />
+          <nav aria-label="Workspace navigation" className="border-t border-line">
+            <div className="no-scrollbar flex min-w-max items-center gap-4 overflow-x-auto px-5 sm:px-8">
+              {nav.map(({ href, key }) => {
+                const active = isActive(pathname, href, nav);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex h-10 shrink-0 items-center border-b-2 px-0.5 text-[12px] font-medium transition-colors duration-150 ${
+                      active ? "border-accent text-text" : "border-transparent text-faint hover:text-text"
+                    }`}
+                  >
+                    {t(key)}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
         </div>
-        <ClientBar canAdd={workspace === "designer"} />
       </header>
-
-      <nav
-        aria-label="Workspace navigation"
-        className="mx-auto max-w-4xl border-t border-line sm:hidden"
-      >
-        <div className="no-scrollbar flex items-center gap-4 overflow-x-auto px-5 sm:px-8">
-          {nav.map(({ href, key }) => {
-            const active = isActive(pathname, href, nav);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={active ? "page" : undefined}
-                className={`flex h-10 shrink-0 items-center border-b-2 px-0.5 text-[12px] font-medium transition-colors duration-150 ${
-                  active ? "border-accent text-text" : "border-transparent text-faint hover:text-text"
-                }`}
-              >
-                {t(key)}
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
 
       <main className="mx-auto max-w-4xl">
         <Content>{children}</Content>
       </main>
     </div>
-  );
-}
-
-function ModeBadge({ mode, className = "" }: { mode: "local" | "supabase"; className?: string }) {
-  const label = mode === "supabase" ? "PRODUCTION / SUPABASE" : "LOCAL MODE";
-  return (
-    <span
-      data-testid="data-mode"
-      aria-label={`Data mode: ${label}`}
-      className={`items-center rounded-full border border-line px-2 py-1 text-[9px] font-medium uppercase tracking-[0.08em] text-faint ${className}`}
-    >
-      {label}
-    </span>
   );
 }
 
@@ -360,8 +323,7 @@ function ClientBar({ canAdd }: { canAdd: boolean }) {
 
   return (
     <>
-      <div className="mx-auto max-w-4xl">
-        <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto px-5 pb-2.5 sm:px-8">
+      <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto px-5 pb-2.5 sm:px-8">
           <ClientChip
             label={t("client.all")}
             active={clientId === null}
@@ -383,9 +345,8 @@ function ClientBar({ canAdd }: { canAdd: boolean }) {
               className="ml-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-faint transition-colors duration-150 hover:bg-fill hover:text-text"
             >
               <PlusIcon className="h-[15px] w-[15px]" />
-            </button>
+              </button>
           )}
-        </div>
       </div>
       {allowed && <ClientsSheet open={managing} onClose={() => setManaging(false)} />}
     </>

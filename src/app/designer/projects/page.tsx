@@ -93,6 +93,8 @@ export default function ProjectsPage() {
                   ? t("currency.rate", { rate: scope.snapshot.exchangeRate.rate })
                   : undefined
               }
+              rateEffectiveDate={scope.snapshot.exchangeRate?.effectiveDate}
+              rateFetchedAt={scope.snapshot.exchangeRate?.fetchedAt}
             />
             <Button variant="secondary" onClick={() => setCreating(true)}>
               <PlusIcon className="h-[15px] w-[15px]" />

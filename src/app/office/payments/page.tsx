@@ -106,6 +106,7 @@ function Payments() {
   const total =
     shown.reduce((value, invoice) => value + invoice.amount, 0) +
     shownHistorical.reduce((value, group) => value + group.amount, 0);
+  const exchangeRate = scope.snapshot.exchangeRate;
   const hasFixedRates = shown.length > 0 && shownHistorical.length === 0 && shown.every(
     (invoice) => invoice.exchangeRate && invoice.exchangeRate > 0,
   );
@@ -129,6 +130,9 @@ function Payments() {
             value={money(total)}
             label={tab === "completed" ? t("projects.knownTotal") : undefined}
             secondaryValue={khrTotal == null ? undefined : `៛${khrTotal.toLocaleString("en-US")}`}
+            secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rateEffectiveDate={exchangeRate?.effectiveDate}
+            rateFetchedAt={exchangeRate?.fetchedAt}
           />
         }
       />

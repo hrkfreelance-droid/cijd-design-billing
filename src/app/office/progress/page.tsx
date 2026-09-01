@@ -95,7 +95,7 @@ export default function ProgressPage() {
   );
   const pendingCount = progressItems.filter((item) => itemAmountValue(item) == null).length;
   const estimated = progressItems.some((item) => priceState(item) !== "CONFIRMED");
-  const currentRate = scope?.snapshot.exchangeRate?.rate;
+  const exchangeRate = scope?.snapshot.exchangeRate;
 
   if (!scope || !user || !can(user.role, "progress:read")) return <PageSkeleton />;
 
@@ -108,8 +108,10 @@ export default function ProgressPage() {
           <PageTotal
             value={knownTotal > 0 ? money(knownTotal) : "—"}
             label={estimated ? t("projects.estimatedTotal") : undefined}
-            secondaryValue={currentRate && knownTotal > 0 ? formatKhr(knownTotal, currentRate) : undefined}
-            secondaryLabel={currentRate && knownTotal > 0 ? t("currency.rate", { rate: currentRate }) : undefined}
+            secondaryValue={exchangeRate && knownTotal > 0 ? formatKhr(knownTotal, exchangeRate.rate) : undefined}
+            secondaryLabel={exchangeRate && knownTotal > 0 ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rateEffectiveDate={exchangeRate?.effectiveDate}
+            rateFetchedAt={exchangeRate?.fetchedAt}
             meta={
               pendingCount === 1
                 ? t("projects.pendingPricesOne", { count: pendingCount })
