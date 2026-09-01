@@ -816,6 +816,8 @@ const kh: Record<MessageKey, string> = {
   "projects.total": "សរុប",
   "projects.estimatedTotal": "សរុបប៉ាន់ស្មាន",
   "projects.knownTotal": "សរុបដែលដឹង",
+  "projects.pendingPrices": "តម្លៃមិនទាន់កំណត់ {count}",
+  "projects.pendingPricesOne": "តម្លៃមិនទាន់កំណត់ {count}",
   "printing.title": "បោះពុម្ព",
   "printing.reviewSubtitle": "ការងារបោះពុម្ពបច្ចុប្បន្ន",
   "printing.orderingTitle": "កំពុងបញ្ជាទិញ",

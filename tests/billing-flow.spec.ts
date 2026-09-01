@@ -924,9 +924,70 @@ test("progress shows known amounts before readonly status", async ({ page }) => 
     created.push({ id: body.data.id, amount: entry.amount, status: entry.status });
   }
 
+  const daishinProject = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_daishin", name: "Progress Filter Total Check" },
+    })
+  ).json();
+  await page.request.post("/api/billing-items", {
+    data: {
+      projectId: daishinProject.data.id,
+      description: "Design",
+      type: "DESIGN",
+      unitPrice: 12,
+    },
+  });
+
   await signIn(page, "u_billing");
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/office/progress");
+  const state = await (await page.request.get("/api/state")).json();
+  const projectClients = new Map(
+    state.data.projects.map((project: { id: string; clientId: string }) => [project.id, project.clientId]),
+  );
+  const amountFor = (item: {
+    projectId: string;
+    createdBy: string;
+    type: string;
+    amount: number;
+    suggestedAmount?: number | null;
+    priceReviewStatus?: string | null;
+  }) => {
+    if (item.type === "PRINT" && item.priceReviewStatus !== "CONFIRMED") {
+      return item.suggestedAmount ?? item.amount;
+    }
+    return item.amount > 0 ? item.amount : item.suggestedAmount ?? 0;
+  };
+  const knownTotalFor = (clientId?: string) =>
+    state.data.billingItems
+      .filter(
+        (item: { projectId: string; createdBy: string }) =>
+          item.createdBy !== "Import" &&
+          (!clientId || projectClients.get(item.projectId) === clientId),
+      )
+      .reduce(
+        (total: number, item: Parameters<typeof amountFor>[0]) => total + Math.max(amountFor(item), 0),
+        0,
+      );
+  const pendingCount = state.data.billingItems.filter(
+    (item: Parameters<typeof amountFor>[0]) =>
+      item.createdBy !== "Import" && amountFor(item) <= 0,
+  ).length;
+
+  const pageTotal = page.getByTestId("page-total");
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/office/progress");
+    await expect(pageTotal).toContainText("Estimated Total");
+    await expect(pageTotal).toContainText(money(knownTotalFor()));
+    await expect(pageTotal).toContainText(
+      pendingCount === 1 ? "1 price pending" : `${pendingCount} prices pending`,
+    );
+    const overflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(overflow.scrollWidth, `Progress horizontal overflow at ${width}px`).toBe(overflow.clientWidth);
+  }
+
   const progressProject = page.getByTestId(`progress-project-${project.data.id}`);
   for (const entry of created) {
     const row = progressProject.getByTestId(`progress-item-${entry.id}`);
@@ -935,11 +996,9 @@ test("progress shows known amounts before readonly status", async ({ page }) => 
     const rowText = await row.innerText();
     expect(rowText.indexOf(entry.amount)).toBeLessThan(rowText.indexOf(entry.status));
   }
-  const overflow = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(overflow.scrollWidth).toBe(overflow.clientWidth);
+  await page.getByRole("button", { name: "DAISHIN", exact: true }).click();
+  await expect(pageTotal).toContainText(money(knownTotalFor("cl_daishin")));
+  await expect(pageTotal).toContainText("Total");
 });
 
 test("Billing and Accounting totals follow the selected client and tab", async ({ page }) => {

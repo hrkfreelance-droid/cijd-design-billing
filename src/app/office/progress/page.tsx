@@ -4,15 +4,18 @@ import { useMemo } from "react";
 
 import { useI18n, useSession } from "@/components/providers";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, PageHeader, PageTotal } from "@/components/ui";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { can } from "@/lib/auth/roles";
 import {
   isOperationalRecord,
   isProductionComplete,
   isPrintPriceConfirmed,
+  priceState,
+  sum,
 } from "@/lib/derive";
-import { mediumDate } from "@/lib/format";
+import { formatKhr } from "@/lib/exchange-rate";
+import { mediumDate, money } from "@/lib/format";
 import type { BillingItem, Client, Project } from "@/lib/types";
 
 type ProgressState =
@@ -86,11 +89,37 @@ export default function ProgressPage() {
     });
   }, [scope]);
 
+  const progressItems = groups.flatMap((group) => group.items);
+  const knownTotal = sum(
+    progressItems.map((item) => ({ amount: itemAmountValue(item) ?? 0 })),
+  );
+  const pendingCount = progressItems.filter((item) => itemAmountValue(item) == null).length;
+  const estimated = progressItems.some((item) => priceState(item) !== "CONFIRMED");
+  const currentRate = scope?.snapshot.exchangeRate?.rate;
+
   if (!scope || !user || !can(user.role, "progress:read")) return <PageSkeleton />;
 
   return (
     <div className="animate-rise" data-testid="progress-readonly">
-      <PageHeader title={t("nav.progress")} subtitle={t("office.progressSubtitle")} />
+      <PageHeader
+        title={t("nav.progress")}
+        subtitle={t("office.progressSubtitle")}
+        action={
+          <PageTotal
+            value={knownTotal > 0 ? money(knownTotal) : "—"}
+            label={estimated ? t("projects.estimatedTotal") : undefined}
+            secondaryValue={currentRate && knownTotal > 0 ? formatKhr(knownTotal, currentRate) : undefined}
+            secondaryLabel={currentRate && knownTotal > 0 ? t("currency.rate", { rate: currentRate }) : undefined}
+            meta={
+              pendingCount === 1
+                ? t("projects.pendingPricesOne", { count: pendingCount })
+                : pendingCount > 1
+                  ? t("projects.pendingPrices", { count: pendingCount })
+                  : undefined
+            }
+          />
+        }
+      />
 
       {groups.length === 0 ? (
         <EmptyState title={t("office.progressEmpty")} />

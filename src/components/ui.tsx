@@ -245,11 +245,13 @@ export function PageTotal({
   label,
   secondaryValue,
   secondaryLabel,
+  meta,
 }: {
   value: string;
   label?: string;
   secondaryValue?: string;
   secondaryLabel?: string;
+  meta?: ReactNode;
 }) {
   const { t } = useI18n();
   return (
@@ -266,6 +268,7 @@ export function PageTotal({
           {secondaryLabel ? ` · ${secondaryLabel}` : ""}
         </span>
       )}
+      {meta && <span className="mt-1 block whitespace-nowrap text-[12px] font-medium text-review">{meta}</span>}
     </div>
   );
 }
