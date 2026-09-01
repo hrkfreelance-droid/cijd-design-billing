@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ItemProductionAction } from "@/components/delivery";
 import { useI18n } from "@/components/providers";
 import { Amount, StatusPill, type WorkStatus } from "@/components/ui";
-import { isProductionComplete, priceState } from "@/lib/derive";
+import { isBillingLocked, isProductionComplete, priceState } from "@/lib/derive";
 import { money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
@@ -32,6 +32,7 @@ export function BillingItemCard({
   const { t } = useI18n();
   const state = priceState(item);
   const finished = isProductionComplete(item);
+  const locked = isBillingLocked(item);
   const typeLabel = displayTypeLabel(item, t(`type.${item.type}`));
   const workStatus: WorkStatus = finished
     ? item.productionStatus === "DELIVERED"
@@ -41,7 +42,7 @@ export function BillingItemCard({
       ? "NEEDS_REVIEW"
       : "IN_PROGRESS";
   const reviewHref = `/designer/projects/${projectId}?item=${encodeURIComponent(item.id)}`;
-  const needsPriceReview = !history && state !== "CONFIRMED";
+  const needsPriceReview = !history && !locked && state !== "CONFIRMED";
   const spec = specLine(item, typeLabel);
 
   const name = (
@@ -91,7 +92,7 @@ export function BillingItemCard({
 
       <PriceStateCaption state={state} />
 
-      {!history && (
+      {!history && !locked && (
         <div className="col-span-2 col-start-1 row-start-4 mt-3 flex flex-wrap items-center justify-end gap-2">
           {needsPriceReview &&
             (onOpen ? (

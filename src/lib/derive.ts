@@ -30,6 +30,16 @@ export function isProductionComplete(item: BillingItem): boolean {
   return item.productionStatus === "DELIVERED" || item.productionStatus === "COMPLETED";
 }
 
+/** Invoiced and paid work remains visible as history, but cannot be edited. */
+export function isBillingLocked(item: Pick<BillingItem, "billingStatus">): boolean {
+  return item.billingStatus === "INVOICED" || item.billingStatus === "PAID";
+}
+
+/** Designer's ready tab keeps completed work visible until it is invoiced. */
+export function isDesignerReady(item: BillingItem): boolean {
+  return isProductionComplete(item) && !isBillingLocked(item);
+}
+
 export type ProductionAction = "DELIVER" | "COMPLETE";
 
 /** Printing is physically delivered; every other creative item is completed. */

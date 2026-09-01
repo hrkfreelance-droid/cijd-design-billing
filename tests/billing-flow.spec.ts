@@ -49,10 +49,11 @@ test("designer Hiroki can move work through downstream workspaces", async ({ pag
   await signIn(page, "u_hiroki");
   await page.goto("/designer");
   await expect(page).toHaveURL(/\/designer\/projects$/);
-  await expect(page.getByRole("heading", { name: "Design", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "In Progress", level: 1 })).toBeVisible();
   await expect(page.getByTestId("data-mode")).toHaveCount(0);
   const designerNav = page.locator('nav[aria-label="Workspace navigation"]');
-  await expect(designerNav.getByRole("link", { name: "Design", exact: true })).toHaveCount(1);
+  await expect(designerNav.getByRole("link", { name: "In Progress", exact: true })).toHaveCount(1);
+  await expect(designerNav.getByRole("link", { name: "Ready to Invoice", exact: true })).toHaveCount(1);
   await expect(designerNav.getByRole("link", { name: "Archive", exact: true })).toHaveCount(1);
   await expect(designerNav.getByRole("link", { name: /Today|Projects|Delivered/ })).toHaveCount(0);
   // The designer page stays focused, while the workspace switcher exposes the
@@ -278,6 +279,85 @@ test("designer can edit and undo work while it is ready to invoice", async ({ pa
   await expect(page.getByText("Designer Ready Edit")).toHaveCount(0);
 });
 
+test("designer ready tab keeps completed and delivered work editable until invoiced", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const project = await (
+    await page.request.post("/api/projects", {
+      data: { clientId: "cl_ringer_hut", name: "Designer Ready Print Edit" },
+    })
+  ).json();
+  const design = await (
+    await page.request.post("/api/billing-items", {
+      data: { projectId: project.data.id, description: "Design", type: "DESIGN", unitPrice: 40 },
+    })
+  ).json();
+  const print = await (
+    await page.request.post("/api/billing-items", {
+      data: {
+        projectId: project.data.id,
+        description: "Print ×100",
+        type: "PRINT",
+        quantity: 100,
+        unitPrice: 0.15,
+        amount: 15,
+        printSize: "Name Card",
+      },
+    })
+  ).json();
+  await page.request.post(`/api/printing-items/${print.data.id}/price`, {
+    data: { unitPrice: 0.15, amount: 15, confirm: true },
+  });
+
+  await page.request.post(`/api/billing-items/${design.data.id}/complete`);
+  await page.request.post(`/api/billing-items/${print.data.id}/delivery`);
+
+  await page.goto("/designer/delivered");
+  await expect(page.getByRole("heading", { name: "Ready to Invoice", level: 1 })).toBeVisible();
+  const projectLink = page.getByRole("link", { name: /Designer Ready Print Edit/ });
+  await expect(projectLink).toBeVisible();
+  await projectLink.click();
+  await expect(page).toHaveURL(new RegExp(`/designer/projects/${project.data.id}\\?from=ready`));
+
+  const designCard = page.getByTestId("designer-project-item").filter({ hasText: "Design" }).first();
+  await designCard.getByRole("button", { name: "Design", exact: true }).click();
+  const designEditor = page.getByRole("dialog").last();
+  await designEditor.getByLabel("Amount").fill("55");
+  await designEditor.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Item updated")).toBeVisible();
+
+  const printCard = page.getByTestId("designer-project-item").filter({ hasText: "Print ×100" }).first();
+  await printCard.getByRole("button", { name: "Print ×100", exact: true }).click();
+  const printEditor = page.getByRole("dialog").last();
+  await printEditor.getByLabel("Qty").fill("200");
+  await printEditor.getByLabel("Unit price").fill("0.10");
+  await printEditor.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Item updated")).toBeVisible();
+
+  let state = await (await page.request.get("/api/state")).json();
+  expect(state.data.billingItems.find((item: { id: string }) => item.id === design.data.id)).toEqual(
+    expect.objectContaining({ amount: 55, billingStatus: "READY_TO_INVOICE" }),
+  );
+  expect(state.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
+    expect.objectContaining({ quantity: 200, unitPrice: 0.1, amount: 20, billingStatus: "READY_TO_INVOICE", priceReviewStatus: "CONFIRMED" }),
+  );
+
+  await printCard.getByRole("button", { name: "Undo delivery" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Undo delivery" }).click();
+  await expect(page.getByText("Delivery undone")).toBeVisible();
+  await designCard.getByRole("button", { name: "Undo completion" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Undo completion" }).click();
+  await expect(page.getByText("Completion undone")).toBeVisible();
+  state = await (await page.request.get("/api/state")).json();
+  expect(state.data.billingItems.find((item: { id: string }) => item.id === design.data.id)).toEqual(
+    expect.objectContaining({ productionStatus: "IN_PROGRESS", billingStatus: "NOT_READY" }),
+  );
+  expect(state.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
+    expect.objectContaining({ productionStatus: "IN_PROGRESS", billingStatus: "NOT_READY" }),
+  );
+  await page.goto("/designer/delivered");
+  await expect(page.getByText("Designer Ready Print Edit")).toHaveCount(0);
+});
+
 test("invoice once, pay once", async ({ page }) => {
   await signIn(page, "u_billing");
   await page.goto("/office");
@@ -291,6 +371,16 @@ test("invoice once, pay once", async ({ page }) => {
     (invoice: { status: string }) => invoice.status === "ISSUED",
   );
   expect(created.invoiceNumber).toMatch(/^CIJD-/);
+
+  await signIn(page, "u_hiroki");
+  await page.goto("/designer/projects/pj_rh_kids_promotion");
+  const invoicedItem = page.getByTestId("designer-project-item").filter({ hasText: "Correction" }).first();
+  await expect(invoicedItem.getByRole("button", { name: /Undo/ })).toHaveCount(0);
+  await invoicedItem.getByRole("button", { name: "Correction", exact: true }).click();
+  const lockedEditor = page.getByRole("dialog").last();
+  await expect(lockedEditor.getByText("Awaiting Payment")).toBeVisible();
+  await expect(lockedEditor.getByRole("button", { name: "Save" })).toHaveCount(0);
+  await lockedEditor.getByRole("button", { name: "Close" }).click();
 
   const duplicate = await page.request.post("/api/invoices", {
     data: {

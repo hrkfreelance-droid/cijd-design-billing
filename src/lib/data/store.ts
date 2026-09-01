@@ -374,13 +374,21 @@ export class Store implements Repository {
           "This item has already been invoiced. Add a new item instead of changing it.",
         );
       }
+      const actor = patch.actor ?? DEFAULT_ACTOR;
+      const wasPrint = item.type === "PRINT";
+      const wasPriceConfirmed = wasPrint && item.priceReviewStatus === "CONFIRMED";
+      const previousPrice = {
+        type: item.type,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        amount: item.amount,
+        customAmount: item.customAmount,
+      };
       if (patch.description !== undefined) {
         const trimmed = patch.description.trim();
         if (!trimmed) throw new RuleError("INVALID", "Description is required.", 400);
         item.description = trimmed;
       }
-      const wasPrint = item.type === "PRINT";
-      const wasPriceConfirmed = wasPrint && item.priceReviewStatus === "CONFIRMED";
       if (patch.type !== undefined) item.type = patch.type;
       if (patch.quantity !== undefined) item.quantity = patch.quantity;
       if (patch.unitPrice !== undefined) item.unitPrice = patch.unitPrice;
@@ -398,24 +406,35 @@ export class Store implements Repository {
         throw new RuleError("INVALID", "Amount must be zero or more.", 400);
       }
       const priceChanged =
-        patch.type !== undefined ||
-        patch.quantity !== undefined ||
-        patch.unitPrice !== undefined ||
-        patch.amount !== undefined;
+        previousPrice.type !== item.type ||
+        previousPrice.quantity !== item.quantity ||
+        previousPrice.unitPrice !== item.unitPrice ||
+        previousPrice.amount !== item.amount ||
+        previousPrice.customAmount !== item.customAmount;
+      const priceDetail = `${item.quantity} × ${item.unitPrice} = ${item.amount}`;
       if (item.type === "PRINT" && !isHistoricalRecordForStore(item) && (priceChanged || !wasPrint)) {
-        if (wasPriceConfirmed) {
-          log(db, patch.actor ?? DEFAULT_ACTOR, "price.confirmation_invalidated", "billing_item", item.id, item.description);
-        }
-        item.priceReviewStatus = "REVIEW_REQUIRED";
         item.suggestedUnitPrice = item.unitPrice;
         item.suggestedAmount = item.amount;
-        item.priceConfirmedBy = null;
-        item.priceConfirmedAt = null;
-        if (item.billingStatus === "READY_TO_INVOICE") item.billingStatus = "NEEDS_REVIEW";
-        log(db, patch.actor ?? DEFAULT_ACTOR, "price.suggested", "billing_item", item.id, item.description);
+        if (patch.confirmPrice) {
+          item.priceReviewStatus = "CONFIRMED";
+          item.priceConfirmedBy = actor;
+          item.priceConfirmedAt = now();
+          log(db, actor, "price.confirm", "billing_item", item.id, priceDetail);
+        } else {
+          if (wasPriceConfirmed) {
+            log(db, actor, "price.confirmation_invalidated", "billing_item", item.id, item.description);
+          }
+          item.priceReviewStatus = "REVIEW_REQUIRED";
+          item.priceConfirmedBy = null;
+          item.priceConfirmedAt = null;
+          if (item.billingStatus === "READY_TO_INVOICE") item.billingStatus = "NEEDS_REVIEW";
+          log(db, actor, "price.suggested", "billing_item", item.id, item.description);
+        }
+      } else if (priceChanged) {
+        log(db, actor, patch.confirmPrice ? "price.confirm" : "price.edit", "billing_item", item.id, priceDetail);
       }
       item.updatedAt = now();
-      item.updatedBy = patch.actor ?? DEFAULT_ACTOR;
+      item.updatedBy = actor;
       log(db, item.updatedBy, "item.update", "billing_item", item.id);
       return item;
     });

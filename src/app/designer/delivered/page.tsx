@@ -7,11 +7,11 @@ import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, StatusTag } from "@/components/ui";
-import { flowStatus, isOperationalRecord, isProductionComplete, sum } from "@/lib/derive";
+import { flowStatus, isDesignerReady, isOperationalRecord, sum } from "@/lib/derive";
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
-/** Work that has left the designer's hands but is not finished being billed. */
+/** Completed or delivered work that has not been invoiced yet. */
 export default function DeliveredPage() {
   const scope = useScope();
   const { t, locale } = useI18n();
@@ -23,8 +23,7 @@ export default function DeliveredPage() {
       .filter(
         (item) =>
           isOperationalRecord(item) &&
-          isProductionComplete(item) &&
-          item.billingStatus !== "PAID",
+          isDesignerReady(item),
       )
       .reduce((map, item) => {
         const list = map.get(item.projectId) ?? [];
@@ -45,7 +44,7 @@ export default function DeliveredPage() {
           {groups.map(([projectId, items]) => (
             <Link
               key={projectId}
-              href={`/designer/projects/${projectId}`}
+              href={`/designer/projects/${projectId}?from=ready`}
               className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-fill sm:px-6"
             >
               <span className="min-w-0 flex-1">

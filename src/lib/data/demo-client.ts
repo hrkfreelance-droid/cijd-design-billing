@@ -177,6 +177,7 @@ export async function demoRequest<T>(
           quantity: num(body.quantity),
           unitPrice: num(body.unitPrice),
           amount: body.amount === null ? null : num(body.amount),
+          confirmPrice: body.confirmPrice === true,
           printSize: str(body.printSize),
           note: str(body.note),
         })) as T;

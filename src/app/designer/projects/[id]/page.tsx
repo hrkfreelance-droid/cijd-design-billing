@@ -38,6 +38,7 @@ export default function ProjectPage() {
   const [editing, setEditing] = useState<BillingItem | null>(null);
   const [adding, setAdding] = useState(false);
   const historyView = searchParams.get("view") === "history";
+  const readyView = searchParams.get("from") === "ready";
 
   if (!scope) return <PageSkeleton />;
 
@@ -62,8 +63,16 @@ export default function ProjectPage() {
     .slice()
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const hasSuggested = items.some((item) => priceState(item) === "SUGGESTED");
-  const backHref = historyView ? "/designer/archive" : "/designer/projects";
-  const backLabel = historyView ? t("productionArchive.title") : t("projects.title");
+  const backHref = historyView
+    ? "/designer/archive"
+    : readyView
+      ? "/designer/delivered"
+      : "/designer/projects";
+  const backLabel = historyView
+    ? t("productionArchive.title")
+    : readyView
+      ? t("delivered.title")
+      : t("projects.title");
 
   return (
     <div className="animate-rise">
@@ -190,6 +199,7 @@ function ItemSheet({
     quantity: Number(quantity) || 0,
     unitPrice: Number(unitPrice) || 0,
     amount: custom ? Number(amount) || 0 : null,
+    confirmPrice: !!item,
     note,
   });
 

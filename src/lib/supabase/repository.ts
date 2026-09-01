@@ -279,6 +279,8 @@ export class SupabaseRepository implements Repository {
         "This item has already been invoiced. Add a new item instead of changing it.",
       );
     }
+    const actor = patch.actor ?? DEFAULT_ACTOR;
+    const type = patch.type ?? current.type;
     const quantity = patch.quantity ?? current.quantity;
     const unitPrice = patch.unitPrice ?? current.unitPrice;
     let custom = current.customAmount;
@@ -294,25 +296,60 @@ export class SupabaseRepository implements Repository {
     }
     const description = patch.description?.trim() ?? current.description;
     if (!description) throw new RuleError("INVALID", "Description is required.", 400);
+    const priceChanged =
+      type !== current.type ||
+      quantity !== current.quantity ||
+      unitPrice !== current.unitPrice ||
+      amount !== current.amount ||
+      custom !== current.customAmount;
+    const updatedAt = new Date().toISOString();
+    const changes: Record<string, unknown> = {
+      description,
+      type,
+      quantity,
+      unit_price: unitPrice,
+      amount,
+      custom_amount: custom,
+      print_size: patch.printSize ?? current.printSize ?? null,
+      note: patch.note ?? current.note ?? null,
+      updated_at: updatedAt,
+      updated_by: actor,
+    };
+    const currentPrint = current.type === "PRINT" || type === "PRINT";
+    const imported = current.createdBy.trim().toLowerCase() === "import";
+    if (currentPrint && !imported && priceChanged) {
+      changes.suggested_unit_price = unitPrice;
+      changes.suggested_amount = amount;
+      if (patch.confirmPrice) {
+        changes.price_review_status = "CONFIRMED";
+        changes.price_confirmed_by = actor;
+        changes.price_confirmed_at = updatedAt;
+      } else {
+        changes.price_review_status = "REVIEW_REQUIRED";
+        changes.price_confirmed_by = null;
+        changes.price_confirmed_at = null;
+        if (current.billingStatus === "READY_TO_INVOICE") changes.billing_status = "NEEDS_REVIEW";
+      }
+    }
 
     const result = await this.db
       .from("billing_items")
-      .update({
-        description,
-        type: patch.type ?? current.type,
-        quantity,
-        unit_price: unitPrice,
-        amount,
-        custom_amount: custom,
-        print_size: patch.printSize ?? current.printSize ?? null,
-        note: patch.note ?? current.note ?? null,
-        updated_at: new Date().toISOString(),
-        updated_by: patch.actor ?? DEFAULT_ACTOR,
-      })
+      .update(changes)
       .eq("id", id)
       .select()
       .single();
-    return toItem(unwrap(result));
+    const updated = toItem(unwrap(result));
+    if (priceChanged) {
+      const audit = await this.db.from("audit_logs").insert({
+        actor,
+        action: patch.confirmPrice ? "price.confirm" : "price.edit",
+        entity: "billing_item",
+        entity_id: id,
+        detail: `${quantity} × ${unitPrice} = ${amount}`,
+      });
+      if (audit.error) console.error("[audit]", audit.error);
+    }
+    return updated;
   }
 
   async updatePrintSpec(id: string, patch: Parameters<Repository["updatePrintSpec"]>[1]) {

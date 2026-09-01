@@ -37,6 +37,7 @@ export interface NavItem {
 
 export const DESIGNER_NAV: NavItem[] = [
   { href: "/designer/projects", key: "nav.design", Icon: ListIcon },
+  { href: "/designer/delivered", key: "nav.delivered", Icon: CheckIcon },
   { href: "/designer/archive", key: "nav.archive", Icon: ArchiveIcon },
 ];
 

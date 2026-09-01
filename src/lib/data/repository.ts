@@ -55,6 +55,8 @@ export interface UpdateBillingItemInput {
   quantity?: number;
   unitPrice?: number;
   amount?: number | null;
+  /** The Designer explicitly accepted a changed price while editing. */
+  confirmPrice?: boolean;
   note?: string;
   printSize?: string;
   actor?: string;
