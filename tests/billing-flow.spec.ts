@@ -517,7 +517,16 @@ test("receipts move an invoice to completed", async ({ page }) => {
   await expect(page.getByText("Receipt updated")).toBeVisible();
 
   await page.getByRole("tab", { name: /Completed/ }).click();
-  await expect(page.getByRole("button", { name: /RCPT-1/ })).toBeVisible();
+  const completedRow = page.getByRole("button", { name: /Receipt Check/ });
+  await expect(completedRow).toBeVisible();
+  const completedText = await completedRow.innerText();
+  expect(completedText.indexOf("Receipt Check")).toBeLessThan(completedText.indexOf("RCPT-1"));
+
+  await page.goto("/office/archive");
+  const archiveRow = page.getByRole("button", { name: /Receipt Check/ });
+  await expect(archiveRow).toBeVisible();
+  const archiveText = await archiveRow.innerText();
+  expect(archiveText.indexOf("Receipt Check")).toBeLessThan(archiveText.indexOf("RCPT-1"));
 });
 
 test("printing review confirms price before delivery and blocks unconfirmed invoices", async ({ page }) => {

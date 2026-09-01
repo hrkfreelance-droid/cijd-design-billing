@@ -5,13 +5,13 @@ import { Suspense, useEffect, useState } from "react";
 
 import { HistoricalRecordRow } from "@/components/historical-record-row";
 import { InvoiceSheet } from "@/components/invoice-sheet";
-import { ChevronRight } from "@/components/icons";
+import { InvoiceListRow } from "@/components/invoice-list-row";
 import { useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, PageTotal, Segmented } from "@/components/ui";
+import { EmptyState, PageHeader, PageTotal, Segmented } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
-import { archiveInvoiceDate, groupHistoricalItems, sortArchiveInvoices } from "@/lib/historical";
-import { mediumDate, money } from "@/lib/format";
+import { groupHistoricalItems, sortArchiveInvoices } from "@/lib/historical";
+import { money } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 
 type Tab = "awaiting" | "receipts" | "completed";
@@ -113,7 +113,7 @@ function Payments() {
           {shown.length > 0 && (
             <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
               {shown.map((invoice) => (
-                <InvoiceRow key={invoice.id} invoice={invoice} onOpen={setOpen} />
+                <InvoiceListRow key={invoice.id} invoice={invoice} onOpen={setOpen} />
               ))}
             </div>
           )}
@@ -134,34 +134,5 @@ function Payments() {
 
       <InvoiceSheet invoice={open} onClose={() => setOpen(null)} />
     </div>
-  );
-}
-
-function InvoiceRow({
-  invoice,
-  onOpen,
-}: {
-  invoice: Invoice;
-  onOpen: (invoice: Invoice) => void;
-}) {
-  const scope = useScope();
-  const { locale } = useI18n();
-  return (
-    <button
-      onClick={() => onOpen(invoice)}
-      className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
-    >
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">
-          {invoice.invoiceNumber ?? ""}
-        </span>
-        <span className="mt-0.5 block truncate text-[12.5px] text-faint">
-          {scope?.idx.clientById.get(invoice.clientId)?.name} ·{" "}
-          {mediumDate(archiveInvoiceDate(invoice), locale)}
-        </span>
-      </span>
-      <Amount value={money(invoice.amount)} className="text-[15px]" />
-      <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
-    </button>
   );
 }

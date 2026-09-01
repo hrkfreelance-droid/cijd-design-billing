@@ -310,6 +310,8 @@ const en = {
   "archive.historical": "Historical",
   "archive.historicalItems": "{count} records",
   "archive.historicalWork": "Unlabelled work",
+  "archive.moreProject": "+ 1 project",
+  "archive.moreProjects": "+ {count} projects",
 
   "common.save": "Save",
   "common.cancel": "Cancel",
@@ -675,6 +677,8 @@ const ja: Record<MessageKey, string> = {
   "archive.historical": "過去履歴",
   "archive.historicalItems": "{count}件の履歴",
   "archive.historicalWork": "項目名なし",
+  "archive.moreProject": "+ 1件",
+  "archive.moreProjects": "+ {count}件",
 
   "common.save": "保存",
   "common.cancel": "キャンセル",
