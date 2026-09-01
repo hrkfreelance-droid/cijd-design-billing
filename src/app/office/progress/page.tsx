@@ -126,14 +126,18 @@ export default function ProgressPage() {
       {groups.length === 0 ? (
         <EmptyState title={t("office.progressEmpty")} />
       ) : (
-        <div className="space-y-6 pb-10">
-          {groups.map((group) => (
+        <div className="pb-10">
+          {groups.map((group, index) => {
+            const sameClientAsPrevious = index > 0 && groups[index - 1].client.id === group.client.id;
+            return (
             <section
               key={group.project.id}
               data-testid={`progress-project-${group.project.id}`}
-              className="px-5 sm:px-8"
+              className={`px-5 sm:px-8 ${sameClientAsPrevious ? "mt-3" : "mt-6 first:mt-0"}`}
             >
-              <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{group.client.name}</h2>
+              {!sameClientAsPrevious && (
+                <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{group.client.name}</h2>
+              )}
               <div className="mt-2 overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border">
                 <div className="border-b border-line px-5 py-3.5 sm:px-6">
                   <div className="flex min-w-0 items-baseline justify-between gap-3">
@@ -173,7 +177,8 @@ export default function ProgressPage() {
                 </div>
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
