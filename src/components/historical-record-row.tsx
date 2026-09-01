@@ -8,10 +8,12 @@ import { money } from "@/lib/format";
 export function HistoricalRecordRow({ group }: { group: HistoricalGroup }) {
   const { t, locale } = useI18n();
   const amount = group.items.reduce((total, item) => total + item.amount, 0);
+  const monthText = group.months.map((month) => formatMonth(month, locale)).filter(Boolean).join(" · ");
 
   return (
     <article
       data-testid="historical-record"
+      data-historical-latest-month={group.months[0] ?? ""}
       className="border-y border-line bg-panel px-5 py-4 first:border-t-0 sm:rounded-2xl sm:border sm:px-6"
     >
       <div className="flex min-w-0 items-start justify-between gap-3">
@@ -20,7 +22,7 @@ export function HistoricalRecordRow({ group }: { group: HistoricalGroup }) {
             {group.project.name}
           </h3>
           <p className="mt-0.5 truncate text-[12.5px] text-faint">
-            {group.client.name} · {group.months.map((month) => formatMonth(month, locale)).join(" · ")}
+            {group.client.name}{monthText ? ` · ${monthText}` : ""}
           </p>
         </div>
         <span className="shrink-0 text-[12px] font-medium text-muted">
@@ -32,7 +34,7 @@ export function HistoricalRecordRow({ group }: { group: HistoricalGroup }) {
         {group.items.map((item) => (
           <div key={item.id} className="flex min-w-0 items-center gap-3 py-2.5 last:pb-0">
             <span className="min-w-0 flex-1 truncate text-[13.5px]">
-              {item.description || t("archive.historicalWork")}
+              {item.description}
             </span>
             <StatusTag status={item.billingStatus === "INVOICED" ? "INVOICED" : "NEEDS_REVIEW"} />
             <span className="shrink-0 text-[13.5px] tnum">
@@ -59,6 +61,6 @@ function formatMonth(month: string, locale: "ja" | "en"): string {
   if (!year || !rawMonth) return month;
   return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
     year: "numeric",
-    month: "short",
+    month: "long",
   }).format(new Date(year, rawMonth - 1, 1));
 }

@@ -7,9 +7,9 @@ import { ChevronRight, SearchIcon } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, PageTotal, Select, StatusTag } from "@/components/ui";
-import { flowStatus, isHistoricalRecord, monthKey, sum } from "@/lib/derive";
-import { mediumDate, money, monthLabel } from "@/lib/format";
-import type { BillingItem } from "@/lib/types";
+import { flowStatus, sum } from "@/lib/derive";
+import { groupHistoricalItems, historicalMonth, sortHistoricalGroups } from "@/lib/historical";
+import { money, monthLabel } from "@/lib/format";
 
 /** Imported history, kept outside the designer's active workload. */
 export default function ProductionArchivePage() {
@@ -18,31 +18,19 @@ export default function ProductionArchivePage() {
   const [query, setQuery] = useState("");
   const [month, setMonth] = useState("");
 
-  const groups = useMemo(() => {
-    if (!scope) return [];
-    const byProject = new Map<string, BillingItem[]>();
-    for (const item of scope.items) {
-      if (!isHistoricalRecord(item)) continue;
-      const list = byProject.get(item.projectId) ?? [];
-      list.push(item);
-      byProject.set(item.projectId, list);
-    }
-    return Array.from(byProject)
-      .map(([projectId, items]) => ({
-        projectId,
-        items,
-        project: scope.idx.projectById.get(projectId),
-        client: scope.clientOf(projectId),
-        statuses: Array.from(new Set(items.map(flowStatus))),
-      }))
-      .sort((a, b) => (b.project?.date ?? "").localeCompare(a.project?.date ?? ""));
-  }, [scope]);
+  const groups = useMemo(
+    () =>
+      scope
+        ? groupHistoricalItems(scope.items, scope.idx.projectById, scope.idx.clientById)
+        : [],
+    [scope],
+  );
 
   const months = useMemo(() => {
     const keys = new Set<string>();
     for (const group of groups) {
       for (const item of group.items) {
-        keys.add(item.historicalMonth ?? monthKey(group.project?.date ?? ""));
+        keys.add(historicalMonth(item));
       }
     }
     return Array.from(keys).sort().reverse();
@@ -50,36 +38,33 @@ export default function ProductionArchivePage() {
 
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return groups
-      .map((group) => ({
+    const filtered = groups.flatMap((group) => {
+      const items = month
+        ? group.items.filter((item) => historicalMonth(item) === month)
+        : group.items;
+      if (!items.length) return [];
+      if (term) {
+        const searchable = `${group.project.name} ${group.client.name} ${items
+          .map((item) => item.description)
+          .join(" ")}`.toLowerCase();
+        if (!searchable.includes(term)) return [];
+      }
+      return [{
         ...group,
-        items: month
-          ? group.items.filter(
-              (item) =>
-                (item.historicalMonth ?? monthKey(group.project?.date ?? "")) === month,
-            )
-          : group.items,
-      }))
-      .filter((group) => {
-        if (month && group.items.length === 0) return false;
-        if (!term) return true;
-        return `${group.project?.name ?? ""} ${group.client?.name ?? ""}`
-          .toLowerCase()
-          .includes(term);
-      });
+        items,
+        amount: sum(items),
+        months: Array.from(new Set(items.map(historicalMonth))).sort(
+          (a, b) => b.localeCompare(a),
+        ),
+        statuses: Array.from(new Set(items.map(flowStatus))),
+      }];
+    });
+    return sortHistoricalGroups(filtered);
   }, [groups, query, month]);
 
   const archiveTotal = useMemo(() => {
-    return sum(
-      groups.flatMap((group) =>
-        month
-          ? group.items.filter(
-              (item) => (item.historicalMonth ?? monthKey(group.project?.date ?? "")) === month,
-            )
-          : group.items,
-      ),
-    );
-  }, [groups, month]);
+    return sum(rows.flatMap((group) => group.items));
+  }, [rows]);
 
   if (!scope) return <PageSkeleton />;
 
@@ -132,6 +117,7 @@ export default function ProductionArchivePage() {
             <Link
               key={group.projectId}
               href={`/designer/projects/${group.projectId}?view=history`}
+              data-historical-latest-month={group.months[0] ?? ""}
               className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-fill sm:px-6"
             >
               <span className="min-w-0 flex-1">
@@ -139,8 +125,7 @@ export default function ProductionArchivePage() {
                   {group.project?.name}
                 </span>
                 <span className="mt-0.5 block truncate text-[12.5px] text-faint">
-                  {group.client?.name}
-                  {group.project ? ` · ${mediumDate(group.project.date, locale)}` : ""} ·{" "}
+                  {group.client.name} · {group.months.map((key) => monthLabel(key, locale)).join(" · ")} ·{" "}
                   {t("productionArchive.items", { count: group.items.length })}
                 </span>
                 <span className="mt-1 flex flex-wrap gap-1.5">

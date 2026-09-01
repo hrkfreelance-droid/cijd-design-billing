@@ -107,7 +107,7 @@ export function InvoiceSheet({
       <Sheet
         open={!paying}
         onClose={onClose}
-        title={invoice.invoiceNumber ?? "Unknown"}
+        title={invoice.invoiceNumber ?? ""}
         description={client?.name}
         footer={
           <div className="space-y-2">
@@ -200,7 +200,7 @@ export function InvoiceSheet({
         open={paying}
         onClose={() => setPaying(false)}
         title={t("billing.confirmPayment")}
-        description={`${invoice.invoiceNumber ?? "Unknown"} · ${money(invoice.amount)}`}
+        description={[invoice.invoiceNumber, money(invoice.amount)].filter(Boolean).join(" · ")}
         footer={
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             <Button variant="secondary" full onClick={() => setPaying(false)}>

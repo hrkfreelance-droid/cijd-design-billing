@@ -9,7 +9,13 @@ import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, PageTotal, Select } from "@/components/ui";
 import { monthKey } from "@/lib/derive";
-import { groupHistoricalItems, historicalMonth } from "@/lib/historical";
+import {
+  archiveInvoiceDate,
+  groupHistoricalItems,
+  historicalMonth,
+  sortArchiveInvoices,
+  sortHistoricalGroups,
+} from "@/lib/historical";
 import { mediumDate, money, monthLabel } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 
@@ -21,10 +27,7 @@ export default function ArchivePage() {
   const [open, setOpen] = useState<Invoice | null>(null);
 
   const paid = useMemo(
-    () =>
-      (scope?.invoices ?? [])
-        .filter((invoice) => invoice.status === "PAID")
-        .sort((a, b) => (b.paymentDate ?? "").localeCompare(a.paymentDate ?? "")),
+    () => sortArchiveInvoices((scope?.invoices ?? []).filter((invoice) => invoice.status === "PAID")),
     [scope],
   );
 
@@ -39,10 +42,11 @@ export default function ArchivePage() {
   const months = useMemo(() => {
     const keys = new Set<string>();
     for (const invoice of paid) {
-      if (invoice.paymentDate) keys.add(monthKey(invoice.paymentDate));
+      const date = archiveInvoiceDate(invoice);
+      if (date) keys.add(monthKey(date));
     }
     for (const group of historical) {
-      for (const item of group.items) keys.add(historicalMonth(item, group.project));
+      for (const item of group.items) keys.add(historicalMonth(item));
     }
     return Array.from(keys).sort().reverse();
   }, [paid, historical]);
@@ -51,7 +55,8 @@ export default function ArchivePage() {
     if (!scope) return [];
     const term = query.trim().toLowerCase();
     return paid.filter((invoice) => {
-      if (month && monthKey(invoice.paymentDate ?? "") !== month) return false;
+      const date = archiveInvoiceDate(invoice);
+      if (month && monthKey(date) !== month) return false;
       if (!term) return true;
       const client = scope.idx.clientById.get(invoice.clientId)?.name ?? "";
       const projects = (scope.idx.itemsByInvoice.get(invoice.id) ?? [])
@@ -63,9 +68,9 @@ export default function ArchivePage() {
 
   const historyRows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return historical.flatMap((group) => {
+    const rows = historical.flatMap((group) => {
       const items = month
-        ? group.items.filter((item) => historicalMonth(item, group.project) === month)
+        ? group.items.filter((item) => historicalMonth(item) === month)
         : group.items;
       if (!items.length) return [];
       if (term) {
@@ -78,7 +83,9 @@ export default function ArchivePage() {
         ...group,
         items,
         amount: items.reduce((total, item) => total + item.amount, 0),
-        months: Array.from(new Set(items.map((item) => historicalMonth(item, group.project)))).sort(),
+        months: Array.from(new Set(items.map(historicalMonth))).sort(
+          (a, b) => b.localeCompare(a),
+        ),
         statuses: Array.from(
           new Set(
             items.map((item) =>
@@ -90,6 +97,7 @@ export default function ArchivePage() {
         ),
       }];
     });
+    return sortHistoricalGroups(rows);
   }, [historical, query, month]);
 
   const hasAnyArchive = paid.length > 0 || historical.length > 0;
@@ -167,7 +175,7 @@ export default function ArchivePage() {
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline gap-2">
                           <span className="truncate text-[15px] font-medium tracking-[-0.01em]">
-                            {invoice.invoiceNumber ?? "Unknown"}
+                            {invoice.invoiceNumber ?? ""}
                           </span>
                           <span className="truncate text-[12.5px] text-muted">
                             {scope.idx.clientById.get(invoice.clientId)?.name}
@@ -180,7 +188,9 @@ export default function ArchivePage() {
                       <span className="hidden text-[12.5px] text-faint sm:block">
                         {invoice.paymentDate
                           ? t("archive.paidOn", { date: mediumDate(invoice.paymentDate, locale) })
-                          : ""}
+                          : invoice.invoiceDate
+                            ? mediumDate(invoice.invoiceDate, locale)
+                            : ""}
                       </span>
                       <Amount value={money(invoice.amount)} className="text-[15px]" />
                       <ChevronRight className="h-4 w-4 shrink-0 text-faint" />

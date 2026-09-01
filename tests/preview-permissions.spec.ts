@@ -106,10 +106,17 @@ test("preview restores the 71-row Ringer Hut history without resetting browser s
   expect(summary.months).toHaveLength(7);
   expect(summary.statuses).toEqual({ NEEDS_REVIEW: 42, INVOICED: 29 });
 
+  const designerArchiveMonths = await page.locator("a[data-historical-latest-month]").evaluateAll((links) =>
+    links.map((link) => link.getAttribute("data-historical-latest-month")),
+  );
+  expect(designerArchiveMonths).toEqual([...designerArchiveMonths].sort().reverse());
+
   await monthFilter.selectOption("2026-02");
-  await expect(page.getByRole("link", { name: /Ringer Hut Storefront Sign/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Ringer Hut Storefront Sign/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Ringer Hut A4/ })).toBeVisible();
   await page.getByRole("button", { name: "Ringer Hut", exact: true }).click();
-  await expect(page.getByRole("link", { name: /Ringer Hut Storefront Sign/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Ringer Hut Storefront Sign/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Ringer Hut A4/ })).toBeVisible();
 
   // Re-opening the store runs the migration again, but keeps the same 71 rows.
   await page.reload();

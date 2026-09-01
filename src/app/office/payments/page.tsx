@@ -10,7 +10,7 @@ import { useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, PageTotal, Segmented } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
-import { groupHistoricalItems } from "@/lib/historical";
+import { archiveInvoiceDate, groupHistoricalItems, sortArchiveInvoices } from "@/lib/historical";
 import { mediumDate, money } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 
@@ -44,8 +44,10 @@ function Payments() {
   const receipts = scope.invoices.filter(
     (invoice) => invoice.status === "PAID" && invoice.receiptStatus === "PENDING",
   );
-  const completed = scope.invoices.filter(
-    (invoice) => invoice.status === "PAID" && invoice.receiptStatus !== "PENDING",
+  const completed = sortArchiveInvoices(
+    scope.invoices.filter(
+      (invoice) => invoice.status === "PAID" && invoice.receiptStatus !== "PENDING",
+    ),
   );
   const historical = groupHistoricalItems(
     scope.items,
@@ -151,11 +153,11 @@ function InvoiceRow({
     >
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">
-          {invoice.invoiceNumber ?? "Unknown"}
+          {invoice.invoiceNumber ?? ""}
         </span>
         <span className="mt-0.5 block truncate text-[12.5px] text-faint">
           {scope?.idx.clientById.get(invoice.clientId)?.name} ·{" "}
-          {mediumDate(invoice.invoiceDate, locale)}
+          {mediumDate(archiveInvoiceDate(invoice), locale)}
         </span>
       </span>
       <Amount value={money(invoice.amount)} className="text-[15px]" />

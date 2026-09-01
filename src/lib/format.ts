@@ -41,7 +41,7 @@ export function longDate(date: string, locale: Locale): string {
 }
 
 export function mediumDate(date: string | null | undefined, locale: Locale): string {
-  if (!date) return "Unknown";
+  if (!date) return "";
   return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
     year: "numeric",
     month: "short",

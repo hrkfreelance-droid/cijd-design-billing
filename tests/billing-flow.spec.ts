@@ -457,6 +457,12 @@ test("office Archive and Completed include historical work without payment facts
   await expect(page.getByRole("heading", { name: "Archive", level: 1 })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Historical records", level: 2 })).toBeVisible();
   await expect(page.getByTestId("historical-record")).not.toHaveCount(0);
+  await expect(page.getByTestId("historical-record").filter({ hasText: "Ringer Hut Storefront Sign" })).toHaveCount(0);
+  await expect(page.locator("body")).not.toContainText("Unknown");
+  const officeArchiveMonths = await page.getByTestId("historical-record").evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute("data-historical-latest-month")),
+  );
+  expect(officeArchiveMonths).toEqual([...officeArchiveMonths].sort().reverse());
 
   const monthFilter = page.getByRole("combobox", { name: "All months" });
   for (const monthLabel of ["February 2026", "March 2026", "August 2026"]) {
@@ -469,6 +475,12 @@ test("office Archive and Completed include historical work without payment facts
   await page.getByRole("tab", { name: "Completed" }).click();
   await expect(page.getByRole("heading", { name: "Historical records", level: 2 })).toBeVisible();
   await expect(page.getByTestId("historical-record").filter({ hasText: "RH Kids Promotion" })).toBeVisible();
+  await expect(page.getByTestId("historical-record").filter({ hasText: "Ringer Hut Storefront Sign" })).toHaveCount(0);
+  await expect(page.locator("body")).not.toContainText("Unknown");
+  const completedHistoryMonths = await page.getByTestId("historical-record").evaluateAll((rows) =>
+    rows.map((row) => row.getAttribute("data-historical-latest-month")),
+  );
+  expect(completedHistoryMonths).toEqual([...completedHistoryMonths].sort().reverse());
   await expect(page.getByTestId("historical-record").filter({ hasText: "Historical" }).getByRole("button")).toHaveCount(0);
 });
 
