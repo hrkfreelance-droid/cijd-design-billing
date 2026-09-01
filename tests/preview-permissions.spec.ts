@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("preview billing roles can only observe the progress workspace", async ({ page }) => {
-  test.skip(process.env.NEXT_PUBLIC_DEMO_MODE !== "1", "Preview demo mode only");
+  test.skip(process.env.NEXT_PUBLIC_DEMO_MODE !== "1", "Local demo mode only (npm run dev with NEXT_PUBLIC_DEMO_MODE=1)");
 
   await page.addInitScript(() => {
     localStorage.setItem("cijd.demo.user", "u_billing");
@@ -25,7 +25,7 @@ test("preview billing roles can only observe the progress workspace", async ({ p
 });
 
 test("preview RH Kids completed work stays in the Designer ready tab", async ({ page }) => {
-  test.skip(process.env.NEXT_PUBLIC_DEMO_MODE !== "1", "Preview demo mode only");
+  test.skip(process.env.NEXT_PUBLIC_DEMO_MODE !== "1", "Local demo mode only (npm run dev with NEXT_PUBLIC_DEMO_MODE=1)");
 
   await page.addInitScript(() => {
     localStorage.setItem("cijd.demo.user", "u_hiroki");
@@ -58,7 +58,7 @@ test("preview RH Kids completed work stays in the Designer ready tab", async ({ 
 });
 
 test("preview restores the 71-row Ringer Hut history without resetting browser state", async ({ page }) => {
-  test.skip(process.env.NEXT_PUBLIC_DEMO_MODE !== "1", "Preview demo mode only");
+  test.skip(process.env.NEXT_PUBLIC_DEMO_MODE !== "1", "Local demo mode only (npm run dev with NEXT_PUBLIC_DEMO_MODE=1)");
 
   await page.addInitScript(() => {
     localStorage.setItem("cijd.demo.user", "u_hiroki");
