@@ -70,6 +70,7 @@ test("designer Hiroki can move work through downstream workspaces", async ({ pag
   await workspaces.getByRole("button", { name: "Billing", exact: true }).click();
   await expect(page).toHaveURL(/\/office$/);
   await expect(page.getByRole("link", { name: "Accounting", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Progress", exact: true })).toBeVisible();
 });
 
 test("undelivered work cannot reach billing", async ({ page }) => {
@@ -164,20 +165,22 @@ test("delivering hands the work to billing and records a notification", async ({
   await expect(page.getByText("Marked as delivered")).toBeVisible();
   await expect(page.getByText("Delivered", { exact: false }).first()).toBeVisible();
 
-  // Billing now sees it, and only it — nothing undelivered.
+  // Billing can invoice the delivered item and can observe unfinished work in
+  // the dedicated read-only progress view.
   await signIn(page, "u_billing");
   await page.goto("/office");
   await expect(page.getByText("Only work with completed production appears here.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Handoff Poster Design" })).toBeVisible();
-  await expect(page.getByText("Gate Check")).toHaveCount(0);
 
   const state = await (await page.request.get("/api/state")).json();
   expect(state.data.scope).toEqual({ production: false, billing: true, payment: true });
-  expect(
-    state.data.billingItems.every((item: { productionStatus: string }) =>
-      ["DELIVERED", "COMPLETED"].includes(item.productionStatus),
-    ),
-  ).toBe(true);
+  expect(state.data.billingItems.some((item: { productionStatus: string }) => item.productionStatus === "IN_PROGRESS")).toBe(true);
+
+  await page.goto("/office/progress");
+  await expect(page.getByRole("heading", { name: "Progress", level: 1 })).toBeVisible();
+  await expect(page.getByText("Handoff Poster")).toBeVisible();
+  await expect(page.getByText("In Progress", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Complete|Deliver|Undo/ })).toHaveCount(0);
 
   // The delivery notification is recorded even though Telegram is unconfigured.
   const notifications = await (await page.request.get("/api/notifications")).json();
@@ -208,6 +211,71 @@ test("billing and accounting stay out of each other's screens", async ({ page })
     },
   });
   expect(asAccounting.status()).toBe(403);
+});
+
+test("billing and accounting can observe progress but cannot mutate production", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const design = await newProjectWithItem(page, "Progress Readonly Design", 40, "DESIGN");
+  const print = await newProjectWithItem(page, "Progress Readonly Print", 15, "PRINT");
+
+  await signIn(page, "u_billing");
+  await page.goto("/office/progress");
+  await expect(page.getByRole("heading", { name: "Progress", level: 1 })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Progress", exact: true })).toHaveAttribute("aria-current", "page");
+  const readonly = page.getByTestId("progress-readonly");
+  await expect(readonly).toContainText("Progress Readonly Design");
+  await expect(readonly).toContainText("In Progress");
+  await expect(readonly.getByRole("button")).toHaveCount(0);
+
+  for (const response of [
+    await page.request.patch(`/api/billing-items/${design.itemId}`, { data: { description: "Changed" } }),
+    await page.request.post(`/api/billing-items/${design.itemId}/complete`),
+    await page.request.post(`/api/printing-items/${print.itemId}/price`, {
+      data: { unitPrice: 1, amount: 100, confirm: true },
+    }),
+  ]) {
+    expect(response.status()).toBe(403);
+  }
+
+  await signIn(page, "u_accounting");
+  await page.goto("/office/progress");
+  await expect(page.getByTestId("progress-readonly")).toContainText("Progress Readonly Design");
+  await expect(page.getByTestId("progress-readonly").getByRole("button")).toHaveCount(0);
+  const accountingWrite = await page.request.post(`/api/billing-items/${design.itemId}/delivery`);
+  expect(accountingWrite.status()).toBe(403);
+});
+
+test("designer can edit and undo work while it is ready to invoice", async ({ page }) => {
+  await signIn(page, "u_hiroki");
+  const { projectId, itemId } = await newProjectWithItem(page, "Designer Ready Edit", 40, "DESIGN");
+  await page.goto(`/designer/projects/${projectId}`);
+
+  const item = page.getByTestId("designer-project-item").filter({ hasText: "Design" }).first();
+  await item.getByRole("button", { name: "Complete" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Mark as complete" }).click();
+  await expect(item.getByRole("button", { name: "Undo completion" })).toBeVisible();
+
+  await item.getByRole("button", { name: "Design", exact: true }).click();
+  const editor = page.getByRole("dialog").last();
+  await editor.getByLabel("Amount").fill("55");
+  await editor.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Item updated")).toBeVisible();
+
+  let state = await (await page.request.get("/api/state")).json();
+  expect(state.data.billingItems.find((candidate: { id: string }) => candidate.id === itemId)).toEqual(
+    expect.objectContaining({ amount: 55, productionStatus: "COMPLETED", billingStatus: "READY_TO_INVOICE" }),
+  );
+
+  await item.getByRole("button", { name: "Undo completion" }).click();
+  await page.getByRole("dialog").last().getByRole("button", { name: "Undo completion" }).click();
+  await expect(page.getByText("Completion undone")).toBeVisible();
+  state = await (await page.request.get("/api/state")).json();
+  expect(state.data.billingItems.find((candidate: { id: string }) => candidate.id === itemId)).toEqual(
+    expect.objectContaining({ productionStatus: "IN_PROGRESS", billingStatus: "NOT_READY" }),
+  );
+
+  await page.goto("/office");
+  await expect(page.getByText("Designer Ready Edit")).toHaveCount(0);
 });
 
 test("invoice once, pay once", async ({ page }) => {

@@ -9,6 +9,7 @@ export type Role = (typeof ROLES)[number];
 export type Permission =
   | "designer:read"
   | "production:read"
+  | "progress:read"
   | "production:write"
   | "delivery:write"
   | "client:write"
@@ -27,6 +28,7 @@ const MATRIX: Record<Role, Permission[]> = {
   DESIGNER: [
     "designer:read",
     "production:read",
+    "progress:read",
     "production:write",
     "delivery:write",
     "client:write",
@@ -40,11 +42,12 @@ const MATRIX: Record<Role, Permission[]> = {
   ],
   // Billing hands the user directly to the Accounting view after invoicing;
   // it can read that queue but payment confirmation remains Accounting-only.
-  BILLING: ["billing:read", "invoice:write", "payment:read", "notification:manage"],
-  ACCOUNTING: ["payment:read", "payment:write"],
+  BILLING: ["billing:read", "invoice:write", "payment:read", "progress:read", "notification:manage"],
+  ACCOUNTING: ["payment:read", "payment:write", "progress:read"],
   PRINTING: ["production:read", "printing:read", "print:write", "delivery:write"],
   ADMIN: [
     "production:read",
+    "progress:read",
     "designer:read",
     "production:write",
     "delivery:write",
@@ -79,6 +82,6 @@ export function workspacesFor(role: Role): ("designer" | "printing" | "office")[
   const spaces: ("designer" | "printing" | "office")[] = [];
   if (can(role, "designer:read")) spaces.push("designer");
   if (can(role, "printing:read")) spaces.push("printing");
-  if (canAny(role, ["billing:read", "payment:read"])) spaces.push("office");
+  if (canAny(role, ["billing:read", "payment:read", "progress:read"])) spaces.push("office");
   return spaces;
 }

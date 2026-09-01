@@ -29,6 +29,7 @@ export class GuardedRepository {
   async getSnapshot(): Promise<Snapshot> {
     const snapshot = await this.repo.getSnapshot();
     const production = can(this.user.role, "production:read");
+    const progress = can(this.user.role, "progress:read");
     const billing = can(this.user.role, "billing:read");
     const payment = can(this.user.role, "payment:read");
     const printing = can(this.user.role, "printing:read");
@@ -42,7 +43,7 @@ export class GuardedRepository {
       snapshot.users = [];
     }
 
-    if (!production) {
+    if (!production && !progress) {
       // Unfinished work never leaves the designer side.
       const delivered = snapshot.billingItems.filter(
         isProductionComplete,

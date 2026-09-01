@@ -11,10 +11,14 @@ export default async function OfficeLayout({ children }: { children: React.React
   if (!isDemoMode && !isPreviewRuntime) {
     const user = await currentUser();
     if (!user) redirect("/signin");
-    if (!canAny(user.role, ["billing:read", "payment:read"])) redirect(homeFor(user.role));
+    if (!canAny(user.role, ["billing:read", "payment:read", "progress:read"])) redirect(homeFor(user.role));
   }
   return (
-    <Workspace nav={OFFICE_NAV} workspace="office" requires={["billing:read", "payment:read"]}>
+    <Workspace
+      nav={OFFICE_NAV}
+      workspace="office"
+      requires={["billing:read", "payment:read", "progress:read"]}
+    >
       {children}
     </Workspace>
   );

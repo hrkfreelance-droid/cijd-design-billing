@@ -24,13 +24,14 @@ The product separates projects from immutable billing items. Add-on work becomes
 
 ## Operating Context
 
-Designer uses `/designer` for Today → Projects → Delivered → Archive. Billing and Accounting use `/office` for Billing → Payments → Archive. Project registration and delivery intake are also available through the authenticated Telegram endpoint and long-polling runner.
+Designer uses `/designer` for Today → Projects → Delivered → Archive. Billing and Accounting use `/office` for Billing → Payments → Progress (read-only) → Archive. Project registration and delivery intake are also available through the authenticated Telegram endpoint and long-polling runner.
 
 ## Capabilities and Constraints
 
-- Designer destinations are Today, Projects, Delivered, Archive; Office destinations are Billing, Payments, Archive.
+- Designer destinations are Today, Projects, Delivered, Archive; Office destinations are Billing, Payments, Progress (read-only), Archive.
+- Billing and Accounting can inspect Client → Project → Item progress, but cannot edit production or printing from Progress.
 - Billing states: IN_PROGRESS, READY_TO_INVOICE, INVOICED, PAID, NEEDS_REVIEW.
-- Invoice numbers are manually entered in the MVP and duplicate invoice numbers are rejected.
+- Invoice numbers are generated internally when an invoice is created, and duplicate invoice numbers are rejected.
 - Payment confirmation is idempotency-safe: a PAID invoice cannot be confirmed again.
 - Local JSON mode must work without Supabase credentials. With credentials, Supabase is the shared production ledger.
 - Unconfirmed historical facts remain NEEDS_REVIEW; unknown invoice numbers or dates are stored as null when the billing/payment fact is confirmed.

@@ -43,6 +43,7 @@ export const DESIGNER_NAV: NavItem[] = [
 export const OFFICE_NAV: NavItem[] = [
   { href: "/office", key: "nav.billing", Icon: BillIcon },
   { href: "/office/payments", key: "nav.payments", Icon: ListIcon },
+  { href: "/office/progress", key: "nav.progress", Icon: ListIcon },
   { href: "/office/archive", key: "nav.archive", Icon: ArchiveIcon },
 ];
 

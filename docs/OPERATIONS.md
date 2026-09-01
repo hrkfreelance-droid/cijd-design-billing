@@ -5,12 +5,12 @@
 ## 毎日の流れ
 
 1. DesignerがClient / Project / Billing Itemを登録する。
-2. 制作が終わったらDesignerが`納品済み`にする。
-3. Billingは`請求待ち`だけを確認し、実際のInvoice Numberと請求日を入力して請求書を作成する。
+2. 制作・印刷が進む間、Billing / Accountingは`進行状況`でClient → Project → Itemの状態だけを確認する。
+3. 制作が終わったらDesignerが完了または納品済みにする。請求待ちになった項目はBillingが選択して請求する。
 4. Accountingが入金と入金日を確認する。
 5. 必要な場合だけ領収書を送付済みにし、完了した請求はArchiveで確認する。
 
-未納品の項目は、画面・API・Repository・Supabase RLS / DB制約の各層で請求対象になりません。追加作業は既存項目を上書きせず、新しいBilling Itemとして登録します。
+未納品の項目は請求画面・API・Repository・Supabase RLS / DB制約の各層で請求対象になりません。進行状況ではREAD ONLYで確認できます。追加作業は既存項目を上書きせず、新しいBilling Itemとして登録します。
 
 ## Authユーザーの管理
 
@@ -42,10 +42,10 @@ update public.users set role = 'ACCOUNTING' where id = '<auth uid>';
 
 `NEEDS_REVIEW`は、金額、請求済みか、入金済みかに確定情報がない場合、矛盾、重複疑いがある場合に使います。請求書番号・請求日・入金日だけが不明でも、請求または入金の事実が確定していれば履歴は保持できます。不明値は`null`です。
 
-- Designerは納品の事実を確認する。納品前の履歴はOfficeに出ない。
+- Designerは完了・納品の事実を確認する。Billing / Accountingは進行状況で納品前もREAD ONLY確認できる。
 - BillingはReview欄と元資料を照合し、金額と請求事実が確認できるまで請求しない。
 - 入金事実が確認できないものは、請求済みでも`INVOICED`のままにし、`PAID`にしない。
-- 推測で金額、Invoice Number、日付、PAIDを補わない。
+- 推測で金額、日付、PAIDを補わない。Invoice Numberはアプリが自動生成する。
 - 既存の請求・入金済みデータを削除して修正しない。確認できた事実はImportまたは管理者手順で監査可能な形で追加する。
 
 ## 間違った請求・入金
