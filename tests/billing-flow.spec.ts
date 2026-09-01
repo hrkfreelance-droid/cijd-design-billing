@@ -451,6 +451,27 @@ test("retired Telegram and notification endpoints are not exposed", async ({ req
   expect(notifications.status()).toBe(404);
 });
 
+test("office Archive and Completed include historical work without payment facts", async ({ page }) => {
+  await signIn(page, "u_billing");
+  await page.goto("/office/archive");
+  await expect(page.getByRole("heading", { name: "Archive", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Historical records", level: 2 })).toBeVisible();
+  await expect(page.getByTestId("historical-record")).not.toHaveCount(0);
+
+  const monthFilter = page.getByRole("combobox", { name: "All months" });
+  for (const monthLabel of ["February 2026", "March 2026", "August 2026"]) {
+    await expect(monthFilter.locator("option").filter({ hasText: monthLabel })).toHaveCount(1);
+  }
+  await monthFilter.selectOption("2026-05");
+  await expect(page.getByTestId("historical-record").filter({ hasText: "RH Kids Promotion" })).toBeVisible();
+
+  await page.goto("/office/payments");
+  await page.getByRole("tab", { name: "Completed" }).click();
+  await expect(page.getByRole("heading", { name: "Historical records", level: 2 })).toBeVisible();
+  await expect(page.getByTestId("historical-record").filter({ hasText: "RH Kids Promotion" })).toBeVisible();
+  await expect(page.getByTestId("historical-record").filter({ hasText: "Historical" }).getByRole("button")).toHaveCount(0);
+});
+
 test("receipts move an invoice to completed", async ({ page }) => {
   await signIn(page, "u_hiroki");
   const { projectId } = await newProjectWithItem(page, "Receipt Check", 30, "PRINT");
@@ -938,7 +959,10 @@ test("Billing and Accounting totals follow the selected client and tab", async (
   const completedTotal = completedState.data.invoices
     .filter((invoice: { status: string; receiptStatus: string }) => invoice.status === "PAID" && invoice.receiptStatus !== "PENDING")
     .reduce((total: number, invoice: { amount: number }) => total + invoice.amount, 0);
-  await expect(page.getByTestId("page-total")).toContainText(money(completedTotal));
+  const historicalTotal = completedState.data.billingItems
+    .filter((item: { createdBy: string }) => item.createdBy === "Import")
+    .reduce((total: number, item: { amount: number }) => total + item.amount, 0);
+  await expect(page.getByTestId("page-total")).toContainText(money(completedTotal + historicalTotal));
   expect(daishinInvoice.data.id).toBeTruthy();
 
   for (const width of [320, 390, 1280]) {

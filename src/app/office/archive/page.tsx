@@ -3,11 +3,13 @@
 import { useMemo, useState } from "react";
 
 import { ChevronRight, SearchIcon } from "@/components/icons";
+import { HistoricalRecordRow } from "@/components/historical-record-row";
 import { InvoiceSheet } from "@/components/invoice-sheet";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, Select } from "@/components/ui";
+import { Amount, EmptyState, PageHeader, PageTotal, Select } from "@/components/ui";
 import { monthKey } from "@/lib/derive";
+import { groupHistoricalItems, historicalMonth } from "@/lib/historical";
 import { mediumDate, money, monthLabel } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 
@@ -26,15 +28,26 @@ export default function ArchivePage() {
     [scope],
   );
 
+  const historical = useMemo(
+    () =>
+      scope
+        ? groupHistoricalItems(scope.items, scope.idx.projectById, scope.idx.clientById)
+        : [],
+    [scope],
+  );
+
   const months = useMemo(() => {
     const keys = new Set<string>();
     for (const invoice of paid) {
       if (invoice.paymentDate) keys.add(monthKey(invoice.paymentDate));
     }
+    for (const group of historical) {
+      for (const item of group.items) keys.add(historicalMonth(item, group.project));
+    }
     return Array.from(keys).sort().reverse();
-  }, [paid]);
+  }, [paid, historical]);
 
-  const rows = useMemo(() => {
+  const paidRows = useMemo(() => {
     if (!scope) return [];
     const term = query.trim().toLowerCase();
     return paid.filter((invoice) => {
@@ -48,13 +61,54 @@ export default function ArchivePage() {
     });
   }, [paid, query, month, scope]);
 
+  const historyRows = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return historical.flatMap((group) => {
+      const items = month
+        ? group.items.filter((item) => historicalMonth(item, group.project) === month)
+        : group.items;
+      if (!items.length) return [];
+      if (term) {
+        const searchable = `${group.project.name} ${group.client.name} ${items
+          .map((item) => item.description)
+          .join(" ")}`.toLowerCase();
+        if (!searchable.includes(term)) return [];
+      }
+      return [{
+        ...group,
+        items,
+        amount: items.reduce((total, item) => total + item.amount, 0),
+        months: Array.from(new Set(items.map((item) => historicalMonth(item, group.project)))).sort(),
+        statuses: Array.from(
+          new Set(
+            items.map((item) =>
+              item.billingStatus === "INVOICED"
+                ? ("INVOICED" as const)
+                : ("NEEDS_REVIEW" as const),
+            ),
+          ),
+        ),
+      }];
+    });
+  }, [historical, query, month]);
+
+  const hasAnyArchive = paid.length > 0 || historical.length > 0;
+
+  const knownTotal =
+    paidRows.reduce((total, invoice) => total + invoice.amount, 0) +
+    historyRows.reduce((total, group) => total + group.amount, 0);
+
   if (!scope) return <PageSkeleton />;
 
   return (
     <div className="animate-rise">
       <PageHeader
         title={t("archive.title")}
-        subtitle={t("archive.count", { count: paid.length })}
+        subtitle={t("archive.summary", {
+          invoices: paid.length,
+          history: historical.reduce((total, group) => total + group.items.length, 0),
+        })}
+        action={<PageTotal value={knownTotal > 0 ? money(knownTotal) : "—"} label={t("projects.knownTotal")} />}
       />
 
       <div className="flex flex-col gap-2.5 px-5 pb-5 sm:flex-row sm:items-center sm:px-8">
@@ -85,48 +139,70 @@ export default function ArchivePage() {
         </div>
       </div>
 
-      {paid.length === 0 ? (
+      {!hasAnyArchive ? (
         <EmptyState title={t("archive.empty")} hint={t("archive.emptyHint")} />
-      ) : rows.length === 0 ? (
+      ) : paidRows.length === 0 && historyRows.length === 0 ? (
         <EmptyState title={t("archive.noMatch")} />
       ) : (
-        <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
-          {rows.map((invoice) => {
-            const items = scope.idx.itemsByInvoice.get(invoice.id) ?? [];
-            const projects = Array.from(
-              new Set(
-                items.map((item) => scope.idx.projectById.get(item.projectId)?.name ?? ""),
-              ),
-            ).join(", ");
-            return (
-              <button
-                key={invoice.id}
-                onClick={() => setOpen(invoice)}
-                className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-baseline gap-2">
-                    <span className="truncate text-[15px] font-medium tracking-[-0.01em]">
-                      {invoice.invoiceNumber ?? "Unknown"}
-                    </span>
-                    <span className="truncate text-[12.5px] text-muted">
-                      {scope.idx.clientById.get(invoice.clientId)?.name}
-                    </span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-[12.5px] text-faint">
-                    {projects}
-                  </span>
-                </span>
-                <span className="hidden text-[12.5px] text-faint sm:block">
-                  {invoice.paymentDate
-                    ? t("archive.paidOn", { date: mediumDate(invoice.paymentDate, locale) })
-                    : ""}
-                </span>
-                <Amount value={money(invoice.amount)} className="text-[15px]" />
-                <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
-              </button>
-            );
-          })}
+        <div className="space-y-8 pb-10">
+          {paidRows.length > 0 && (
+            <section>
+              <h2 className="px-5 pb-2 text-[15px] font-semibold sm:px-8">
+                {t("archive.paidSection")}
+              </h2>
+              <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
+                {paidRows.map((invoice) => {
+                  const items = scope.idx.itemsByInvoice.get(invoice.id) ?? [];
+                  const projects = Array.from(
+                    new Set(
+                      items.map((item) => scope.idx.projectById.get(item.projectId)?.name ?? ""),
+                    ),
+                  ).join(", ");
+                  return (
+                    <button
+                      key={invoice.id}
+                      onClick={() => setOpen(invoice)}
+                      className="flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-fill active:bg-fill sm:px-6"
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-baseline gap-2">
+                          <span className="truncate text-[15px] font-medium tracking-[-0.01em]">
+                            {invoice.invoiceNumber ?? "Unknown"}
+                          </span>
+                          <span className="truncate text-[12.5px] text-muted">
+                            {scope.idx.clientById.get(invoice.clientId)?.name}
+                          </span>
+                        </span>
+                        <span className="mt-0.5 block truncate text-[12.5px] text-faint">
+                          {projects}
+                        </span>
+                      </span>
+                      <span className="hidden text-[12.5px] text-faint sm:block">
+                        {invoice.paymentDate
+                          ? t("archive.paidOn", { date: mediumDate(invoice.paymentDate, locale) })
+                          : ""}
+                      </span>
+                      <Amount value={money(invoice.amount)} className="text-[15px]" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {historyRows.length > 0 && (
+            <section>
+              <h2 className="px-5 pb-2 text-[15px] font-semibold sm:px-8">
+                {t("archive.historySection")}
+              </h2>
+              <div className="space-y-3 sm:px-8">
+                {historyRows.map((group) => (
+                  <HistoricalRecordRow key={group.projectId} group={group} />
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
 

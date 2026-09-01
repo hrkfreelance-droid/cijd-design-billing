@@ -18,6 +18,8 @@ export const supabaseEnabled = () => supabaseConfig() !== null;
  */
 export function dataMode(): DataMode {
   if (supabaseEnabled()) return "supabase";
-  if (process.env.NODE_ENV !== "production" || isPreviewRuntime) return "local";
-  throw new Error("Supabase credentials are required in production.");
+  if (process.env.NODE_ENV !== "production" && !isPreviewRuntime) return "local";
+  // Preview and production fail closed as Supabase applications. The caller
+  // will show the auth/setup gate instead of silently opening a local ledger.
+  return "supabase";
 }

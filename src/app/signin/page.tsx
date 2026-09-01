@@ -81,10 +81,14 @@ function GoogleSignIn({
 }) {
   const { t } = useI18n();
   const [error, setError] = useState<string | null>(null);
+  const client = supabaseBrowserClient();
 
   const continueWithGoogle = async () => {
-    const client = supabaseBrowserClient();
-    if (!client || busy) return;
+    if (busy) return;
+    if (!client) {
+      setError(t("signin.setupRequired"));
+      return;
+    }
     setBusy(true);
     setError(null);
     const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/")}`;
@@ -106,13 +110,17 @@ function GoogleSignIn({
         </p>
         <h1 className="mt-1 text-[28px] font-semibold tracking-[-0.021em]">{t("brand.app")}</h1>
       </div>
-      {error && <p className="mb-4 text-[13px] text-review" role="alert">{error}</p>}
+      {(error || !client) && (
+        <p className="mb-4 text-[13px] text-review" role="alert">
+          {error ?? t("signin.setupRequired")}
+        </p>
+      )}
       <Button
         type="button"
         variant="primary"
         full
         onClick={() => void continueWithGoogle()}
-        disabled={busy}
+        disabled={busy || !client}
         data-testid="google-sign-in"
       >
         {t("signin.google")}

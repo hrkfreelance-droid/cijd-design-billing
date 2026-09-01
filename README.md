@@ -5,11 +5,11 @@ CIJD DESIGN の案件・請求・経理管理 Web アプリ。
 
 ## Preview
 
-公開PreviewはCloudflare Workersの固定URLで実行します。Supabaseのbuild variablesが設定されている場合は本番と同じSupabase ledgerを使い、未設定のローカル検証時だけbrowser-local Demo Storeにフォールバックします。
+公開PreviewはCloudflare Workersの固定URLで実行します。Supabaseのbuild variablesが設定されている場合は本番と同じSupabase ledgerを使い、未設定のPreviewは安全にログイン待ちで停止します。browser-local Demo Storeは明示的なローカル検証時だけ使います。
 [Open Cloudflare Preview](https://cijd-design-billing-preview.hrk-freelance.workers.dev/)
 ローカルでの起動方法は [Local Development](#local-development) を参照してください。
 
-`CIJD_PREVIEW_MODE=1` だけではDemoへ切り替わりません。Supabase credentialsがあるPreviewはCloudflare → Supabase Auth → Supabase Databaseで動作します。
+`CIJD_PREVIEW_MODE=1` だけではDemoへ切り替わりません。Supabase credentialsがあるPreviewはCloudflare → Supabase Auth → Supabase Databaseで動作し、credentialsが無い場合もlocal ledgerへフォールバックしません。
 
 ## Overview
 
@@ -91,8 +91,8 @@ vinextを使用します。`integrate-production-workspace` へのpushをPreview
 接続できます。ユーザーはCloudflareが発行した固定Worker URLを開くだけで、Terminal・
 git pull・Port操作は不要です。
 
-Preview buildは `CIJD_PREVIEW_MODE=1` を保持します。Supabase build variablesがある場合はserver API・route guard・GuardedRepositoryが有効になり、ない場合だけbrowser-local Demo Storeを使います。localStorageの操作状態をSupabaseへコピーすることはありません。
-本番Supabase未設定の本番Workerは引き続きfail closedし、PreviewのlocalStorageや `.data/runtime/db.json`
+Preview buildは `CIJD_PREVIEW_MODE=1` を保持します。Supabase build variablesがある場合はserver API・route guard・GuardedRepositoryが有効になり、ない場合はGoogleログインの設定待ちで停止します。localStorageの操作状態をSupabaseへコピーすることはありません。
+Production/PreviewでSupabase未設定のWorkerは引き続きfail closedし、PreviewのlocalStorageや `.data/runtime/db.json`
 を本番業務DBとして使いません。
 
 Cloudflare Workers Buildsの一度きりの接続設定は次の値です。
@@ -135,7 +135,7 @@ workers.dev設定が完了した後は、対象branchへのpushだけでPreview�
 | `CIJD_DATA_FILE` | ローカル JSON ストアの保存先（既定：`.data/runtime/db.json`） |
 | `CIJD_NEXT_DIST_DIR` | Next生成物の保存先（npm scriptsの既定：`.next-local`） |
 | `NEXT_PUBLIC_DEMO_MODE` | 開発時のみブラウザ内デモデータへ切り替え（Production Previewでは使用しない） |
-| `CIJD_PREVIEW_MODE` | Cloudflare Preview識別用。Supabase credentialsがあればDemoには切り替わりません |
+| `CIJD_PREVIEW_MODE` | Cloudflare Preview識別用。Demo Storeを選択するフラグではありません |
 
 ## Production setup checklist
 

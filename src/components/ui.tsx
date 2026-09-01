@@ -435,9 +435,9 @@ export function Sheet({
   // Rendered on document.body so no animated or transformed ancestor can
   // become the containing block for the fixed overlay.
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center">
+    <div className="fixed inset-0 z-50 isolate flex items-end justify-center sm:items-center">
       <div
-        className="overlay-surface animate-fade absolute inset-0 backdrop-blur-[2px]"
+        className="overlay-surface animate-fade absolute inset-0 z-0 backdrop-blur-[2px]"
         onClick={onClose}
       />
       <div
@@ -445,7 +445,7 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="animate-sheet relative flex min-w-0 max-w-full max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] border border-line bg-panel shadow-[0_20px_60px_rgba(0,0,0,0.22)] sm:max-h-[86dvh] sm:w-[440px] sm:rounded-[18px]"
+        className="animate-sheet relative z-10 flex min-w-0 max-w-full max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] border border-line bg-panel shadow-[0_20px_60px_rgba(0,0,0,0.22)] sm:max-h-[86dvh] sm:w-[440px] sm:rounded-[18px]"
       >
         <div className="shrink-0 px-5 pb-3 pt-5">
           <h2 className="text-[17px] font-semibold tracking-[-0.012em]">{title}</h2>
