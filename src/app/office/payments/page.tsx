@@ -10,12 +10,23 @@ import { useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { EmptyState, PageHeader, PageTotal, Segmented } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
+import { isHistoricalRecord } from "@/lib/derive";
 import { khrAmount } from "@/lib/exchange-rate";
-import { groupHistoricalItems, sortArchiveInvoices } from "@/lib/historical";
+import {
+  archiveInvoiceDate,
+  groupHistoricalItems,
+  latestHistoricalMonth,
+  sortArchiveInvoices,
+} from "@/lib/historical";
 import { money } from "@/lib/format";
+import type { HistoricalGroup } from "@/lib/historical";
 import type { Invoice } from "@/lib/types";
 
 type Tab = "awaiting" | "receipts" | "completed";
+
+type CompletedEntry =
+  | { kind: "invoice"; invoice: Invoice; sortDate: string }
+  | { kind: "historical"; group: HistoricalGroup; sortDate: string };
 
 export default function PaymentsPage() {
   return (
@@ -41,7 +52,20 @@ function Payments() {
 
   if (!scope || !allowed) return <PageSkeleton />;
 
-  const awaiting = scope.invoices.filter((invoice) => invoice.status === "ISSUED");
+  // Historical imports are archived evidence even if an old database contains
+  // an invoice row linked to them. They must never re-enter the live Awaiting
+  // queue; the read-only historical group below remains the source of display.
+  const historicalInvoiceIds = new Set(
+    scope.invoices
+      .filter((invoice) => {
+        const items = scope.idx.itemsByInvoice.get(invoice.id) ?? [];
+        return items.length > 0 && items.every(isHistoricalRecord);
+      })
+      .map((invoice) => invoice.id),
+  );
+  const awaiting = scope.invoices.filter(
+    (invoice) => invoice.status === "ISSUED" && !historicalInvoiceIds.has(invoice.id),
+  );
   const receipts = scope.invoices.filter(
     (invoice) => invoice.status === "PAID" && invoice.receiptStatus === "PENDING",
   );
@@ -55,6 +79,28 @@ function Payments() {
     scope.idx.projectById,
     scope.idx.clientById,
   );
+  const completedEntries: CompletedEntry[] = [
+    ...completed.map((invoice) => ({
+      kind: "invoice" as const,
+      invoice,
+      sortDate: archiveInvoiceDate(invoice),
+    })),
+    ...historical.map((group) => ({
+      kind: "historical" as const,
+      group,
+      sortDate: latestHistoricalMonth(group),
+    })),
+  ].sort((a, b) => {
+    const dateOrder = b.sortDate.localeCompare(a.sortDate);
+    if (dateOrder) return dateOrder;
+    if (a.kind === "invoice" && b.kind === "invoice") {
+      return b.invoice.id.localeCompare(a.invoice.id);
+    }
+    if (a.kind === "historical" && b.kind === "historical") {
+      return a.group.project.name.localeCompare(b.group.project.name);
+    }
+    return a.kind === "invoice" ? -1 : 1;
+  });
   const shown = tab === "awaiting" ? awaiting : tab === "receipts" ? receipts : completed;
   const shownHistorical = tab === "completed" ? historical : [];
   const total =
@@ -116,6 +162,28 @@ function Payments() {
 
       {shown.length === 0 && shownHistorical.length === 0 ? (
         <EmptyState title={emptyLabel} />
+      ) : tab === "completed" ? (
+        <div className="space-y-3 pb-10">
+          {historical.length > 0 && (
+            <h2 className="px-5 pb-2 text-[15px] font-semibold sm:px-8">
+              {t("archive.historySection")}
+            </h2>
+          )}
+          <div className="space-y-3 sm:px-8">
+            {completedEntries.map((entry) =>
+              entry.kind === "invoice" ? (
+                <div
+                  key={entry.invoice.id}
+                  className="divide-y divide-line border-y border-line bg-panel sm:rounded-2xl sm:border"
+                >
+                  <InvoiceListRow invoice={entry.invoice} onOpen={setOpen} />
+                </div>
+              ) : (
+                <HistoricalRecordRow key={entry.group.projectId} group={entry.group} />
+              ),
+            )}
+          </div>
+        </div>
       ) : (
         <div className="space-y-3 pb-10">
           {shown.length > 0 && (
@@ -124,18 +192,6 @@ function Payments() {
                 <InvoiceListRow key={invoice.id} invoice={invoice} onOpen={setOpen} />
               ))}
             </div>
-          )}
-          {shownHistorical.length > 0 && (
-            <section>
-              <h2 className="px-5 pb-2 text-[15px] font-semibold sm:px-8">
-                {t("archive.historySection")}
-              </h2>
-              <div className="space-y-3 sm:px-8">
-                {shownHistorical.map((group) => (
-                  <HistoricalRecordRow key={group.projectId} group={group} />
-                ))}
-              </div>
-            </section>
           )}
         </div>
       )}
