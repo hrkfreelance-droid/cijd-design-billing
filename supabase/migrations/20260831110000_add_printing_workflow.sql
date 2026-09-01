@@ -77,6 +77,7 @@ create policy users_read on public.users for select to authenticated using (
 drop policy if exists projects_read on public.projects;
 create policy projects_read on public.projects for select to authenticated using (
   is_designer()
+  or is_office()
   or (
     is_printing()
     and exists (
@@ -100,6 +101,7 @@ create policy projects_read on public.projects for select to authenticated using
 drop policy if exists billing_items_read on public.billing_items;
 create policy billing_items_read on public.billing_items for select to authenticated using (
   is_designer()
+  or is_office()
   or (is_printing() and type = 'PRINT')
   or (not is_printing() and production_status in ('DELIVERED', 'COMPLETED'))
 );
@@ -384,7 +386,7 @@ declare
   next_quantity numeric;
   next_amount numeric;
 begin
-  if current_role_name() not in ('PRINTING', 'ADMIN') then raise exception 'FORBIDDEN'; end if;
+  if current_role_name() not in ('DESIGNER', 'PRINTING', 'ADMIN') then raise exception 'FORBIDDEN'; end if;
   select * into item from public.billing_items where id = p_item_id and deleted_at is null;
   if not found then raise exception 'NOT_FOUND' using detail = 'Billing item was not found.'; end if;
   if item.type <> 'PRINT' then raise exception 'INVALID_PRINT'; end if;
@@ -437,7 +439,7 @@ declare
   item public.billing_items;
   actor_name text := coalesce((select name from public.users where id = auth.uid()), nullif(btrim(p_actor), ''), 'Unknown');
 begin
-  if current_role_name() not in ('PRINTING', 'ADMIN') then raise exception 'FORBIDDEN'; end if;
+  if current_role_name() not in ('DESIGNER', 'PRINTING', 'ADMIN') then raise exception 'FORBIDDEN'; end if;
   select * into item from public.billing_items where id = p_item_id and deleted_at is null;
   if not found then raise exception 'NOT_FOUND' using detail = 'Billing item was not found.'; end if;
   if item.type <> 'PRINT' then raise exception 'INVALID_PRINT'; end if;

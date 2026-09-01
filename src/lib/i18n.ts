@@ -55,6 +55,8 @@ const en = {
   "signin.invalid": "Email or password is incorrect.",
   "signin.inactive": "This account is not active. Ask an Admin to enable it.",
   "signin.unavailable": "Authentication is temporarily unavailable. Try again later.",
+  "signin.google": "Continue with Google",
+  "signin.accessDenied": "This account does not have access.",
 
   "delivery.mark": "Mark as delivered",
   "delivery.markShort": "Deliver",
@@ -175,6 +177,7 @@ const en = {
   "projects.reviewPrice": "Review price",
   "projects.total": "Total",
   "projects.estimatedTotal": "Estimated Total",
+  "projects.knownTotal": "Known Total",
   "projects.pendingPrices": "{count} prices pending",
   "projects.pendingPricesOne": "{count} price pending",
   "projects.inProgress": "In Progress",
@@ -422,6 +425,8 @@ const ja: Record<MessageKey, string> = {
   "signin.invalid": "メールアドレスまたはパスワードが正しくありません。",
   "signin.inactive": "このアカウントは無効です。管理者に有効化を依頼してください。",
   "signin.unavailable": "認証を利用できません。時間をおいて再試行してください。",
+  "signin.google": "Googleで続ける",
+  "signin.accessDenied": "このアカウントにはアクセス権がありません。",
 
   "delivery.mark": "納品済みにする",
   "delivery.markShort": "納品",
@@ -542,6 +547,7 @@ const ja: Record<MessageKey, string> = {
   "projects.reviewPrice": "価格を確認",
   "projects.total": "合計",
   "projects.estimatedTotal": "見積合計",
+  "projects.knownTotal": "判明分合計",
   "projects.pendingPrices": "金額未定 {count}件",
   "projects.pendingPricesOne": "金額未定 {count}件",
   "projects.inProgress": "進行中",

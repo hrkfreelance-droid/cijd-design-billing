@@ -47,7 +47,7 @@ export function Button({
   return (
     <button
       {...props}
-      className={`inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
+      className={`inline-flex max-w-full shrink-0 items-center justify-center gap-1.5 rounded-full font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
         size === "sm"
           ? "h-9 px-3.5 text-[12.5px]"
           : "h-10 px-[18px] text-[13.5px]"
@@ -231,17 +231,21 @@ export function PageHeader({
           <p className="mt-1 text-[13.5px] text-muted">{subtitle}</p>
         )}
       </div>
-      {action}
+      {action && (
+        <div className="flex min-w-0 max-w-full flex-wrap items-end justify-end gap-3">
+          {action}
+        </div>
+      )}
     </div>
   );
 }
 
-export function PageTotal({ value }: { value: string }) {
+export function PageTotal({ value, label }: { value: string; label?: string }) {
   const { t } = useI18n();
   return (
     <div data-testid="page-total" className="shrink-0 text-right">
       <span className="block text-[11px] font-medium uppercase tracking-[0.08em] text-muted">
-        {t("common.total")}
+        {label ?? t("common.total")}
       </span>
       <span className="tnum block text-[19px] font-semibold leading-tight tracking-[-0.02em]">
         {value}
@@ -441,7 +445,7 @@ export function Sheet({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="animate-sheet relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] border border-line bg-panel shadow-[0_20px_60px_rgba(0,0,0,0.22)] sm:max-h-[86dvh] sm:w-[440px] sm:rounded-[18px]"
+        className="animate-sheet relative flex min-w-0 max-w-full max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[20px] border border-line bg-panel shadow-[0_20px_60px_rgba(0,0,0,0.22)] sm:max-h-[86dvh] sm:w-[440px] sm:rounded-[18px]"
       >
         <div className="shrink-0 px-5 pb-3 pt-5">
           <h2 className="text-[17px] font-semibold tracking-[-0.012em]">{title}</h2>
@@ -449,7 +453,7 @@ export function Sheet({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-2">{children}</div>
         {footer && (
-          <div className="safe-bottom-sheet shrink-0 border-t border-line px-5 pt-4 sm:pb-4">
+          <div className="safe-bottom-sheet min-w-0 shrink-0 overflow-x-hidden border-t border-line px-5 pt-4 sm:pb-4">
             {footer}
           </div>
         )}

@@ -5,11 +5,11 @@ CIJD DESIGN の案件・請求・経理管理 Web アプリ。
 
 ## Preview
 
-公開PreviewはCloudflare Workersの固定URLで実行し、Previewの操作状態はbrowser-local Demo Storeに保存します。
+公開PreviewはCloudflare Workersの固定URLで実行します。Supabaseのbuild variablesが設定されている場合は本番と同じSupabase ledgerを使い、未設定のローカル検証時だけbrowser-local Demo Storeにフォールバックします。
 [Open Cloudflare Preview](https://cijd-design-billing-preview.hrk-freelance.workers.dev/)
 ローカルでの起動方法は [Local Development](#local-development) を参照してください。
 
-`CIJD_PREVIEW_MODE=1` のPreviewではサーバーAPIを状態保存に使わず、Supabase本番データにも接続しません。
+`CIJD_PREVIEW_MODE=1` だけではDemoへ切り替わりません。Supabase credentialsがあるPreviewはCloudflare → Supabase Auth → Supabase Databaseで動作します。
 
 ## Overview
 
@@ -60,7 +60,7 @@ Navigation を隠すだけではありません。`/designer` と `/office` は�
 API は `GuardedRepository` を通すため、**権限外のデータはそもそも返りません**
 （例：BILLING の `/api/state` には進行状況確認のための項目が含まれますが、制作・印刷の書き込みAPIは403になります）。
 
-認証は Supabase Auth を設定すればメール＋パスワードのサインインに切り替わります（未設定時は開発用の担当選択）。
+認証は Supabase Auth + Google OAuthです（未設定時の担当選択はローカル開発専用）。
 Role は常にサーバー側で `users` テーブルから読み直すため、Cookie やトークンの改ざんで権限は増えません。
 
 ## Tech Stack
@@ -97,9 +97,7 @@ vinextを使用します。`integrate-production-workspace` へのpushをPreview
 接続できます。ユーザーはCloudflareが発行した固定Worker URLを開くだけで、Terminal・
 git pull・Port操作は不要です。
 
-Preview buildはserver-onlyの `CIJD_PREVIEW_MODE=1` でserver APIを閉じ、固定URLではbrowser-localの
-Demo Storeを使います。Supabase credentials・Telegram secretsを含めず、localStorageの操作状態は
-ブラウザごとに保持します。通常のcookie、route guard、GuardedRepositoryは本番側で有効です。
+Preview buildは `CIJD_PREVIEW_MODE=1` を保持します。Supabase build variablesがある場合はserver API・route guard・GuardedRepositoryが有効になり、ない場合だけbrowser-local Demo Storeを使います。localStorageの操作状態をSupabaseへコピーすることはありません。
 本番Supabase未設定の本番Workerは引き続きfail closedし、PreviewのlocalStorageや `.data/runtime/db.json`
 を本番業務DBとして使いません。
 
@@ -110,6 +108,11 @@ Cloudflare Workers Buildsの一度きりの接続設定は次の値です。
 - Build command: `npm run build:vinext`
 - Deploy command: `npm run deploy:vinext`
 - Worker: `cijd-design-billing-preview`
+
+For real operation, set these as Cloudflare Workers Builds environment variables
+before the build (never commit them): `NEXT_PUBLIC_SUPABASE_URL` and
+`NEXT_PUBLIC_SUPABASE_ANON_KEY`. Keep `SUPABASE_SERVICE_ROLE_KEY` server-only;
+it is not a `NEXT_PUBLIC_*` value.
 
 Production branchはこのPreview設定に含めません。Cloudflare account側のGitHub接続と
 workers.dev設定が完了した後は、対象branchへのpushだけでPreviewが更新されます。
@@ -143,15 +146,15 @@ workers.dev設定が完了した後は、対象branchへのpushだけでPreview�
 | `CIJD_DATA_FILE` | ローカル JSON ストアの保存先（既定：`.data/runtime/db.json`） |
 | `CIJD_NEXT_DIST_DIR` | Next生成物の保存先（npm scriptsの既定：`.next-local`） |
 | `NEXT_PUBLIC_DEMO_MODE` | 開発時のみブラウザ内デモデータへ切り替え（Production Previewでは使用しない） |
-| `CIJD_PREVIEW_MODE` | Cloudflare Preview Worker専用のserver-only一時Demo store flag。Secretではないが本番へ設定しない |
+| `CIJD_PREVIEW_MODE` | Cloudflare Preview識別用。Supabase credentialsがあればDemoには切り替わりません |
 
 ## Production setup checklist
 
 本番接続は次の順序で行います。
 
-1. Supabase Projectを作成
-2. migrationsを実行（`0001_init.sql` → `0002_rls.sql` → `0003_functions.sql` → `20260830165135_api_grants.sql` → `20260831011623_harden_role_functions.sql` → `20260831012607_revoke_anon_access.sql` → `20260831015410_enforce_active_users_and_audit.sql` → `20260831020942_restrict_office_billing_item_updates.sql` → `20260831090000_add_completed_production_status.sql` → `20260831110000_add_printing_workflow.sql`）
-3. `seed.sql`を実行
+1. 既存Supabase Project `dldfhhcechzhkbvlnzld` を再利用
+2. migrationsを既存DBへ監査・適用（`supabase/README.md`の順序）
+3. 既存DBのデータを確認し、空の環境に限って `seed.sql` を実行（既存案件・履歴へ盲目的に再投入しない）
 4. Supabase Auth Userを作成（Dashboardまたは `npm run supabase:user -- --email ... --role ...`）
 5. `public.users`のname / Role / activeを確認
 6. `.env.local`へSupabase credentialsを設定
@@ -197,8 +200,8 @@ npm run import:history -- history.csv "Ringer Hut"
 
 ## Remaining production prerequisites
 
-- **Ringer Hut の 2〜8 月の過去請求履歴**：今回の実データをローカル候補へ取り込み済み。Supabase本番への反映とAccounting確認は未実施
-- **Supabase Auth User**：実際の社内メールアドレスで4 RoleのUserを作成し、各ログインとRLSを確認する必要があります
-- **Supabase本番接続の最終確認**：SQL・RLS・関数・seed・接続コードは準備済み。実ユーザー作成後にRole別ログインを確認してください
+- **Supabase Auth User**：実際の社内GoogleアカウントをAuthへ登録し、同じUUIDを `public.users` に明示登録して各ログインとRLSを確認します
+- **Google / Cloudflare設定**：Google Provider、OAuth callback、Supabase build variablesはDashboard側で設定が必要です
+- **Supabase migration確認**：既存データを確認してから未適用migrationを適用します。Ringer Hut 2〜8月の履歴71件は既存本番データを再投入しません
 - **納品通知の送信先**：ダイキテラシマさんの Chat ID 未確認（架空値は入れていません）
 - Invoice PDF、会計ソフト・銀行 API 連携、ファイル添付の実体

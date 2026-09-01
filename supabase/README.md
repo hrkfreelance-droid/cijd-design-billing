@@ -46,6 +46,13 @@ In **SQL Editor**, run in order:
 10. `migrations/20260831110000_add_printing_workflow.sql` — adds the `PRINTING`
    role, print-only RLS, explicit price review fields, audit-backed price
    review operations, and the confirmed-price invoice gate
+11. `migrations/20260831120000_explicit_price_review_audit.sql` — adds audit
+   coverage and prevents Billing from changing print price fields
+12. `migrations/20260831130000_enforce_print_total.sql` — enforces quantity ×
+   unit price at the database boundary
+13. `migrations/20260901090000_require_explicit_user_profiles.sql` — stops
+   Auth sign-up from silently creating a DESIGNER profile; access requires an
+   explicit active `public.users` row
 
 Or with the Supabase CLI:
 
@@ -55,12 +62,14 @@ npx supabase db push --linked --skip-vault --dry-run
 npx supabase db push --linked --skip-vault
 ```
 
-## 3. Seed the real data
+## 3. Verify the real data
 
-Run `seed.sql` only after the migrations. It contains only confirmed records:
-Ringer Hut, DAISHIN and the current `RH Kids Promotion / Correction / $15`.
-The current item must remain `DELIVERED / READY_TO_INVOICE` with no invoice or
-payment. The February–August history is imported separately:
+Do not run the seed or history import blindly against the existing project.
+First inspect the current IDs and statuses. Run `seed.sql` only for an empty
+approved environment; it contains the confirmed Ringer Hut, DAISHIN and
+current `RH Kids Promotion / Correction / $15` records. The current item must
+remain `DELIVERED / READY_TO_INVOICE` with no invoice or payment. The
+February–August history is already a separate Archive concern:
 
 ```bash
 npx supabase db query --linked --file supabase/seed.sql
@@ -69,9 +78,11 @@ npm run import:history -- history.csv "Ringer Hut"
 npx supabase db query --linked --file supabase/import-history.sql
 ```
 
-The historical SQL must be applied after the seed. It must not merge with the
-current live item. Expected historical totals are 46 projects, 71 billing
-items, 28 invoices, 28 invoice links, and 0 payments.
+The historical records must not be merged with the current live queue. Inspect
+the existing database first and add only missing IDs through an idempotent
+import if necessary. The expected historical set is 71 billing items for
+Ringer Hut from 2026-02 through 2026-08; preserve `NEEDS_REVIEW` and
+`INVOICED`, and never infer payment or unknown amounts.
 
 ## 4. Create the people
 
@@ -97,17 +108,18 @@ update users set name = 'Admin',         role = 'ADMIN'      where id = '<auth u
 update users set name = 'Printing',      role = 'PRINTING'   where id = '<auth uid>';
 ```
 
-A new Auth sign-up gets a `users` row automatically with the `DESIGNER` role;
-nobody can raise their own role, because the policy on `users` only lets an
-`ADMIN` write to it. For a new employee, create the Auth user, confirm the
-email policy, then assign the intended role. For retirement, set
+A new Auth sign-up does not get an application role automatically. Create the
+Auth user, then insert or update the matching UUID in `public.users` with the
+intended role and `active = true`; nobody can raise their own role because the
+policy on `users` only lets an `ADMIN` write to it. For retirement, set
 `active = false` first and revoke the Auth session in the Dashboard if needed;
 do not delete the business profile.
 
-Password reset is performed from the Sign in screen. Configure Supabase Auth
-email delivery and the application URL/redirect allow-list before relying on
-the email. Passwords are never stored in `public.users`, SQL, CSV, audit logs,
-or Git history.
+Google is the application sign-in method. In Supabase Dashboard →
+Authentication → Providers → Google, add the Google Client ID/Secret and set
+the Site URL/redirect allow-list for the Cloudflare URL. The application uses
+`/auth/callback` for the PKCE exchange. Passwords are never stored in
+`public.users`, SQL, CSV, audit logs, or Git history.
 
 To disable or change a profile as an administrator:
 
@@ -125,7 +137,7 @@ helper also ignores inactive profiles.
 
 Put `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
 `.env.local` (see `.env.example`) and restart. The app switches to Supabase on
-its own — sign-in becomes email and password. Add
+its own — sign-in becomes Google OAuth. Add
 `SUPABASE_SERVICE_ROLE_KEY` only when enabling the server-side Telegram
 endpoint; never expose that key to the browser.
 
@@ -148,5 +160,5 @@ Telegram停止時の手順は [`docs/OPERATIONS.md`](../docs/OPERATIONS.md) を�
 - Historical imports may keep a confirmed invoice/payment with a null invoice
   number, invoice date, or payment date; live invoice and payment actions still
   require their normal input values.
-- RLS — billing and accounting cannot read undelivered work, and the design side
-  cannot read invoices or payments, whatever the request looks like
+- RLS — billing and accounting can read progress but cannot write production or
+  print content; production roles cannot read invoices or payments

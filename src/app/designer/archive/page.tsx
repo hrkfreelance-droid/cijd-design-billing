@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { ChevronRight, SearchIcon } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, Select, StatusTag } from "@/components/ui";
+import { Amount, EmptyState, PageHeader, PageTotal, Select, StatusTag } from "@/components/ui";
 import { flowStatus, isHistoricalRecord, monthKey, sum } from "@/lib/derive";
 import { mediumDate, money, monthLabel } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
@@ -69,6 +69,18 @@ export default function ProductionArchivePage() {
       });
   }, [groups, query, month]);
 
+  const archiveTotal = useMemo(() => {
+    return sum(
+      groups.flatMap((group) =>
+        month
+          ? group.items.filter(
+              (item) => (item.historicalMonth ?? monthKey(group.project?.date ?? "")) === month,
+            )
+          : group.items,
+      ),
+    );
+  }, [groups, month]);
+
   if (!scope) return <PageSkeleton />;
 
   return (
@@ -76,6 +88,7 @@ export default function ProductionArchivePage() {
       <PageHeader
         title={t("productionArchive.title")}
         subtitle={t("productionArchive.subtitle")}
+        action={<PageTotal value={archiveTotal > 0 ? money(archiveTotal) : "—"} label={t("projects.knownTotal")} />}
       />
 
       <div className="flex flex-col gap-2.5 px-5 pb-5 sm:flex-row sm:items-center sm:px-8">

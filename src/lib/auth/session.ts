@@ -7,6 +7,8 @@ import type { Role } from "./roles";
 
 export const SESSION_COOKIE = "cijd.session";
 
+export type SessionAccess = "active" | "denied" | "signed_out";
+
 export interface SessionUser {
   id: string;
   name: string;

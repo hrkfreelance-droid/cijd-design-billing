@@ -4,7 +4,8 @@ import { readJson, str } from "@/lib/api";
 import { SESSION_COOKIE, currentUser } from "@/lib/auth/session";
 import { getLocalRepository } from "@/lib/data";
 import { dataMode } from "@/lib/supabase/config";
-import { isPreviewRuntime } from "@/lib/runtime";
+import { isLocalDemoRuntime } from "@/lib/runtime";
+import { supabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -41,12 +42,22 @@ function configuredMode() {
  * from the store, so it cannot be forged into extra permissions.
  */
 export async function GET() {
-  if (isPreviewRuntime) return previewUnavailable();
+  if (isLocalDemoRuntime) return previewUnavailable();
   const mode = configuredMode();
   if (!mode) return unavailable();
   const user = await currentUser();
   if (mode === "supabase") {
-    return NextResponse.json({ ok: true, data: { user, users: [], auth: "supabase" } });
+    const client = await supabaseServerClient();
+    const identity = client ? (await client.auth.getUser()).data.user : null;
+    return NextResponse.json({
+      ok: true,
+      data: {
+        user,
+        users: [],
+        auth: "supabase",
+        access: identity ? (user ? "active" : "denied") : "signed_out",
+      },
+    });
   }
   const users = await getLocalRepository().rawUsers();
   return NextResponse.json({
@@ -59,12 +70,13 @@ export async function GET() {
         role: candidate.role,
       })),
       auth: "local",
+      access: user ? "active" : "signed_out",
     },
   });
 }
 
 export async function POST(request: Request) {
-  if (isPreviewRuntime) return previewUnavailable();
+  if (isLocalDemoRuntime) return previewUnavailable();
   const mode = configuredMode();
   if (!mode) return unavailable();
   if (mode === "supabase") {
@@ -97,7 +109,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
-  if (isPreviewRuntime) return previewUnavailable();
+  if (isLocalDemoRuntime) return previewUnavailable();
   const response = NextResponse.json({ ok: true, data: null });
   response.cookies.delete(SESSION_COOKIE);
   return response;

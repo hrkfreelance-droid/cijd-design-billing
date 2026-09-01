@@ -15,6 +15,7 @@ import {
   Field,
   Input,
   PageHeader,
+  PageTotal,
   Select,
   Sheet,
 } from "@/components/ui";
@@ -60,6 +61,12 @@ export default function ProjectsPage() {
       .sort((a, b) => b.project.date.localeCompare(a.project.date));
   }, [scope, query]);
 
+  const inProgressItems = useMemo(
+    () => scope?.items.filter((item) => isOperationalRecord(item) && !isProductionComplete(item)) ?? [],
+    [scope],
+  );
+  const estimated = inProgressItems.some((item) => priceState(item) !== "CONFIRMED");
+
   if (!scope) return <PageSkeleton />;
 
   return (
@@ -68,10 +75,16 @@ export default function ProjectsPage() {
         title={t("projects.title")}
         subtitle={t("projects.count", { count: rows.length })}
         action={
-          <Button variant="secondary" onClick={() => setCreating(true)} className="shrink-0">
-            <PlusIcon className="h-[15px] w-[15px]" />
-            {t("projects.new")}
-          </Button>
+          <>
+            <PageTotal
+              value={money(sum(inProgressItems.filter((item) => item.amount > 0)))}
+              label={estimated ? t("projects.estimatedTotal") : undefined}
+            />
+            <Button variant="secondary" onClick={() => setCreating(true)}>
+              <PlusIcon className="h-[15px] w-[15px]" />
+              {t("projects.new")}
+            </Button>
+          </>
         }
       />
 

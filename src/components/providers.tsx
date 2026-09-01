@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import { ApiError } from "@/lib/api-error";
-import type { SessionUser } from "@/lib/auth/session";
+import type { SessionAccess, SessionUser } from "@/lib/auth/session";
 import { demoRequest } from "@/lib/data/demo-client";
 import { translate, type Locale, type MessageKey } from "@/lib/i18n";
 import type { User } from "@/lib/types";
@@ -79,6 +79,7 @@ const SessionContext = createContext<{
   user: SessionUser | null;
   users: User[];
   auth: "local" | "supabase";
+  access: SessionAccess;
   ready: boolean;
   signIn: (userId: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -86,6 +87,7 @@ const SessionContext = createContext<{
   user: null,
   users: [],
   auth: "local",
+  access: "signed_out",
   ready: false,
   signIn: async () => {},
   signOut: async () => {},
@@ -127,7 +129,8 @@ export function Providers({ children }: { children: ReactNode }) {
     user: SessionUser | null;
     users: User[];
     auth: "local" | "supabase";
-  }>({ user: null, users: [], auth: "local" });
+    access: SessionAccess;
+  }>({ user: null, users: [], auth: "local", access: "signed_out" });
   const [sessionReady, setSessionReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,8 +151,9 @@ export function Providers({ children }: { children: ReactNode }) {
       user: SessionUser | null;
       users: User[];
       auth: "local" | "supabase";
+      access: SessionAccess;
     }>("/api/session");
-    setSession({ user: who.user ?? user, users: who.users, auth: who.auth });
+    setSession({ user: who.user ?? user, users: who.users, auth: who.auth, access: who.access });
     const data = await api<Snapshot>("/api/state").catch(() => null);
     if (data) setSnapshot(data);
   }, []);
@@ -160,7 +164,7 @@ export function Providers({ children }: { children: ReactNode }) {
     const client = supabaseBrowserClient();
     if (client) await client.auth.signOut().catch(() => null);
     await api("/api/session", { method: "DELETE" }).catch(() => null);
-    setSession((current) => ({ ...current, user: null }));
+    setSession((current) => ({ ...current, user: null, access: "signed_out" }));
     setSnapshot(null);
   }, []);
 
@@ -184,12 +188,14 @@ export function Providers({ children }: { children: ReactNode }) {
         user: SessionUser | null;
         users: User[];
         auth: "local" | "supabase";
+        access: SessionAccess;
       }>("/api/session").catch(() => ({
         user: null,
         users: [],
         // A production/Supabase outage must not fall back to the local user
         // picker. The picker is only valid when Supabase is not configured.
         auth: hasSupabaseBrowserConfig ? ("supabase" as const) : ("local" as const),
+        access: "signed_out" as const,
       }));
       if (!live) return;
       setSession(who);
@@ -224,6 +230,7 @@ export function Providers({ children }: { children: ReactNode }) {
         user: SessionUser | null;
         users: User[];
         auth: "local" | "supabase";
+        access: SessionAccess;
       }>("/api/session")
         .then(async (who) => {
           if (!live) return;
@@ -242,7 +249,12 @@ export function Providers({ children }: { children: ReactNode }) {
         })
         .catch(() => {
           if (!live) return;
-          setSession((current) => ({ ...current, user: null, auth: "supabase" }));
+          setSession((current) => ({
+            ...current,
+            user: null,
+            auth: "supabase",
+            access: "signed_out",
+          }));
           setSnapshot(null);
           setError("OFFLINE");
           setLoading(false);
@@ -252,7 +264,12 @@ export function Providers({ children }: { children: ReactNode }) {
     const { data } = client.auth.onAuthStateChange((event) => {
       if (!live) return;
       if (event === "SIGNED_OUT") {
-        setSession((current) => ({ ...current, user: null, auth: "supabase" }));
+        setSession((current) => ({
+          ...current,
+          user: null,
+          auth: "supabase",
+          access: "signed_out",
+        }));
         setSnapshot(null);
         setLoading(false);
         return;
@@ -312,6 +329,7 @@ export function Providers({ children }: { children: ReactNode }) {
       user: session.user,
       users: session.users,
       auth: session.auth,
+      access: session.access,
       ready: sessionReady,
       signIn,
       signOut,

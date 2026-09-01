@@ -6,7 +6,7 @@ import { ItemProductionAction } from "@/components/delivery";
 import { api, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
-import { Button, EmptyState, Field, Input, PageHeader, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
+import { Button, EmptyState, Field, Input, PageHeader, PageTotal, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
 import {
   isHistoricalRecord,
   isProductionComplete,
@@ -50,6 +50,13 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
         : view === "delivered"
           ? t("printing.deliveredSubtitle")
           : t("printing.historySubtitle");
+  const knownTotal = roundMoney(items.reduce((total, item) => total + Math.max(item.amount, 0), 0));
+  const totalLabel =
+    view === "history"
+      ? t("projects.knownTotal")
+      : items.some((item) => printPriceReviewState(item) !== "CONFIRMED")
+        ? t("projects.estimatedTotal")
+        : undefined;
 
   return (
     <div className="animate-rise">
@@ -61,6 +68,7 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
             {view === "review" && <span className="ml-2 text-review">{t("printing.reviewCount", { count: items.length })}</span>}
           </span>
         }
+        action={<PageTotal value={knownTotal > 0 ? money(knownTotal) : "—"} label={totalLabel} />}
       />
 
       {items.length === 0 ? (

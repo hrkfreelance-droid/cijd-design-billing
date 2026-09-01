@@ -6,7 +6,7 @@ import { CompletedMark, DeliveredMark } from "@/components/delivery";
 import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, StatusTag } from "@/components/ui";
+import { Amount, EmptyState, PageHeader, PageTotal, StatusTag } from "@/components/ui";
 import { flowStatus, isDesignerReady, isOperationalRecord, sum } from "@/lib/derive";
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
@@ -31,11 +31,16 @@ export default function DeliveredPage() {
         map.set(item.projectId, list);
         return map;
       }, new Map<string, BillingItem[]>()),
-  ).sort(([, a], [, b]) => (b[0]?.deliveredAt ?? "").localeCompare(a[0]?.deliveredAt ?? ""));
+    ).sort(([, a], [, b]) => (b[0]?.deliveredAt ?? "").localeCompare(a[0]?.deliveredAt ?? ""));
+  const readyItems = groups.flatMap(([, items]) => items);
 
   return (
     <div className="animate-rise">
-      <PageHeader title={t("delivered.title")} subtitle={t("delivered.subtitle")} />
+      <PageHeader
+        title={t("delivered.title")}
+        subtitle={t("delivered.subtitle")}
+        action={<PageTotal value={money(sum(readyItems))} />}
+      />
 
       {groups.length === 0 ? (
         <EmptyState title={t("delivered.empty")} />

@@ -82,7 +82,13 @@ export async function demoRequest<T>(
     if (resource === "session") {
       const users = await repo.rawUsers();
       if (method === "GET") {
-        return { user: await currentDemoUser(), users } as T;
+        const user = await currentDemoUser();
+        return {
+          user,
+          users,
+          auth: "local",
+          access: user ? "active" : "signed_out",
+        } as T;
       }
       if (method === "POST") {
         const wanted = users.find((user) => user.id === str(body.userId));

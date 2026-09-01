@@ -1,5 +1,5 @@
 -- Keep the print total derived from quantity and unit price at the database
--- boundary too. This migration is pending review and is not applied here.
+-- boundary too. Existing rows are not rewritten.
 create or replace function public.review_print_price(
   p_item_id uuid,
   p_unit_price numeric,
