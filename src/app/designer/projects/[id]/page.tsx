@@ -22,6 +22,7 @@ import {
 } from "@/components/ui";
 import {
   flowStatus,
+  isBillingLocked,
   isHistoricalRecord,
   isOperationalRecord,
   priceState,
@@ -189,7 +190,7 @@ function ItemSheet({
   const [note, setNote] = useState(item?.note ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const locked = item?.billingStatus === "INVOICED" || item?.billingStatus === "PAID";
+  const locked = !!item && isBillingLocked(item);
   const computed =
     Math.round((Number(quantity) || 0) * (Number(unitPrice) || 0) * 100) / 100;
   // The amount follows qty x unit price until someone types over it.

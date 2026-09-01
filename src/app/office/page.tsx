@@ -73,9 +73,7 @@ export default function OfficeBillingPage() {
 
   if (!scope || !allowed) return <PageSkeleton />;
 
-  const readyTotal = groups
-    .flatMap((group) => group.items)
-    .reduce((total, item) => total + item.amount, 0);
+  const readyTotal = sum(groups.flatMap((group) => group.items));
   const exchangeRate = scope.snapshot.exchangeRate;
 
   return (

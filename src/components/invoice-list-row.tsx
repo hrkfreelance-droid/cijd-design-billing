@@ -27,9 +27,13 @@ export function InvoiceListRow({
         .filter(Boolean),
     ),
   );
+  const invoiceNumber = invoice.invoiceNumber?.trim() ?? "";
+  const clientName = scope.idx.clientById.get(invoice.clientId)?.name?.trim() ?? "";
+  const date = mediumDate(archiveInvoiceDate(invoice), locale);
+  const meta = [clientName, date].filter(Boolean).join(" · ");
   const projectTitle =
     projectNames.length === 0
-      ? ""
+      ? clientName
       : projectNames.length === 1
         ? projectNames[0]
         : `${projectNames[0]} ${
@@ -37,10 +41,6 @@ export function InvoiceListRow({
               ? t("archive.moreProject")
               : t("archive.moreProjects", { count: projectNames.length - 1 })
           }`;
-  const invoiceNumber = invoice.invoiceNumber?.trim() ?? "";
-  const clientName = scope.idx.clientById.get(invoice.clientId)?.name?.trim() ?? "";
-  const date = mediumDate(archiveInvoiceDate(invoice), locale);
-  const meta = [clientName, date].filter(Boolean).join(" · ");
 
   return (
     <button
