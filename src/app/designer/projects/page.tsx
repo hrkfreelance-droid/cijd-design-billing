@@ -26,7 +26,7 @@ import {
   sum,
 } from "@/lib/derive";
 import { formatKhr } from "@/lib/exchange-rate";
-import { money, monthLabel } from "@/lib/format";
+import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
 export default function ProjectsPage() {
@@ -96,7 +96,7 @@ export default function ProjectsPage() {
               rateEffectiveDate={scope.snapshot.exchangeRate?.effectiveDate}
               rateFetchedAt={scope.snapshot.exchangeRate?.fetchedAt}
             />
-            <Button variant="secondary" onClick={() => setCreating(true)}>
+            <Button variant="primary" onClick={() => setCreating(true)}>
               <PlusIcon className="h-[15px] w-[15px]" />
               {t("projects.new")}
             </Button>
@@ -104,7 +104,7 @@ export default function ProjectsPage() {
         }
       />
 
-      <div className="px-5 pb-4 sm:px-8">
+      <div className="-mt-1 px-5 pb-4 sm:px-8">
         <div className="relative max-w-sm">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
           <input
@@ -122,7 +122,7 @@ export default function ProjectsPage() {
       ) : rows.length === 0 ? (
         <EmptyState title={t("projects.noMatch")} />
       ) : (
-        <div className="space-y-6 px-5 pb-8 sm:px-8">
+        <div className="space-y-4 px-5 pb-8 sm:px-8">
           {rows.map(({ project, client, items }) => (
             <article
               key={project.id}
@@ -142,14 +142,14 @@ export default function ProjectsPage() {
             >
               {/* Name, client, date, owner and money — everything needed to
                   recognise the project without opening it. */}
-              <div className="border-b border-line px-5 py-5 transition-colors duration-150 group-hover:bg-fill active:bg-fill sm:px-6">
+              <div className="border-b border-line px-5 py-4 transition-colors duration-150 group-hover:bg-fill active:bg-fill sm:px-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="text-[18px] font-semibold leading-tight tracking-[-0.014em] [overflow-wrap:anywhere]">
                       {project.name}
                     </h2>
                     <p className="mt-1.5 truncate text-[12.5px] text-faint">
-                      {client?.name} · {monthLabel(project.date.slice(0, 7), locale)} ·{" "}
+                      {client?.name} · {mediumDate(project.date, locale)} ·{" "}
                       {project.createdBy}
                     </p>
                   </div>

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 import { useI18n, useSession } from "@/components/providers";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { EmptyState, PageHeader, PageTotal } from "@/components/ui";
+import { Amount, EmptyState, PageHeader, PageTotal } from "@/components/ui";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { can } from "@/lib/auth/roles";
 import {
@@ -126,59 +126,54 @@ export default function ProgressPage() {
       {groups.length === 0 ? (
         <EmptyState title={t("office.progressEmpty")} />
       ) : (
-        <div className="pb-10">
-          {groups.map((group, index) => {
-            const sameClientAsPrevious = index > 0 && groups[index - 1].client.id === group.client.id;
-            return (
+        <div className="space-y-4 px-5 pb-10 sm:px-8">
+          {groups.map((group) => (
             <section
               key={group.project.id}
               data-testid={`progress-project-${group.project.id}`}
-              className={`px-5 sm:px-8 ${sameClientAsPrevious ? "mt-3" : "mt-6 first:mt-0"}`}
+              className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
             >
-              {!sameClientAsPrevious && (
-                <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{group.client.name}</h2>
-              )}
-              <div className="mt-2 overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border">
-                <div className="border-b border-line px-5 py-3.5 sm:px-6">
-                  <div className="flex min-w-0 items-baseline justify-between gap-3">
-                    <h3 className="min-w-0 truncate text-[15px] font-medium">{group.project.name}</h3>
-                    <span className="shrink-0 text-[12px] text-faint">
-                      {mediumDate(group.project.date, locale)}
-                    </span>
+              <div className="border-b border-line px-5 py-4 sm:px-6">
+                <div className="flex min-w-0 items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-[17px] font-semibold tracking-[-0.012em]">{group.project.name}</h2>
+                    <p className="mt-1 truncate text-[12.5px] text-faint">
+                      {group.client.name} · {mediumDate(group.project.date, locale)}
+                    </p>
                   </div>
-                  <div className="mt-2 divide-y divide-line">
-                    {group.items
-                      .slice()
-                      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-                      .map((item) => (
-                        <div
-                          key={item.id}
-                          data-testid={`progress-item-${item.id}`}
-                          className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3 first:pt-0 last:pb-0"
-                        >
-                          <span className="min-w-0 flex-1 truncate text-[14px] text-text">
-                            {itemLabel(item)}
-                          </span>
-                          {itemAmountValue(item) == null ? (
-                            <span className="tnum shrink-0 text-[13.5px] font-medium text-text">—</span>
-                          ) : (
-                            <CurrencyAmount
-                              usd={itemAmountValue(item)!}
-                              rate={scope.snapshot.exchangeRate?.rate}
-                              className="text-[13.5px] font-medium text-text"
-                            />
-                          )}
-                          <span className={`ml-auto shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium leading-none sm:ml-0 ${STATE_STYLE[progressState(item)]}`}>
-                            {t(STATE_KEY[progressState(item)])}
-                          </span>
-                        </div>
-                      ))}
-                  </div>
+                  <ProgressProjectTotal items={group.items} rate={scope.snapshot.exchangeRate?.rate} />
+                </div>
+                <div className="mt-3 divide-y divide-line">
+                  {group.items
+                    .slice()
+                    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        data-testid={`progress-item-${item.id}`}
+                        className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 py-2.5 first:pt-0 last:pb-0"
+                      >
+                        <span className="min-w-0 truncate text-[14px] text-text">
+                          {itemLabel(item)}
+                        </span>
+                        {itemAmountValue(item) == null ? (
+                          <span className="tnum shrink-0 text-[13.5px] font-medium text-text">—</span>
+                        ) : (
+                          <CurrencyAmount
+                            usd={itemAmountValue(item)!}
+                            rate={scope.snapshot.exchangeRate?.rate}
+                            className="text-[13.5px] font-medium text-text"
+                          />
+                        )}
+                        <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium leading-none ${STATE_STYLE[progressState(item)]}`}>
+                          {t(STATE_KEY[progressState(item)])}
+                        </span>
+                      </div>
+                    ))}
                 </div>
               </div>
             </section>
-            );
-          })}
+          ))}
         </div>
       )}
     </div>
@@ -204,6 +199,24 @@ function itemLabel(item: BillingItem): string {
   }
   if (/\b[x×]\s*\d+\b/i.test(item.description)) return item.description;
   return `${item.description} ×${item.quantity}`;
+}
+
+function ProgressProjectTotal({ items, rate }: { items: BillingItem[]; rate?: number }) {
+  const { t } = useI18n();
+  const total = items.reduce((amount, item) => amount + (itemAmountValue(item) ?? 0), 0);
+  const estimated = items.some((item) => priceState(item) !== "CONFIRMED");
+  return (
+    <div className="shrink-0 text-right">
+      <p className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-faint">
+        {t(estimated ? "projects.estimatedTotal" : "projects.total")}
+      </p>
+      {total > 0 ? (
+        <CurrencyAmount usd={total} rate={rate} strong className="mt-0.5 text-[15px]" />
+      ) : (
+        <Amount value="—" strong className="mt-0.5 block text-[15px]" />
+      )}
+    </div>
+  );
 }
 
 /** Show known current or suggested money without implying price certainty. */

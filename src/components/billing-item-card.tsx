@@ -14,11 +14,9 @@ import type { BillingItem } from "@/lib/types";
 /**
  * One billing item, the unit the workspace actually operates on.
  *
- * A three column grid keeps a list of these reading like a table: status at
- * the left, name and specification sharing the middle column so the second
- * line sits exactly under the first, and every amount landing in the same
- * right hand column. The amount is printed once — its certainty is a caption
- * underneath, not a second chip repeating the number.
+ * A compact two-column row keeps the project as the container: status and item
+ * name stay together on the left, while USD, KHR, review state, and the next
+ * action share one stable right-hand rail.
  */
 export function BillingItemCard({
   item,
@@ -57,69 +55,65 @@ export function BillingItemCard({
   return (
     <article
       data-testid="designer-project-item"
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-4 py-4"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 py-3.5 sm:py-3"
     >
-      {/* Status sits on its own line so that a wide label can never push the
-          name column sideways — every row keeps the same left edge. */}
-      <StatusPill status={workStatus} className="col-span-2 col-start-1 row-start-1 mb-2" />
-
-      <div className="col-start-1 row-start-2 min-w-0">
-        {onOpen ? (
-          <button
-            type="button"
-            onClick={onOpen}
-            className="block w-full min-w-0 text-left transition-colors duration-150 hover:text-muted"
-          >
-            {name}
-          </button>
-        ) : (
-          <Link
-            href={`/designer/projects/${projectId}`}
-            className="block w-full min-w-0 text-left transition-colors duration-150 hover:text-muted"
-          >
-            {name}
-          </Link>
-        )}
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <StatusPill status={workStatus} className="shrink-0" />
+          {onOpen ? (
+            <button
+              type="button"
+              onClick={onOpen}
+              className="min-w-0 flex-1 text-left transition-colors duration-150 hover:text-muted"
+            >
+              {name}
+            </button>
+          ) : (
+            <Link
+              href={`/designer/projects/${projectId}`}
+              className="min-w-0 flex-1 text-left transition-colors duration-150 hover:text-muted"
+            >
+              {name}
+            </Link>
+          )}
+        </div>
+        {spec && <p className="mt-1 min-w-0 truncate text-[12.5px] text-muted">{spec}</p>}
       </div>
 
-      {item.amount > 0 ? (
-        <CurrencyAmount
-          usd={item.amount}
-          rate={!history && !locked ? scope?.snapshot.exchangeRate?.rate : null}
-          className="col-start-2 row-start-2 justify-self-end text-[15px]"
-        />
-      ) : (
-        <Amount value="—" className="col-start-2 row-start-2 justify-self-end text-[15px]" />
-      )}
-
-      {spec && (
-        <p className="col-start-1 row-start-3 mt-1 min-w-0 truncate text-[12.5px] text-muted">
-          {spec}
-        </p>
-      )}
-
-      <PriceStateCaption state={state} />
-
-      {!history && !locked && (
-        <div className="col-span-2 col-start-1 row-start-4 mt-3 flex flex-wrap items-center justify-end gap-2">
-          {needsPriceReview &&
-            (onOpen ? (
-              <button type="button" onClick={onOpen} className={REVIEW_BUTTON}>
-                {t("projects.reviewPrice")}
-              </button>
-            ) : (
-              <Link href={reviewHref} className={REVIEW_BUTTON}>
-                {t("projects.reviewPrice")}
-              </Link>
-            ))}
-          {/* Until the price is settled, finishing the work is the lesser action. */}
-          <ItemProductionAction
-            item={item}
-            size="sm"
-            variant={needsPriceReview ? "secondary" : undefined}
+      <div className="row-span-2 flex min-w-[84px] flex-col items-end gap-1">
+        {item.amount > 0 ? (
+          <CurrencyAmount
+            usd={item.amount}
+            rate={!history && !locked ? scope?.snapshot.exchangeRate?.rate : null}
+            className="text-[15px]"
           />
-        </div>
-      )}
+        ) : (
+          <Amount value="—" className="text-[15px]" />
+        )}
+
+        <PriceStateCaption state={state} />
+
+        {!history && !locked && (
+          <div className="mt-1 flex flex-wrap justify-end gap-2">
+            {needsPriceReview &&
+              (onOpen ? (
+                <button type="button" onClick={onOpen} className={REVIEW_BUTTON}>
+                  {t("projects.reviewPrice")}
+                </button>
+              ) : (
+                <Link href={reviewHref} className={REVIEW_BUTTON}>
+                  {t("projects.reviewPrice")}
+                </Link>
+              ))}
+            {/* Until the price is settled, finishing the work is the lesser action. */}
+            <ItemProductionAction
+              item={item}
+              size="sm"
+              variant={needsPriceReview ? "secondary" : undefined}
+            />
+          </div>
+        )}
+      </div>
     </article>
   );
 }
@@ -172,7 +166,7 @@ function PriceStateCaption({ state }: { state: ReturnType<typeof priceState> }) 
   const { t } = useI18n();
   if (state === "CONFIRMED") return null;
   return (
-    <span className="col-start-2 row-start-3 mt-1 justify-self-end whitespace-nowrap text-[11.5px] font-medium text-review">
+    <span className="whitespace-nowrap text-[11.5px] font-medium text-review">
       {state === "PENDING" ? t("projects.pricePending") : t("projects.priceSuggestedShort")}
       {" · "}
       {t("projects.priceReview")}

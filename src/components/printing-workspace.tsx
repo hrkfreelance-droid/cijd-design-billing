@@ -7,12 +7,13 @@ import { CurrencyAmount } from "@/components/currency-amount";
 import { api, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
-import { Button, EmptyState, Field, Input, PageHeader, PageTotal, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
+import { Amount, Button, EmptyState, Field, Input, PageHeader, PageTotal, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
 import {
   isBillingLocked,
   isHistoricalRecord,
   isProductionComplete,
   printPriceReviewState,
+  sum,
 } from "@/lib/derive";
 import { formatKhr } from "@/lib/exchange-rate";
 import { mediumDate, money, roundMoney } from "@/lib/format";
@@ -35,6 +36,21 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [scope, view]);
+
+  const projectGroups = useMemo(() => {
+    const grouped = new Map<
+      string,
+      { project?: { name: string; date: string }; client?: { name: string }; items: BillingItem[] }
+    >();
+    for (const item of items) {
+      const project = scope?.idx.projectById.get(item.projectId);
+      const client = project ? scope?.idx.clientById.get(project.clientId) : undefined;
+      const current = grouped.get(item.projectId);
+      if (current) current.items.push(item);
+      else grouped.set(item.projectId, { project, client, items: [item] });
+    }
+    return Array.from(grouped.values());
+  }, [items, scope]);
 
   if (!scope) return <PageSkeleton />;
 
@@ -77,12 +93,10 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
         />
       ) : (
         <div className="space-y-4 px-5 pb-10 sm:px-8">
-          {items.map((item) => (
-            <PrintItemCard
-              key={item.id}
-              item={item}
-              project={scope.idx.projectById.get(item.projectId)}
-              client={scope.clientOf(item.projectId)}
+          {projectGroups.map((group) => (
+            <PrintProjectBlock
+              key={group.project?.name ?? group.items[0].projectId}
+              group={group}
               locale={locale}
               rate={scope.snapshot.exchangeRate?.rate}
               history={view === "history"}
@@ -94,18 +108,86 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
   );
 }
 
-function PrintItemCard({
-  item,
-  project,
-  client,
+function PrintProjectBlock({
+  group,
   locale,
   rate,
   history,
 }: {
-  item: BillingItem;
-  project?: { name: string; date: string };
-  client?: { name: string };
+  group: {
+    project?: { name: string; date: string };
+    client?: { name: string };
+    items: BillingItem[];
+  };
   locale: Locale;
+  rate?: number;
+  history: boolean;
+}) {
+  const { t } = useI18n();
+  const estimated = group.items.some((item) => printPriceReviewState(item) !== "CONFIRMED");
+  const total = sum(
+    group.items.map((item) => ({
+      amount: printPriceReviewState(item) === "CONFIRMED"
+        ? item.amount
+        : item.suggestedAmount ?? item.amount,
+    })),
+  );
+
+  return (
+    <section
+      data-testid="printing-project-group"
+      className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
+    >
+      <div className="border-b border-line px-5 py-4 sm:px-6">
+        <div className="flex min-w-0 items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h2 className="truncate text-[17px] font-semibold tracking-[-0.012em]">
+              {group.project?.name ?? ""}
+            </h2>
+            <p className="mt-1 truncate text-[12.5px] text-faint">
+              {group.client?.name} · {group.project ? mediumDate(group.project.date, locale) : ""}
+            </p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-faint">
+              {t(estimated ? "projects.estimatedTotal" : "projects.total")}
+            </p>
+            {total > 0 ? (
+              <CurrencyAmount
+                usd={total}
+                rate={!history ? rate : undefined}
+                strong
+                className="mt-0.5 text-[15px]"
+              />
+            ) : (
+              <Amount value="—" strong className="mt-0.5 block text-[15px]" />
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="divide-y divide-line">
+        {group.items.map((item) => (
+          <PrintItemCard
+            key={item.id}
+            item={item}
+            projectName={group.project?.name}
+            rate={rate}
+            history={history}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PrintItemCard({
+  item,
+  projectName,
+  rate,
+  history,
+}: {
+  item: BillingItem;
+  projectName?: string;
   rate?: number;
   history: boolean;
 }) {
@@ -125,90 +207,46 @@ function PrintItemCard({
   return (
     <article
       data-testid="printing-item-card"
-      className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 px-5 py-3.5 sm:px-6 sm:py-3"
     >
-      <div className="px-5 py-5 sm:px-6">
-        <div className="mt-3 min-w-0">
-          <h2 className="truncate text-[17px] font-semibold tracking-[-0.012em]">
-            {project?.name ?? ""}
-          </h2>
-          <p className="mt-1 truncate text-[12.5px] text-faint">
-            {client?.name} · {project ? mediumDate(project.date, locale) : ""}
-          </p>
-          <p className="mt-3 truncate text-[15px] font-medium tracking-[-0.006em]">
+      <span className="sr-only">{projectName}</span>
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <StatusPill status={workStatus} className="shrink-0" />
+          <h3 className="min-w-0 truncate text-[15px] font-medium tracking-[-0.006em]">
             {t("printing.itemType")} ×{item.quantity}
-          </p>
+          </h3>
         </div>
-
-        <div className="mt-5 grid grid-cols-2 gap-x-5 gap-y-4 border-t border-line pt-4 sm:grid-cols-3">
-          {item.printSize && <Info label={t("printing.size")} value={item.printSize} />}
-          {suggestedUnit > 0 && (
-            <Info label={t("printing.unitPrice")} value={`${money(suggestedUnit)} / pc`} numeric />
-          )}
-          {shown > 0 ? (
-            <div>
-              <span className="block text-[11.5px] text-faint">{t("common.amount")}</span>
-              <CurrencyAmount usd={shown} rate={!history ? rate : undefined} className="mt-1 text-[14px]" />
-            </div>
-          ) : (
-            <Info
-              label={t("common.amount")}
-              value={t("printing.pricePending")}
-              emphasis
-              numeric={false}
-            />
-          )}
-          <StatusPill status={workStatus} className="justify-self-start" />
+        <div className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[12px] text-muted">
+          {item.printSize && <span className="truncate">{t("printing.size")}: {item.printSize}</span>}
+          {suggestedUnit > 0 && <span className="tnum whitespace-nowrap">{money(suggestedUnit)} / pc</span>}
         </div>
       </div>
 
-      {!history && !locked && (
-        <div className="flex min-w-0 items-center justify-end border-t border-line px-5 py-3.5 sm:px-6">
-          {!confirmed ? (
+      <div className="row-span-2 flex min-w-[84px] flex-col items-end gap-1">
+        {shown > 0 ? (
+          <CurrencyAmount usd={shown} rate={!history ? rate : undefined} className="text-[14px]" />
+        ) : (
+          <span className="tnum whitespace-nowrap text-[14px] font-medium text-review">—</span>
+        )}
+        {shown <= 0 && <span className="whitespace-nowrap text-[11.5px] font-medium text-review">{t("printing.pricePending")}</span>}
+
+        {!history && !locked && (
+          !confirmed ? (
             <Button variant="primary" size="sm" onClick={() => setEditing(true)}>
               {t("printing.confirmPrice")}
             </Button>
           ) : (
             <ItemProductionAction item={item} size="sm" />
-          )}
-        </div>
-      )}
+          )
+        )}
 
-      {history && (
-        <div className="border-t border-line px-5 py-3.5 text-[12.5px] text-faint sm:px-6">
-          {t("printing.historyReadOnly")}
-        </div>
-      )}
-
-      {!history && locked && (
-        <div className="border-t border-line px-5 py-3.5 text-[12.5px] text-faint sm:px-6">
-          {t("project.lockedNotice")}
-        </div>
-      )}
+        {history && <span className="whitespace-nowrap text-[11.5px] text-faint">{t("printing.historyReadOnly")}</span>}
+        {!history && locked && <span className="whitespace-nowrap text-[11.5px] text-faint">{t("project.lockedNotice")}</span>}
+      </div>
 
       {!locked && <PrintEditSheet item={item} open={editing} onClose={() => setEditing(false)} />}
     </article>
-  );
-}
-
-function Info({
-  label,
-  value,
-  emphasis = false,
-  numeric = false,
-}: {
-  label: string;
-  value: string;
-  emphasis?: boolean;
-  numeric?: boolean;
-}) {
-  return (
-    <div className="min-w-0">
-      <p className="text-[11px] font-medium uppercase tracking-[0.07em] text-faint">{label}</p>
-      <p className={`mt-1 truncate text-[14px] ${emphasis ? "font-medium text-review" : "text-text"} ${numeric ? "tnum" : ""}`}>
-        {value}
-      </p>
-    </div>
   );
 }
 

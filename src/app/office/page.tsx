@@ -14,6 +14,7 @@ import {
   EmptyState,
   PageHeader,
   PageTotal,
+  StatusPill,
 } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
 import {
@@ -23,7 +24,7 @@ import {
   sum,
 } from "@/lib/derive";
 import { formatKhr } from "@/lib/exchange-rate";
-import { money, todayIso } from "@/lib/format";
+import { mediumDate, money, todayIso } from "@/lib/format";
 import type { BillingItem, Client, Invoice } from "@/lib/types";
 
 /** Everything here has completed production. That is the whole rule for this screen. */
@@ -95,7 +96,7 @@ export default function OfficeBillingPage() {
       {groups.length === 0 ? (
         <EmptyState title={t("billing.readyEmpty")} />
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-4 px-5 pb-8 sm:px-8">
           {groups.map((group) => (
             <ReadyGroup key={group.client.id} client={group.client} items={group.items} />
           ))}
@@ -156,7 +157,7 @@ function PrintPriceQueue({ items }: { items: BillingItem[] }) {
 }
 
 function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const scope = useScope();
   const router = useRouter();
   const { runResult, busy } = useAction();
@@ -213,7 +214,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
   };
 
   return (
-    <section className="border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
+    <section className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border">
       <button
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
@@ -244,7 +245,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
             {projects.map((project) => {
               const checked = !skipped.has(project.id);
               return (
-                <div key={project.id} className="flex items-center gap-3 px-5 py-3 sm:px-6">
+                <div key={project.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 px-5 py-3.5 sm:px-6 sm:py-3">
                   <Checkbox
                     checked={checked}
                     onChange={() => toggle(project.id)}
@@ -252,13 +253,17 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
                   />
                   <button
                     onClick={() => toggle(project.id)}
-                    className={`min-w-0 flex-1 text-left transition-opacity duration-150 ${
+                    aria-label={`${project.name} ${project.items.map((item) => item.description).join(" ")}`}
+                    className={`min-w-0 text-left transition-opacity duration-150 ${
                       checked ? "" : "opacity-45"
                     }`}
                   >
-                    <span className="block truncate text-[14.5px]">{project.name}</span>
-                    <span className="mt-0.5 block truncate text-[12.5px] text-faint">
-                      {project.items.map((item) => item.description).join(" · ")}
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="min-w-0 truncate text-[14.5px] font-medium">{project.name}</span>
+                      <StatusPill status="READY_TO_INVOICE" />
+                    </span>
+                    <span className="mt-1 block truncate text-[12.5px] text-faint">
+                      {project.items.map((item) => item.description).join(" · ")} · {mediumDate(project.date, locale)}
                     </span>
                   </button>
                   <CurrencyAmount
