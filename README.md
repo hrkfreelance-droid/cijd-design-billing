@@ -121,6 +121,14 @@ least 32 characters). Share only the resulting `/access/<token>` link with its
 担当者. Set `CIJD_ACCESS_LINKS_ENABLED=0` later to disable this method while
 leaving Google Login and all business data untouched.
 
+**Pilot共有アクセス（任意）：** `CIJD_PILOT_ACCESS_TOKEN` を追加のCloudflare
+Secretとして設定すると、`/access/<pilot-token>` の1本のURLを何人・何台からでも
+繰り返し開けるようになります。権限は実質ADMIN相当（Designer / Printing /
+Progress / Billing / Accounting / Archiveすべてに移動可能）で、Google Login
+を経由しません。既存のRole別Access Link・Role設計・実データには一切影響しま
+せん。Pilotを終えたら`CIJD_PILOT_ACCESS_TOKEN`の値を削除するだけで、この共有
+URLだけを無効化できます。
+
 Production branchはこのPreview設定に含めません。Cloudflare account側のGitHub接続と
 workers.dev設定が完了した後は、対象branchへのpushだけでPreviewが更新されます。
 
