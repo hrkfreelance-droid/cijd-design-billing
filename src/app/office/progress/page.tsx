@@ -126,14 +126,18 @@ export default function ProgressPage() {
       {groups.length === 0 ? (
         <EmptyState title={t("office.progressEmpty")} />
       ) : (
-        <div className="space-y-6 pb-10">
-          {groups.map((group) => (
+        <div className="pb-10">
+          {groups.map((group, index) => {
+            const sameClientAsPrevious = index > 0 && groups[index - 1].client.id === group.client.id;
+            return (
             <section
               key={group.project.id}
               data-testid={`progress-project-${group.project.id}`}
-              className="px-5 sm:px-8"
+              className={`px-5 sm:px-8 ${sameClientAsPrevious ? "mt-3" : "mt-6 first:mt-0"}`}
             >
-              <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{group.client.name}</h2>
+              {!sameClientAsPrevious && (
+                <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{group.client.name}</h2>
+              )}
               <div className="mt-2 overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border">
                 <div className="border-b border-line px-5 py-3.5 sm:px-6">
                   <div className="flex min-w-0 items-baseline justify-between gap-3">
@@ -150,7 +154,7 @@ export default function ProgressPage() {
                         <div
                           key={item.id}
                           data-testid={`progress-item-${item.id}`}
-                          className="flex min-w-0 items-center gap-3 py-3 first:pt-0 last:pb-0"
+                          className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3 first:pt-0 last:pb-0"
                         >
                           <span className="min-w-0 flex-1 truncate text-[14px] text-text">
                             {itemLabel(item)}
@@ -164,7 +168,7 @@ export default function ProgressPage() {
                               className="text-[13.5px] font-medium text-text"
                             />
                           )}
-                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium leading-none ${STATE_STYLE[progressState(item)]}`}>
+                          <span className={`ml-auto shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium leading-none sm:ml-0 ${STATE_STYLE[progressState(item)]}`}>
                             {t(STATE_KEY[progressState(item)])}
                           </span>
                         </div>
@@ -173,7 +177,8 @@ export default function ProgressPage() {
                 </div>
               </div>
             </section>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

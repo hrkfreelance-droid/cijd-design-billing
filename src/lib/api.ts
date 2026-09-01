@@ -27,9 +27,14 @@ export async function handle<T>(fn: () => Promise<T>): Promise<NextResponse> {
         { status: error.status },
       );
     }
-    const message = error instanceof Error ? error.message : "Unexpected error";
+    // The real cause (Supabase/Postgres error text, stack, etc.) is logged for
+    // operators but never sent to the browser — a raw backend error message is
+    // not something a Designer/Billing/Accounting user can act on.
     console.error("[api]", error);
-    return NextResponse.json({ ok: false, code: "INTERNAL", message }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, code: "INTERNAL", message: "Something went wrong. Please try again." },
+      { status: 500 },
+    );
   }
 }
 

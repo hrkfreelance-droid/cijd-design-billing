@@ -40,6 +40,11 @@ Designer / Printing                   Office
 - 同じ請求書番号は登録できない。入金済みへの再入金確認はエラー
 - 請求・入金の取り消しは確認付きで、履歴は消さずに残す
 
+**表示言語（JA / EN / KH）**
+- `src/lib/i18n.ts` の英語辞書がキーの正本。`ja` / `kh` は `Record<MessageKey, string>` で宣言されているため、
+  キーが1つでも抜けると `npm run typecheck` がエラーになる（スプレッドによるフォールバックは使っていない）。
+- 案件名・クライアント名・自由記述（Description/Note）は翻訳しない。UI文言（ボタン・状態・空表示・確認・エラー）のみ翻訳対象。
+
 ## Access Control
 
 | Role | 見られるもの |
@@ -115,6 +120,14 @@ Cloudflare Secrets: `CIJD_ADMIN_ACCESS_TOKEN`, `CIJD_DESIGNER_ACCESS_TOKEN`,
 least 32 characters). Share only the resulting `/access/<token>` link with its
 担当者. Set `CIJD_ACCESS_LINKS_ENABLED=0` later to disable this method while
 leaving Google Login and all business data untouched.
+
+**Pilot共有アクセス（任意）：** `CIJD_PILOT_ACCESS_TOKEN` を追加のCloudflare
+Secretとして設定すると、`/access/<pilot-token>` の1本のURLを何人・何台からでも
+繰り返し開けるようになります。権限は実質ADMIN相当（Designer / Printing /
+Progress / Billing / Accounting / Archiveすべてに移動可能）で、Google Login
+を経由しません。既存のRole別Access Link・Role設計・実データには一切影響しま
+せん。Pilotを終えたら`CIJD_PILOT_ACCESS_TOKEN`の値を削除するだけで、この共有
+URLだけを無効化できます。
 
 Production branchはこのPreview設定に含めません。Cloudflare account側のGitHub接続と
 workers.dev設定が完了した後は、対象branchへのpushだけでPreviewが更新されます。

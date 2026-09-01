@@ -132,7 +132,7 @@ export function Workspace({
           </div>
           <ClientBar canAdd={workspace === "designer"} />
           <nav aria-label="Workspace navigation" className="border-t border-line">
-            <div className="no-scrollbar flex min-w-max items-center gap-4 overflow-x-auto px-5 sm:px-8">
+            <div className="no-scrollbar flex min-w-0 items-center gap-4 overflow-x-auto px-5 sm:px-8">
               {nav.map(({ href, key }) => {
                 const active = isActive(pathname, href, nav);
                 return (

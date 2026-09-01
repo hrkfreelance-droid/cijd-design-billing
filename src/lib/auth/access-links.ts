@@ -6,23 +6,44 @@ import type { Role } from "./roles";
 export const ACCESS_SESSION_COOKIE = "cijd.access_session";
 export const ACCESS_SESSION_MAX_AGE = 60 * 60 * 24 * 30;
 
-const ACCESS_TOKEN_ENV: Record<Role, string> = {
+/**
+ * A token "kind" is either one of the five real Roles, or the extra `PILOT`
+ * kind: a single reusable link for the pilot period that carries full
+ * (ADMIN-equivalent) access without being the real Admin credential. Kinds
+ * are an internal detail of this module — everywhere else in the app still
+ * only ever sees a `Role`, via `ROLE_FOR_KIND` below.
+ */
+type TokenKind = Role | "PILOT";
+
+const ACCESS_TOKEN_ENV: Record<TokenKind, string> = {
   ADMIN: "CIJD_ADMIN_ACCESS_TOKEN",
   DESIGNER: "CIJD_DESIGNER_ACCESS_TOKEN",
   PRINTING: "CIJD_PRINTING_ACCESS_TOKEN",
   BILLING: "CIJD_BILLING_ACCESS_TOKEN",
   ACCOUNTING: "CIJD_ACCOUNTING_ACCESS_TOKEN",
+  PILOT: "CIJD_PILOT_ACCESS_TOKEN",
 };
 
-const ACCESS_NAMES: Record<Role, string> = {
+const ACCESS_NAMES: Record<TokenKind, string> = {
   ADMIN: "Admin",
   DESIGNER: "Hiroki",
   PRINTING: "Printing",
   BILLING: "Billing",
   ACCOUNTING: "Accounting",
+  PILOT: "Pilot Full Access",
 };
 
-const ROLES = Object.keys(ACCESS_TOKEN_ENV) as Role[];
+/** Every kind resolves to a real Role for permissions/navigation; PILOT maps to ADMIN. */
+const ROLE_FOR_KIND: Record<TokenKind, Role> = {
+  ADMIN: "ADMIN",
+  DESIGNER: "DESIGNER",
+  PRINTING: "PRINTING",
+  BILLING: "BILLING",
+  ACCOUNTING: "ACCOUNTING",
+  PILOT: "ADMIN",
+};
+
+const TOKEN_KINDS = Object.keys(ACCESS_TOKEN_ENV) as TokenKind[];
 const encoder = new TextEncoder();
 
 export interface AccessIdentity {
@@ -33,6 +54,7 @@ export interface AccessIdentity {
 
 interface VerifiedAccess extends AccessIdentity {
   secret: string;
+  kind: TokenKind;
 }
 
 /** Access links are an explicit operational switch and can later be turned off. */
@@ -40,13 +62,13 @@ export function accessLinksEnabled(): boolean {
   return process.env.CIJD_ACCESS_LINKS_ENABLED === "1";
 }
 
-function secretFor(role: Role): string | null {
-  const value = process.env[ACCESS_TOKEN_ENV[role]]?.trim();
+function secretFor(kind: TokenKind): string | null {
+  const value = process.env[ACCESS_TOKEN_ENV[kind]]?.trim();
   return value && value.length >= 32 ? value : null;
 }
 
-function identityFor(role: Role): AccessIdentity {
-  return { id: `access:${role.toLowerCase()}`, name: ACCESS_NAMES[role], role };
+function identityFor(kind: TokenKind): AccessIdentity {
+  return { id: `access:${kind.toLowerCase()}`, name: ACCESS_NAMES[kind], role: ROLE_FOR_KIND[kind] };
 }
 
 function encoded(bytes: Uint8Array): string {
@@ -89,13 +111,13 @@ async function same(value: string, expected: string): Promise<boolean> {
   return difference === 0;
 }
 
-/** Returns the fixed role only when the complete secret matches. */
+/** Returns the fixed identity only when the complete secret matches. */
 async function verifyAccessToken(token: string): Promise<VerifiedAccess | null> {
   if (!accessLinksEnabled() || !token) return null;
-  for (const role of ROLES) {
-    const secret = secretFor(role);
+  for (const kind of TOKEN_KINDS) {
+    const secret = secretFor(kind);
     if (!secret || !(await same(token, secret))) continue;
-    return { ...identityFor(role), secret };
+    return { ...identityFor(kind), secret, kind };
   }
   return null;
 }
@@ -106,8 +128,8 @@ export async function identityForAccessToken(token: string): Promise<AccessIdent
   return { id: verified.id, name: verified.name, role: verified.role };
 }
 
-async function sessionValue(identity: AccessIdentity, secret: string): Promise<string> {
-  const payload = `${identity.role}.${Date.now()}`;
+async function sessionValue(kind: TokenKind, secret: string): Promise<string> {
+  const payload = `${kind}.${Date.now()}`;
   return `${encoded(encoder.encode(payload))}.${encoded(await sign(secret, payload))}`;
 }
 
@@ -119,14 +141,14 @@ async function verifySession(value: string): Promise<AccessIdentity | null> {
   const signature = decoded(signaturePart);
   if (!payloadBytes || !signature) return null;
   const payload = new TextDecoder().decode(payloadBytes);
-  const [role, issuedAt] = payload.split(".") as [Role | undefined, string | undefined];
-  if (!role || !ROLES.includes(role) || !issuedAt) return null;
+  const [kind, issuedAt] = payload.split(".") as [TokenKind | undefined, string | undefined];
+  if (!kind || !TOKEN_KINDS.includes(kind) || !issuedAt) return null;
   const timestamp = Number(issuedAt);
   if (!Number.isFinite(timestamp) || Date.now() - timestamp > ACCESS_SESSION_MAX_AGE * 1000) {
     return null;
   }
   if (timestamp > Date.now() + 60_000) return null;
-  const secret = secretFor(role);
+  const secret = secretFor(kind);
   if (!secret) return null;
   const expected = await sign(secret, payload);
   if (expected.length !== signature.length) return null;
@@ -134,7 +156,7 @@ async function verifySession(value: string): Promise<AccessIdentity | null> {
   for (let index = 0; index < expected.length; index += 1) {
     difference |= expected[index] ^ signature[index];
   }
-  return difference === 0 ? identityFor(role) : null;
+  return difference === 0 ? identityFor(kind) : null;
 }
 
 /** Reads the signed Role session; the cookie never contains the original URL token. */
@@ -148,7 +170,7 @@ export async function setAccessSession(
   verified: VerifiedAccess,
   secure: boolean,
 ): Promise<void> {
-  response.cookies.set(ACCESS_SESSION_COOKIE, await sessionValue(verified, verified.secret), {
+  response.cookies.set(ACCESS_SESSION_COOKIE, await sessionValue(verified.kind, verified.secret), {
     httpOnly: true,
     secure,
     sameSite: "lax",

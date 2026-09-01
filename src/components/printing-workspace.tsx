@@ -9,6 +9,7 @@ import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
 import { Button, EmptyState, Field, Input, PageHeader, PageTotal, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
 import {
+  isBillingLocked,
   isHistoricalRecord,
   isProductionComplete,
   printPriceReviewState,
@@ -18,7 +19,7 @@ import { mediumDate, money, roundMoney } from "@/lib/format";
 import type { Locale } from "@/lib/i18n";
 import type { BillingItem } from "@/lib/types";
 
-export type PrintingView = "review" | "ordering" | "delivered" | "history";
+export type PrintingView = "review" | "history";
 
 export function PrintingWorkspace({ view }: { view: PrintingView }) {
   const scope = useScope();
@@ -37,22 +38,8 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
 
   if (!scope) return <PageSkeleton />;
 
-  const title =
-    view === "review"
-      ? t("printing.title")
-      : view === "ordering"
-        ? t("printing.orderingTitle")
-        : view === "delivered"
-          ? t("printing.deliveredTitle")
-          : t("printing.historyTitle");
-  const subtitle =
-    view === "review"
-      ? t("printing.reviewSubtitle")
-      : view === "ordering"
-        ? t("printing.orderingSubtitle")
-        : view === "delivered"
-          ? t("printing.deliveredSubtitle")
-          : t("printing.historySubtitle");
+  const title = view === "review" ? t("printing.title") : t("printing.historyTitle");
+  const subtitle = view === "review" ? t("printing.reviewSubtitle") : t("printing.historySubtitle");
   const knownTotal = roundMoney(items.reduce((total, item) => total + Math.max(item.amount, 0), 0));
   const totalLabel =
     view === "history"
@@ -130,6 +117,7 @@ function PrintItemCard({
   const confirmed = review === "CONFIRMED";
   const shown = confirmed ? item.amount : suggestedAmount;
   const finished = isProductionComplete(item);
+  const locked = isBillingLocked(item);
   const workStatus: WorkStatus = finished
     ? "DELIVERED"
     : confirmed ? "IN_PROGRESS" : "NEEDS_REVIEW";
@@ -174,7 +162,7 @@ function PrintItemCard({
         </div>
       </div>
 
-      {!history && (
+      {!history && !locked && (
         <div className="flex min-w-0 items-center justify-end border-t border-line px-5 py-3.5 sm:px-6">
           {!confirmed ? (
             <Button variant="primary" size="sm" onClick={() => setEditing(true)}>
@@ -192,7 +180,13 @@ function PrintItemCard({
         </div>
       )}
 
-      <PrintEditSheet item={item} open={editing} onClose={() => setEditing(false)} />
+      {!history && locked && (
+        <div className="border-t border-line px-5 py-3.5 text-[12.5px] text-faint sm:px-6">
+          {t("project.lockedNotice")}
+        </div>
+      )}
+
+      {!locked && <PrintEditSheet item={item} open={editing} onClose={() => setEditing(false)} />}
     </article>
   );
 }
