@@ -52,5 +52,28 @@ export function useAction() {
     [busy, describe, refresh, t, toast],
   );
 
-  return { busy, run, describe };
+  /** Same mutation flow, while returning the created record to follow-up UI. */
+  const runResult = useCallback(
+    async <T,>(
+      fn: () => Promise<T>,
+      success?: { key: MessageKey; vars?: Record<string, string | number> },
+    ): Promise<T | null> => {
+      if (busy) return null;
+      setBusy(true);
+      try {
+        const result = await fn();
+        await refresh();
+        if (success) toast(t(success.key, success.vars));
+        return result;
+      } catch (error) {
+        toast(describe(error), "error");
+        return null;
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, describe, refresh, t, toast],
+  );
+
+  return { busy, run, runResult, describe };
 }

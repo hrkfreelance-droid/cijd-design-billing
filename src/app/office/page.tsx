@@ -14,12 +14,17 @@ import {
   EmptyState,
   PageHeader,
   PageTotal,
-  StatusTag,
 } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
-import { isOperationalRecord, isProductionComplete, sum } from "@/lib/derive";
+import {
+  isOperationalRecord,
+  isPrintPriceConfirmed,
+  isProductionComplete,
+  sum,
+} from "@/lib/derive";
 import { money, todayIso } from "@/lib/format";
-import type { BillingItem, Client, Notification } from "@/lib/types";
+import { downloadInvoicePdf } from "@/lib/invoice-pdf";
+import type { BillingItem, Client, Invoice } from "@/lib/types";
 
 /** Everything here has completed production. That is the whole rule for this screen. */
 export default function OfficeBillingPage() {
@@ -55,12 +60,13 @@ export default function OfficeBillingPage() {
       .sort((a, b) => sum(b.items) - sum(a.items));
   }, [scope]);
 
-  const reviewItems = useMemo(
+  const pendingPrintItems = useMemo(
     () =>
       scope?.items.filter(
         (item) =>
           isOperationalRecord(item) &&
-          isProductionComplete(item) && item.billingStatus === "NEEDS_REVIEW",
+          item.type === "PRINT" &&
+          !isPrintPriceConfirmed(item),
       ) ?? [],
     [scope],
   );
@@ -79,8 +85,6 @@ export default function OfficeBillingPage() {
         }
       />
 
-      <p className="px-5 pb-4 text-[12.5px] text-faint sm:px-8">{t("office.deliveredOnly")}</p>
-
       {groups.length === 0 ? (
         <EmptyState title={t("billing.readyEmpty")} />
       ) : (
@@ -91,15 +95,13 @@ export default function OfficeBillingPage() {
         </div>
       )}
 
-      {reviewItems.length > 0 && <ReviewQueue items={reviewItems} />}
-
-      {user && can(user.role, "notification:manage") && <Notifications />}
+      {pendingPrintItems.length > 0 && <PrintPriceQueue items={pendingPrintItems} />}
     </div>
   );
 }
 
-/** Delivered, but not safe to invoice until the source facts are confirmed. */
-function ReviewQueue({ items }: { items: BillingItem[] }) {
+/** Print work is visible to Billing, but only Printing can confirm its price. */
+function PrintPriceQueue({ items }: { items: BillingItem[] }) {
   const { t } = useI18n();
   const scope = useScope();
 
@@ -107,18 +109,17 @@ function ReviewQueue({ items }: { items: BillingItem[] }) {
     <section className="pt-8">
       <div className="px-5 pb-2 sm:px-8">
         <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-          {t("billing.review")}
+          {t("billing.printPricePendingTitle")}
         </h2>
         <p className="mt-1 text-[12.5px] leading-relaxed text-faint">
-          {t("billing.reviewHint")}
+          {t("billing.printPricePendingHint")}
         </p>
       </div>
       <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
         {items.map((item) => {
           const project = scope?.idx.projectById.get(item.projectId);
           const client = project ? scope?.idx.clientById.get(project.clientId) : undefined;
-          const unknownAmount =
-            item.amount === 0 && /amount[^;,.]*unconfirmed/i.test(item.note ?? "");
+          const unknownAmount = item.amount <= 0;
           return (
             <div key={item.id} className="flex flex-col gap-2 px-5 py-3.5 sm:px-6">
               <div className="flex items-start gap-3">
@@ -127,19 +128,18 @@ function ReviewQueue({ items }: { items: BillingItem[] }) {
                     {project?.name ?? ""}
                   </span>
                   <span className="mt-0.5 block truncate text-[12.5px] text-faint">
-                    {client?.name} · {item.description}
+                    {client?.name} · {printLabel(item)}
                   </span>
                 </span>
                 <span className="shrink-0 text-right">
                   <span className="block text-[14.5px] tnum">
                     {unknownAmount ? t("billing.amountUnknown") : money(item.amount)}
                   </span>
-                  <StatusTag status="NEEDS_REVIEW" className="mt-1 justify-end" />
+                  <span className="mt-1 block text-[12px] text-review">
+                    {t("billing.printPricePending")}
+                  </span>
                 </span>
               </div>
-              {item.note && (
-                <p className="text-[12.5px] leading-relaxed text-muted">{item.note}</p>
-              )}
             </div>
           );
         })}
@@ -150,9 +150,10 @@ function ReviewQueue({ items }: { items: BillingItem[] }) {
 
 function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] }) {
   const { t } = useI18n();
+  const { locale } = useI18n();
   const scope = useScope();
   const router = useRouter();
-  const { run, busy } = useAction();
+  const { runResult, busy } = useAction();
   const [open, setOpen] = useState(true);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
 
@@ -181,9 +182,9 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
 
   const markInvoiced = async () => {
     if (!selectedItems.length) return;
-    const ok = await run(
+    const created = await runResult<Invoice>(
       () =>
-        api("/api/invoices", {
+        api<Invoice>("/api/invoices", {
           method: "POST",
           body: {
             clientId: client.id,
@@ -193,7 +194,18 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
         }),
       { key: "toast.invoiceCreated" },
     );
-    if (ok) router.push("/office/payments");
+    if (created) {
+      downloadInvoicePdf({
+        invoice: created,
+        clientName: client.name,
+        items: selectedItems,
+        projectNames: new Map(
+          projects.map((project) => [project.id, project.name]),
+        ),
+        locale,
+      });
+      router.push("/office/payments");
+    }
   };
 
   const toggle = (id: string) => {
@@ -271,7 +283,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
               disabled={selectedItems.length === 0 || busy}
               className="w-full sm:w-auto"
             >
-              {t("billing.markInvoiced")}
+              {t("billing.createInvoice")}
             </Button>
           </div>
         </>
@@ -281,65 +293,9 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
   );
 }
 
-/** Delivery notices that could not be sent are visible and retryable here. */
-function Notifications() {
-  const { t } = useI18n();
-  const { run, busy } = useAction();
-  const [items, setItems] = useState<Notification[] | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void api<Notification[]>("/api/notifications")
-      .then((data) => {
-        if (live) setItems(data);
-      })
-      .catch(() => setItems([]));
-    return () => {
-      live = false;
-    };
-  }, []);
-
-  const unsent = (items ?? []).filter((item) => item.status !== "SENT");
-  if (!unsent.length) return null;
-
-  return (
-    <section className="pt-8">
-      <div className="px-5 pb-2 sm:px-8">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
-          {t("notifications.title")}
-        </h2>
-      </div>
-      <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
-        {unsent.map((notification) => (
-          <div key={notification.id} className="flex items-center gap-3 px-5 py-3 sm:px-6">
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14px]">
-                {notification.text.split("\n").slice(0, 2).join(" · ")}
-              </span>
-              <span className="mt-0.5 block text-[12px] text-faint">
-                {t(`notifications.${notification.status}`)}
-                {notification.lastError ? ` · ${notification.lastError}` : ""}
-              </span>
-            </span>
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={async () => {
-                const ok = await run(
-                  () =>
-                    api(`/api/notifications/${notification.id}/resend`, { method: "POST" }),
-                  { key: "notifications.resent" },
-                );
-                if (ok) {
-                  setItems(await api<Notification[]>("/api/notifications").catch(() => []));
-                }
-              }}
-            >
-              {t("notifications.resend")}
-            </Button>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+function printLabel(item: BillingItem): string {
+  const description = item.description.trim();
+  if (/\bprint(?:ing)?\b\s+(?:[x×]\s*)?\d+\b/i.test(description)) return description;
+  if (/\b[x×]\s*\d+\b/i.test(description)) return description;
+  return `${description} ×${item.quantity}`;
 }

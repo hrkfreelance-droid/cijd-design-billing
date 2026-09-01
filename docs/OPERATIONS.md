@@ -54,21 +54,9 @@ update public.users set role = 'ACCOUNTING' where id = '<auth uid>';
 - 入金を誤登録した：Accountingが入金を取り消す。Paymentは削除せず、取り消し履歴を残す。
 - すでにPAIDの請求を修正する場合：先に入金を取り消し、必要な確認を記録してから請求の修正を行う。
 
-## Telegram
+## 外部通知
 
-納品処理が先にDBへ保存され、その後にBilling handoffと通知を行います。通知失敗で納品を巻き戻しません。
-
-- 外向きの納品通知に必要なのは`TELEGRAM_BOT_TOKEN`と確認済みの`TELEGRAM_BILLING_CHAT_ID`。
-- long pollingの受信runnerには、アプリとの共有用に`TELEGRAM_WEBHOOK_SECRET`も必要。Supabase modeのrunnerでは`SUPABASE_SERVICE_ROLE_KEY`も必要。
-- Chat IDは推測しない。未設定なら送信せず、`SKIPPED`または`FAILED`を`notification_logs`に保存する。
-- Officeの通知欄から再送する。dedupe keyで同じ納品を二重送信しない。
-- Botが止まった場合は、まず`TELEGRAM_BOT_TOKEN`、Chat ID、shared secret、プロセスログを確認する。DB上の納品状態は手で戻さない。
-
-起動コマンド：
-
-```bash
-npm run telegram
-```
+外部通知はアプリの運用経路から撤去しています。納品・請求・入金の状態はアプリ内で確認し、既存の通知ログ用DBテーブルは互換性のため保持します。新しい通知Secretの設定や通知再送は行いません。
 
 ## 障害時
 

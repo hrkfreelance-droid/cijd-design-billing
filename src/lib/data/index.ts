@@ -26,18 +26,5 @@ export async function getRepository(): Promise<Repository> {
   return new SupabaseRepository(client);
 }
 
-/** For entry points with no browser session, such as the Telegram bot. */
-export async function getServiceRepository(): Promise<Repository> {
-  const { dataMode } = await import("@/lib/supabase/config");
-  if (dataMode() === "local") return getLocalRepository();
-  const { supabaseServiceClient } = await import("@/lib/supabase/server");
-  const client = await supabaseServiceClient();
-  if (!client) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for the Telegram endpoint.");
-  }
-  const { SupabaseRepository } = await import("@/lib/supabase/repository");
-  return new SupabaseRepository(client);
-}
-
 export { RuleError } from "./repository";
 export type { Repository } from "./repository";

@@ -160,16 +160,6 @@ export class GuardedRepository {
     return this.repo.setReceiptStatus(id, status, this.actor(actor));
   }
 
-  async listNotifications() {
-    this.assert("notification:manage");
-    return this.repo.listNotifications();
-  }
-
-  async getNotification(id: string) {
-    this.assert("notification:manage");
-    return this.repo.getNotification(id);
-  }
-
   /** Actions always record the signed-in person, not whatever was posted. */
   private actor(supplied?: string): string {
     return supplied && this.user.role === "ADMIN" ? supplied : this.user.name;

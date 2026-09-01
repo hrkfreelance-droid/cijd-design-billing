@@ -1,7 +1,7 @@
 # CIJD DESIGN Billing
 
 CIJD DESIGN の案件・請求・経理管理 Web アプリ。
-制作 → 印刷 → 請求 → 経理を、納品を境界に一本道で管理します。
+制作 → 印刷 → 請求 → 経理を、納品を境界に一本道で管理します。請求書PDFは請求発行時に生成され、後から再表示・保存できます。
 
 ## Preview
 
@@ -19,7 +19,7 @@ Designer / Printing                   Office
 作る・価格を決める → 納品 ──DELIVERED──▶ 請求済みにする → 経理 → 入金確認 → 完了
 ```
 
-請求担当は進行状況を確認できますが、**請求画面に出るものは納品済みで請求してよいもの**だけです。
+請求担当は進行状況を確認できます。Billingには、請求可能な項目と、印刷価格の確定を待つ項目を分けて表示します。
 
 ## Features
 
@@ -29,9 +29,9 @@ Designer / Printing                   Office
 - 各工程のUndoを確認付きで実行
 
 **Office（`/office`）**
-- 請求（請求待ち）/ 経理（請求済み・入金確認・完了）/ 進行状況（READ ONLY）/ アーカイブ
+- 進行状況（READ ONLY）/ 請求（請求待ち）/ 経理（請求済み・入金確認・完了）/ アーカイブ
 - 進行状況はClient → Project → Itemを状態だけで確認し、制作・印刷の操作はできない
-- 納品済みの項目だけが請求候補に出る
+- 納品済み・価格確定済みの項目だけが請求候補に出る。価格確認待ちの印刷項目は選択できない状態で表示する
 - Invoice ID/Number は内部で自動生成
 
 **守っているルール**
@@ -40,19 +40,13 @@ Designer / Printing                   Office
 - 同じ請求書番号は登録できない。入金済みへの再入金確認はエラー
 - 請求・入金の取り消しは確認付きで、履歴は消さずに残す
 
-**Telegram**
-- 案件登録：`RH New Menu Poster` → Ringer Hut の案件として `IN_PROGRESS` 登録
-- 納品：`RH New Menu Poster 納品済み` または直前の案件に対して `納品済み`
-- 対象が特定できない場合は候補を返して番号で選択させる（推測で更新しない）
-- 納品時に請求担当へ通知。**通知の失敗で納品自体が失敗することはありません**（記録して再送可能・二重送信防止つき）
-
 ## Access Control
 
 | Role | 見られるもの |
 | --- | --- |
 | `DESIGNER` | 制作・印刷・請求・経理の確認と操作 |
 | `PRINTING` | 印刷仕様・価格確認、印刷物の納品操作 |
-| `BILLING` | 進行状況のREAD ONLY確認、請求待ち、請求済み、請求取消、経理の閲覧、納品通知の再送 |
+| `BILLING` | 進行状況のREAD ONLY確認、請求待ち、請求書発行、請求取消、経理の閲覧 |
 | `ACCOUNTING` | 進行状況のREAD ONLY確認、経理、入金確認、入金取消、完了、Archive |
 | `ADMIN` | 全画面（ワークスペース切替つき） |
 
@@ -121,9 +115,8 @@ workers.dev設定が完了した後は、対象branchへのpushだけでPreview�
 | --- | --- |
 | `npm run build` / `npm start` | 本番ビルド・起動 |
 | `npm run lint` / `npm run typecheck` | 静的チェック |
-| `npm test` | Playwright（役割分離・納品ゲート・請求〜入金・Telegram） |
+| `npm test` | Playwright（役割分離・納品ゲート・請求〜入金・PDF導線） |
 | `npm run test:import` | 過去履歴Importの判定・リンクテスト |
-| `npm run telegram` | Telegram Bot（long polling。公開 URL 不要） |
 | `npm run import:history` | 過去請求履歴の CSV 取り込み（後述） |
 | `npm run test:auth` | Auth provisioning引数の安全性テスト |
 | `npm run supabase:user -- ...` | 実メールアドレスでAuth Userを作成（trusted terminalのみ） |
@@ -137,12 +130,8 @@ workers.dev設定が完了した後は、対象branchへのpushだけでPreview�
 
 | 変数 | 用途 |
 | --- | --- |
-| `TELEGRAM_BOT_TOKEN` | Bot トークン（@BotFather） |
-| `TELEGRAM_WEBHOOK_SECRET` | Bot → アプリ間の共有シークレット。未設定なら Bot 用エンドポイントは無効 |
-| `TELEGRAM_BILLING_CHAT_ID` | 納品通知の送信先（ダイキテラシマ）。**未確認のため未設定。ID をここに入れるだけで有効になります** |
-| `TELEGRAM_ACTOR` | Telegram から登録した際に記録する担当名（既定：`Hiroki`） |
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 設定すると Supabase（DB + Auth）に切り替わります |
-| `SUPABASE_SERVICE_ROLE_KEY` | サーバー専用。Telegram エンドポイント（ブラウザセッションを持たない）で使用 |
+| `SUPABASE_SERVICE_ROLE_KEY` | Auth User provisioning CLI専用。ブラウザやWorkerには設定しません |
 | `CIJD_DATA_FILE` | ローカル JSON ストアの保存先（既定：`.data/runtime/db.json`） |
 | `CIJD_NEXT_DIST_DIR` | Next生成物の保存先（npm scriptsの既定：`.next-local`） |
 | `NEXT_PUBLIC_DEMO_MODE` | 開発時のみブラウザ内デモデータへ切り替え（Production Previewでは使用しない） |
@@ -168,15 +157,9 @@ Supabase接続後はlocalStorageや `.data/runtime/db.json` を業務データ�
 日々の運用、Authユーザーの追加・停止・パスワード再設定、NEEDS_REVIEW、
 障害時、バックアップ・復旧は [`docs/OPERATIONS.md`](docs/OPERATIONS.md) にまとめています。
 
-## Telegram setup checklist
+## Invoice PDF
 
-納品通知の外部接続設定は `TELEGRAM_BOT_TOKEN` と
-`TELEGRAM_BILLING_CHAT_ID` です。受信endpointを保護するlong-polling runnerには
-`TELEGRAM_WEBHOOK_SECRET`も必要です。Chat ID未設定時は送信せず、`SKIPPED` または
-`FAILED` を `notification_logs` に記録し、Officeから再送できます。
-
-BotはProject登録、納品、Billing handoffまで処理します。実Botの起動は
-`npm run telegram` です。
+Billingで「請求書を発行」を押すと、請求データを確定してA4のSwiss Editorial PDFを生成し、保存します。AccountingまたはArchiveの請求書詳細から同じPDFをいつでも表示・保存できます。住所、税番号、銀行情報など未登録の情報はPDFへ追加しません。
 
 ## Current MVP Scope
 
@@ -203,5 +186,4 @@ npm run import:history -- history.csv "Ringer Hut"
 - **Supabase Auth User**：実際の社内GoogleアカウントをAuthへ登録し、同じUUIDを `public.users` に明示登録して各ログインとRLSを確認します
 - **Google / Cloudflare設定**：Google Provider、OAuth callback、Supabase build variablesはDashboard側で設定が必要です
 - **Supabase migration確認**：既存データを確認してから未適用migrationを適用します。Ringer Hut 2〜8月の履歴71件は既存本番データを再投入しません
-- **納品通知の送信先**：ダイキテラシマさんの Chat ID 未確認（架空値は入れていません）
-- Invoice PDF、会計ソフト・銀行 API 連携、ファイル添付の実体
+- 会計ソフト・銀行 API 連携、ファイル添付の実体

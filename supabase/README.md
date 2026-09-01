@@ -137,17 +137,17 @@ helper also ignores inactive profiles.
 
 Put `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in
 `.env.local` (see `.env.example`) and restart. The app switches to Supabase on
-its own — sign-in becomes Google OAuth. Add
-`SUPABASE_SERVICE_ROLE_KEY` only when enabling the server-side Telegram
-endpoint; never expose that key to the browser.
+its own — sign-in becomes Google OAuth. Use `SUPABASE_SERVICE_ROLE_KEY` only
+for the trusted Auth User provisioning CLI; never expose that key to the
+browser or Worker.
 
 For a printing operator, use the same Auth/profile flow with `role =
 'PRINTING'`. The Printing workspace exposes only PRINT items; imported PRINT
 rows remain read-only history. A current print item must have a human-confirmed
 price before it can become invoice-ready.
 
-日々の請求・入金・障害対応、NEEDS_REVIEWの扱い、バックアップ・復旧、
-Telegram停止時の手順は [`docs/OPERATIONS.md`](../docs/OPERATIONS.md) を参照してください。
+日々の請求・入金・障害対応、NEEDS_REVIEWの扱い、バックアップ・復旧は
+[`docs/OPERATIONS.md`](../docs/OPERATIONS.md) を参照してください。
 
 ## What the database enforces on its own
 

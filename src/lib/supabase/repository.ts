@@ -13,10 +13,8 @@ import {
 import type {
   BillingItem,
   BillingStatus,
-  Notification,
   ReceiptStatus,
   Snapshot,
-  TelegramSession,
   User,
 } from "@/lib/types";
 import {
@@ -24,9 +22,7 @@ import {
   toInvoice,
   toInvoiceItem,
   toItem,
-  toNotification,
   toProject,
-  toTelegramSession,
   toUser,
 } from "./rows";
 import { isProductionComplete, isPrintPriceConfirmed } from "@/lib/derive";
@@ -520,94 +516,6 @@ export class SupabaseRepository implements Repository {
     return toInvoice(unwrap(result));
   }
 
-  async queueNotification(input: {
-    kind: "DELIVERY";
-    dedupeKey: string;
-    projectId: string;
-    text: string;
-  }): Promise<Notification | null> {
-    const existing = await this.db
-      .from("notification_logs")
-      .select("*")
-      .eq("dedupe_key", input.dedupeKey)
-      .neq("status", "FAILED")
-      .maybeSingle();
-    if (existing.data) return null;
-    const result = await this.db
-      .from("notification_logs")
-      .insert({
-        kind: input.kind,
-        dedupe_key: input.dedupeKey,
-        project_id: input.projectId,
-        text: input.text,
-        status: "PENDING",
-      })
-      .select()
-      .single();
-    // A race on the unique key means someone else queued the same notice.
-    if (result.error?.code === "23505") return null;
-    return toNotification(unwrap(result));
-  }
-
-  async markNotification(id: string, status: "SENT" | "FAILED" | "SKIPPED", error?: string) {
-    const current = await this.db
-      .from("notification_logs")
-      .select("attempts")
-      .eq("id", id)
-      .single();
-    const result = await this.db
-      .from("notification_logs")
-      .update({
-        status,
-        attempts: Number(current.data?.attempts ?? 0) + 1,
-        last_error: error ?? null,
-        sent_at: status === "SENT" ? new Date().toISOString() : null,
-      })
-      .eq("id", id)
-      .select()
-      .single();
-    return toNotification(unwrap(result));
-  }
-
-  async listNotifications(): Promise<Notification[]> {
-    const result = await this.db
-      .from("notification_logs")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (result.error) fail(result.error);
-    return (result.data ?? []).map(toNotification);
-  }
-
-  async getNotification(id: string): Promise<Notification | null> {
-    const result = await this.db.from("notification_logs").select("*").eq("id", id).maybeSingle();
-    if (result.error) fail(result.error);
-    return result.data ? toNotification(result.data) : null;
-  }
-
-  async getTelegramSession(chatId: string): Promise<TelegramSession | null> {
-    const result = await this.db
-      .from("telegram_sessions")
-      .select("*")
-      .eq("chat_id", chatId)
-      .maybeSingle();
-    if (result.error) fail(result.error);
-    return result.data ? toTelegramSession(result.data) : null;
-  }
-
-  async saveTelegramSession(session: TelegramSession): Promise<TelegramSession> {
-    const result = await this.db
-      .from("telegram_sessions")
-      .upsert({
-        chat_id: session.chatId,
-        last_project_id: session.lastProjectId ?? null,
-        candidate_ids: session.candidateIds ?? [],
-        pending_project_name: session.pendingProjectName ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
-    return toTelegramSession(unwrap(result));
-  }
 }
 
 export type { BillingItem };

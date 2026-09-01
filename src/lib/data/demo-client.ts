@@ -3,7 +3,6 @@
 import { ApiError } from "@/lib/api-error";
 import { GuardedRepository } from "@/lib/auth/guarded-repository";
 import type { SessionUser } from "@/lib/auth/session";
-import { notifyDelivery } from "@/lib/telegram/notify";
 import type { BillingStatus, ItemType, ReceiptStatus } from "@/lib/types";
 import { browserPersistence, clearDemoData } from "./browser-persistence";
 import { RuleError, type Repository } from "./repository";
@@ -48,22 +47,6 @@ const num = (value: unknown) => {
   }
   return undefined;
 };
-
-async function announce(repo: Repository, projectId: string, items: { id: string; deliveredAt?: string | null }[]) {
-  const snapshot = await repo.getSnapshot();
-  const project = snapshot.projects.find((candidate) => candidate.id === projectId);
-  const client = project
-    ? snapshot.clients.find((candidate) => candidate.id === project.clientId)
-    : undefined;
-  const full = snapshot.billingItems.filter((item) => items.some((i) => i.id === item.id));
-  if (!project || !client || !full.length) return;
-  await notifyDelivery(repo, {
-    client,
-    project,
-    items: full,
-    deliveredAt: full[0]?.deliveredAt ?? new Date().toISOString(),
-  });
-}
 
 /**
  * Mirrors src/app/api/** against the in-browser store, including the role
@@ -128,9 +111,7 @@ export async function demoRequest<T>(
       }
       if (id && sub === "delivery") {
         if (method === "POST") {
-          const items = await guarded.setProjectDelivery(id, true);
-          await announce(repo, id, items);
-          return items as T;
+          return (await guarded.setProjectDelivery(id, true)) as T;
         }
         if (method === "DELETE") return (await guarded.setProjectDelivery(id, false)) as T;
       }
@@ -162,9 +143,7 @@ export async function demoRequest<T>(
       }
       if (id && sub === "delivery") {
         if (method === "POST") {
-          const item = await guarded.setItemDelivery(id, true);
-          await announce(repo, item.projectId, [item]);
-          return item as T;
+          return (await guarded.setItemDelivery(id, true)) as T;
         }
         if (method === "DELETE") return (await guarded.setItemDelivery(id, false)) as T;
       }
@@ -241,10 +220,6 @@ export async function demoRequest<T>(
         }
         if (method === "DELETE") return (await guarded.voidInvoice(id)) as T;
       }
-    }
-
-    if (resource === "notifications" && method === "GET" && !id) {
-      return (await guarded.listNotifications()) as T;
     }
 
     throw new ApiError(`Unsupported request: ${method} ${path}`, "NOT_FOUND");

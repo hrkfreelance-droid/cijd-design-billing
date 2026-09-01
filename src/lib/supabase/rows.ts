@@ -3,10 +3,8 @@ import type {
   Client,
   Invoice,
   InvoiceItem,
-  Notification,
   Payment,
   Project,
-  TelegramSession,
   User,
 } from "@/lib/types";
 
@@ -104,25 +102,4 @@ export const toPayment = (row: Row): Payment => ({
   createdBy: str(row.created_by),
   voidedAt: (row.voided_at as string) ?? null,
   voidedBy: (row.voided_by as string) ?? null,
-});
-
-export const toNotification = (row: Row): Notification => ({
-  id: str(row.id),
-  kind: "DELIVERY",
-  dedupeKey: str(row.dedupe_key),
-  projectId: str(row.project_id),
-  text: str(row.text),
-  status: row.status as Notification["status"],
-  attempts: Number(row.attempts ?? 0),
-  lastError: (row.last_error as string) ?? null,
-  createdAt: str(row.created_at),
-  sentAt: (row.sent_at as string) ?? null,
-});
-
-export const toTelegramSession = (row: Row): TelegramSession => ({
-  chatId: str(row.chat_id),
-  lastProjectId: (row.last_project_id as string) ?? null,
-  candidateIds: (row.candidate_ids as string[]) ?? [],
-  pendingProjectName: (row.pending_project_name as string) ?? null,
-  updatedAt: str(row.updated_at),
 });

@@ -1,9 +1,7 @@
 import type {
   BillingItem,
   BillingStatus,
-  Notification,
   ProductionStatus,
-  TelegramSession,
   User,
   Client,
   Database,
@@ -892,72 +890,4 @@ export class Store implements Repository {
     });
   }
 
-  queueNotification(input: {
-    kind: "DELIVERY";
-    dedupeKey: string;
-    projectId: string;
-    text: string;
-  }): Promise<Notification | null> {
-    return this.transaction((db) => {
-      const existing = db.notifications.find(
-        (n) => n.dedupeKey === input.dedupeKey && n.status !== "FAILED",
-      );
-      if (existing) return null;
-      const notification: Notification = {
-        id: newId(),
-        kind: input.kind,
-        dedupeKey: input.dedupeKey,
-        projectId: input.projectId,
-        text: input.text,
-        status: "PENDING",
-        attempts: 0,
-        lastError: null,
-        createdAt: now(),
-        sentAt: null,
-      };
-      db.notifications.push(notification);
-      return notification;
-    });
-  }
-
-  markNotification(
-    id: string,
-    status: "SENT" | "FAILED" | "SKIPPED",
-    error?: string,
-  ): Promise<Notification> {
-    return this.transaction((db) => {
-      const notification = db.notifications.find((n) => n.id === id);
-      if (!notification) {
-        throw new RuleError("NOT_FOUND", "Notification was not found.", 404);
-      }
-      notification.status = status;
-      notification.attempts += 1;
-      notification.lastError = error ?? null;
-      if (status === "SENT") notification.sentAt = now();
-      return notification;
-    });
-  }
-
-  async listNotifications(): Promise<Notification[]> {
-    return (await this.load()).notifications;
-  }
-
-  async getNotification(id: string): Promise<Notification | null> {
-    return (await this.load()).notifications.find((n) => n.id === id) ?? null;
-  }
-
-  async getTelegramSession(chatId: string): Promise<TelegramSession | null> {
-    const db = await this.load();
-    return db.telegramSessions.find((session) => session.chatId === chatId) ?? null;
-  }
-
-  saveTelegramSession(session: TelegramSession): Promise<TelegramSession> {
-    return this.transaction((db) => {
-      const index = db.telegramSessions.findIndex((s) => s.chatId === session.chatId);
-      const next = { ...session, updatedAt: now() };
-      if (index >= 0) db.telegramSessions[index] = next;
-      else db.telegramSessions.push(next);
-      return next;
-    });
-  }
 }

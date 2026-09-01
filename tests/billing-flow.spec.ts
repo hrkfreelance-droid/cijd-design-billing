@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 
 import { buildDemoSeed } from "../src/lib/data/demo-seed";
 import { money } from "../src/lib/format";
@@ -73,6 +74,10 @@ test("designer Hiroki can move work through downstream workspaces", async ({ pag
   await expect(page).toHaveURL(/\/office$/);
   await expect(page.getByRole("link", { name: "Accounting", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Progress", exact: true })).toBeVisible();
+  const officeNavHrefs = await page
+    .locator('header nav[aria-label="Workspace navigation"] a')
+    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
+  expect(officeNavHrefs).toEqual(["/office/progress", "/office", "/office/payments", "/office/archive"]);
 });
 
 test("undelivered work cannot reach billing", async ({ page }) => {
@@ -156,7 +161,7 @@ test("creative completion and print delivery are independent item actions", asyn
   expect((await wrongForDesign.json()).code).toBe("WRONG_PRODUCTION_ACTION");
 });
 
-test("delivering hands the work to billing and records a notification", async ({ page }) => {
+test("delivering hands the work to billing", async ({ page }) => {
   await signIn(page, "u_hiroki");
   const { projectId } = await newProjectWithItem(page, "Handoff Poster", 80, "PRINT");
 
@@ -171,7 +176,6 @@ test("delivering hands the work to billing and records a notification", async ({
   // the dedicated read-only progress view.
   await signIn(page, "u_billing");
   await page.goto("/office");
-  await expect(page.getByText("Only work with completed production appears here.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Handoff Poster Design" })).toBeVisible();
 
   const state = await (await page.request.get("/api/state")).json();
@@ -184,12 +188,6 @@ test("delivering hands the work to billing and records a notification", async ({
   await expect(page.getByText("In Progress", { exact: true }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: /Complete|Deliver|Undo/ })).toHaveCount(0);
 
-  // The delivery notification is recorded even though Telegram is unconfigured.
-  const notifications = await (await page.request.get("/api/notifications")).json();
-  const notice = notifications.data.find((n: { text: string }) => n.text.includes("Handoff Poster"));
-  expect(notice).toBeTruthy();
-  expect(notice.status).toBe("SKIPPED");
-  expect(notice.text).toContain("Ready to invoice.");
 });
 
 test("billing and accounting stay out of each other's screens", async ({ page }) => {
@@ -365,13 +363,27 @@ test("invoice once, pay once", async ({ page }) => {
 
   const group = page.locator("section").filter({ hasText: "Ringer Hut" });
   await expect(group.getByText("RH Kids Promotion").first()).toBeVisible();
-  await group.getByRole("button", { name: "Mark as Invoiced" }).click();
+  const automaticPdfPromise = page.waitForEvent("download");
+  await group.getByRole("button", { name: "Create Invoice" }).click();
+  const automaticPdf = await automaticPdfPromise;
+  expect(automaticPdf.suggestedFilename()).toMatch(/^CIJD-\d{8}-[A-Z0-9]+\.pdf$/);
   await expect(page).toHaveURL(/\/office\/payments$/);
   const invoicedState = await (await page.request.get("/api/state")).json();
   const created = invoicedState.data.invoices.find(
     (invoice: { status: string }) => invoice.status === "ISSUED",
   );
   expect(created.invoiceNumber).toMatch(/^CIJD-/);
+
+  await page.getByRole("button", { name: new RegExp(created.invoiceNumber) }).click();
+  await expect(page.getByRole("button", { name: "PDF", exact: true })).toBeVisible();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download Invoice", exact: true }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe(`${created.invoiceNumber}.pdf`);
+  const pdfPath = await download.path();
+  expect(pdfPath).not.toBeNull();
+  if (pdfPath) expect(readFileSync(pdfPath).subarray(0, 8).toString()).toBe("%PDF-1.4");
+  await page.getByRole("button", { name: "Close", exact: true }).click();
 
   await signIn(page, "u_hiroki");
   await page.goto("/designer/projects/pj_rh_kids_promotion");
@@ -410,12 +422,12 @@ test("invoice once, pay once", async ({ page }) => {
   expect(again.status()).toBe(409);
   expect((await again.json()).code).toBe("ALREADY_PAID");
 
-  await page.getByRole("tab", { name: /Payment/ }).click();
+  await page.getByRole("tab", { name: /Receipts/ }).click();
   await page.getByRole("button", { name: new RegExp(created.invoiceNumber) }).click();
   await page.getByRole("button", { name: "Undo payment" }).click();
   await page.getByRole("dialog").last().getByRole("button", { name: "Undo payment" }).click();
   await expect(page.getByText("Payment undone")).toBeVisible();
-  await page.getByRole("tab", { name: /Invoiced/ }).click();
+  await page.getByRole("tab", { name: /Awaiting/ }).click();
   await expect(page.getByRole("button", { name: new RegExp(created.invoiceNumber) })).toBeVisible();
 
   // Billing owns invoice cancellation; Accounting owns payment confirmation.
@@ -426,59 +438,17 @@ test("invoice once, pay once", async ({ page }) => {
   await page.getByRole("dialog").last().getByRole("button", { name: "Cancel invoice" }).click();
   await expect(page.getByText("Invoice cancelled")).toBeVisible();
   await page.goto("/office");
-  await expect(page.getByRole("button", { name: "Mark as Invoiced" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create Invoice" }).first()).toBeVisible();
 
 });
 
-test("telegram registers a project and delivers it", async ({ request }) => {
-  // The bot speaks to the app with its own secret; reading state needs a session.
-  await request.post("/api/session", { data: { userId: "u_hiroki" } });
-  const send = (text: string) =>
-    request.post("/api/telegram/message", {
-      headers: { "x-telegram-secret": "test-secret" },
-      data: { chatId: "test-chat", text },
-    });
-
-  const registered = await send("RH New Menu Poster");
-  expect(registered.ok()).toBeTruthy();
-  expect((await registered.json()).data.reply).toContain("RH New Menu Poster");
-
-  // Nothing to bill yet, so delivery is refused with an explanation.
-  const tooEarly = await send("納品済み");
-  expect((await tooEarly.json()).data.reply).toContain("請求項目");
-
-  const state = await (await request.get("/api/state")).json();
-  const project = state.data.projects.find(
-    (p: { name: string }) => p.name === "RH New Menu Poster",
-  );
-  expect(project.createdBy).toBe("Hiroki");
-  await request.post("/api/billing-items", {
-    data: { projectId: project.id, description: "Poster Design", type: "PRINT", unitPrice: 120 },
-  });
-
-  const delivered = await send("納品済み");
-  expect((await delivered.json()).data.reply).toContain("納品済み");
-
-  const after = await (await request.get("/api/state")).json();
-  const item = after.data.billingItems.find(
-    (i: { projectId: string }) => i.projectId === project.id,
-  );
-  expect(item.productionStatus).toBe("DELIVERED");
-  expect(item.billingStatus).toBe("NEEDS_REVIEW");
-  await request.post("/api/session", { data: { userId: "u_admin" } });
-  const notifications = await (await request.get("/api/notifications")).json();
-  expect(notifications.data.at(-1).text).toContain("Price review required before invoicing.");
-
-  const unknown = await send("Unknown Project 納品済み");
-  expect((await unknown.json()).data.reply).toContain("見つかりません");
-});
-
-test("the bot endpoint refuses a bad secret", async ({ request }) => {
-  const response = await request.post("/api/telegram/message", {
-    headers: { "x-telegram-secret": "wrong" },
+test("retired Telegram and notification endpoints are not exposed", async ({ request }) => {
+  const telegram = await request.post("/api/telegram/message", {
     data: { chatId: "x", text: "hello" },
   });
-  expect(response.status()).toBe(403);
+  expect(telegram.status()).toBe(404);
+  const notifications = await request.get("/api/notifications");
+  expect(notifications.status()).toBe(404);
 });
 
 test("receipts move an invoice to completed", async ({ page }) => {
@@ -508,41 +478,13 @@ test("receipts move an invoice to completed", async ({ page }) => {
   await expect(page.getByText("Payment confirmed")).toBeVisible();
 
   // Paid, receipt still pending.
-  await page.getByRole("tab", { name: /Payment/ }).click();
+  await page.getByRole("tab", { name: /Receipts/ }).click();
   await page.getByRole("button", { name: /RCPT-1/ }).click();
   await page.getByRole("button", { name: "Receipt sent" }).click();
   await expect(page.getByText("Receipt updated")).toBeVisible();
 
   await page.getByRole("tab", { name: /Completed/ }).click();
   await expect(page.getByRole("button", { name: /RCPT-1/ })).toBeVisible();
-});
-
-test("a failed delivery notification can be resent", async ({ page }) => {
-  await signIn(page, "u_hiroki");
-  const { projectId } = await newProjectWithItem(page, "Notify Check", 20, "PRINT");
-  await page.request.post(`/api/projects/${projectId}/delivery`);
-
-  await signIn(page, "u_billing");
-  const before = await (await page.request.get("/api/notifications")).json();
-  const notice = before.data.find((n: { text: string }) => n.text.includes("Notify Check"));
-  expect(notice.status).toBe("SKIPPED");
-
-  // Telegram is unconfigured, so a resend reports that rather than failing.
-  const resend = await page.request.post(`/api/notifications/${notice.id}/resend`);
-  expect(resend.ok()).toBeTruthy();
-  const after = await (await page.request.get("/api/notifications")).json();
-  const updated = after.data.find((n: { id: string }) => n.id === notice.id);
-  expect(updated.attempts).toBeGreaterThan(notice.attempts);
-  expect(updated.status).toBe("SKIPPED");
-
-  // The delivery itself is untouched by the notification problem.
-  await signIn(page, "u_admin");
-  const state = await (await page.request.get("/api/state")).json();
-  const item = state.data.billingItems.find(
-    (i: { projectId: string }) => i.projectId === projectId,
-  );
-  expect(item.productionStatus).toBe("DELIVERED");
-  expect(item.billingStatus).toBe("READY_TO_INVOICE");
 });
 
 test("printing review confirms price before delivery and blocks unconfirmed invoices", async ({ page }) => {
@@ -633,6 +575,12 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
   });
   expect(invoice.status()).toBe(409);
   expect((await invoice.json()).code).toBe("PRICE_REVIEW_REQUIRED");
+  await signIn(page, "u_billing");
+  await page.goto("/office");
+  const pendingQueue = page.locator("section").filter({ hasText: "Printing price confirmation pending" });
+  await expect(pendingQueue.getByText("Waiting for Printing").first()).toBeVisible();
+  await expect(pendingQueue.getByRole("checkbox")).toHaveCount(0);
+  await expect(pendingQueue.getByRole("button", { name: "Create Invoice" })).toHaveCount(0);
   expect(design.data.id).toBeTruthy();
 });
 
@@ -973,7 +921,7 @@ test("Billing and Accounting totals follow the selected client and tab", async (
   });
   expect(paid.ok()).toBeTruthy();
   await page.reload();
-  await page.getByRole("tab", { name: /Payment/ }).click();
+  await page.getByRole("tab", { name: /Receipts/ }).click();
   const receiptState = await (await page.request.get("/api/state")).json();
   const receiptTotal = receiptState.data.invoices
     .filter((invoice: { status: string; receiptStatus: string }) => invoice.status === "PAID" && invoice.receiptStatus === "PENDING")

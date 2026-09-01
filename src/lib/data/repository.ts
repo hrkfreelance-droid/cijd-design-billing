@@ -4,11 +4,9 @@ import type {
   BillingItem,
   Invoice,
   ItemType,
-  Notification,
   Project,
   ReceiptStatus,
   Snapshot,
-  TelegramSession,
   User,
 } from "@/lib/types";
 
@@ -28,7 +26,7 @@ export interface CreateProjectInput {
   clientId: string;
   name: string;
   createdBy?: string;
-  /** Optional — the server fills in today's date when omitted (Telegram path). */
+  /** Optional — the server fills in today's date when omitted. */
   date?: string;
   note?: string;
 }
@@ -152,21 +150,4 @@ export interface Repository {
   revertPayment(id: string, actor?: string): Promise<Invoice>;
   setReceiptStatus(id: string, status: ReceiptStatus, actor?: string): Promise<Invoice>;
 
-  /** Returns null when an identical notification was already recorded. */
-  queueNotification(input: {
-    kind: "DELIVERY";
-    dedupeKey: string;
-    projectId: string;
-    text: string;
-  }): Promise<Notification | null>;
-  markNotification(
-    id: string,
-    status: "SENT" | "FAILED" | "SKIPPED",
-    error?: string,
-  ): Promise<Notification>;
-  listNotifications(): Promise<Notification[]>;
-  getNotification(id: string): Promise<Notification | null>;
-
-  getTelegramSession(chatId: string): Promise<TelegramSession | null>;
-  saveTelegramSession(session: TelegramSession): Promise<TelegramSession>;
 }

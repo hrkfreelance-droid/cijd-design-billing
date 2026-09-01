@@ -16,6 +16,7 @@ import {
 } from "@/components/ui";
 import { mediumDate, money, todayIso } from "@/lib/format";
 import { can } from "@/lib/auth/roles";
+import { downloadInvoicePdf, openInvoicePdf, type InvoicePdfInput } from "@/lib/invoice-pdf";
 import type { Invoice } from "@/lib/types";
 
 /**
@@ -45,6 +46,15 @@ export function InvoiceSheet({
   const items = scope.idx.itemsByInvoice.get(invoice.id) ?? [];
   const canInvoice = !!user && can(user.role, "invoice:write");
   const canPay = !!user && can(user.role, "payment:write");
+  const pdfInput: InvoicePdfInput = {
+    invoice,
+    clientName: client?.name,
+    items,
+    projectNames: new Map(
+      items.map((item) => [item.projectId, scope.idx.projectById.get(item.projectId)?.name ?? ""]),
+    ),
+    locale,
+  };
 
   const confirmPayment = async () => {
     const ok = await run(
@@ -101,6 +111,14 @@ export function InvoiceSheet({
         description={client?.name}
         footer={
           <div className="space-y-2">
+            <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+              <Button variant="secondary" full onClick={() => openInvoicePdf(pdfInput)}>
+                {t("billing.viewPdf")}
+              </Button>
+              <Button variant="secondary" full onClick={() => downloadInvoicePdf(pdfInput)}>
+                {t("billing.downloadPdf")}
+              </Button>
+            </div>
             {invoice.status === "ISSUED" && canPay && (
               <Button variant="primary" full onClick={() => setPaying(true)}>
                 {t("billing.confirmPayment")}

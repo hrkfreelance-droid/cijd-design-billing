@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Next.js 16 App Router + TypeScript, local JSON mode, Supabase repository/RLS/functions, and Telegram long polling
+Next.js 16 App Router + TypeScript, local JSON mode, and Supabase repository/RLS/functions
 
 ## Users
 
@@ -24,7 +24,7 @@ The product separates projects from immutable billing items. Add-on work becomes
 
 ## Operating Context
 
-Designer uses `/designer` for In Progress → Ready to Invoice → Archive. Billing and Accounting use `/office` for Billing → Payments → Progress (read-only) → Archive. Project registration and delivery intake are also available through the authenticated Telegram endpoint and long-polling runner.
+Designer uses `/designer` for In Progress → Ready to Invoice → Archive. Billing and Accounting use `/office` for Progress (read-only) → Billing → Accounting → Archive.
 
 ## Capabilities and Constraints
 
@@ -35,7 +35,7 @@ Designer uses `/designer` for In Progress → Ready to Invoice → Archive. Bill
 - Payment confirmation is idempotency-safe: a PAID invoice cannot be confirmed again.
 - Local JSON mode must work without Supabase credentials. With credentials, Supabase is the shared production ledger.
 - Unconfirmed historical facts remain NEEDS_REVIEW; unknown invoice numbers or dates are stored as null when the billing/payment fact is confirmed.
-- Invoice PDF, attachments, accounting integrations, and analytics are intentionally not implemented yet.
+- Invoice PDF is generated from the invoice snapshot and can be re-generated from Accounting or Archive. Attachments, accounting integrations, and analytics are intentionally not implemented yet.
 
 ## Brand Commitments
 

@@ -18,8 +18,7 @@ export type Permission =
   | "payment:read"
   | "payment:write"
   | "printing:read"
-  | "print:write"
-  | "notification:manage";
+  | "print:write";
 
 const MATRIX: Record<Role, Permission[]> = {
   // Hiroki owns the full handoff in this workspace: Design → Printing →
@@ -38,11 +37,10 @@ const MATRIX: Record<Role, Permission[]> = {
     "invoice:write",
     "payment:read",
     "payment:write",
-    "notification:manage",
   ],
   // Billing hands the user directly to the Accounting view after invoicing;
   // it can read that queue but payment confirmation remains Accounting-only.
-  BILLING: ["billing:read", "invoice:write", "payment:read", "progress:read", "notification:manage"],
+  BILLING: ["billing:read", "invoice:write", "payment:read", "progress:read"],
   ACCOUNTING: ["payment:read", "payment:write", "progress:read"],
   PRINTING: ["production:read", "printing:read", "print:write", "delivery:write"],
   ADMIN: [
@@ -58,7 +56,6 @@ const MATRIX: Record<Role, Permission[]> = {
     "payment:write",
     "printing:read",
     "print:write",
-    "notification:manage",
   ],
 };
 
