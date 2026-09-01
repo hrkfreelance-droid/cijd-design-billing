@@ -363,10 +363,7 @@ test("invoice once, pay once", async ({ page }) => {
 
   const group = page.locator("section").filter({ hasText: "Ringer Hut" });
   await expect(group.getByText("RH Kids Promotion").first()).toBeVisible();
-  const automaticPdfPromise = page.waitForEvent("download");
-  await group.getByRole("button", { name: "Create Invoice" }).click();
-  const automaticPdf = await automaticPdfPromise;
-  expect(automaticPdf.suggestedFilename()).toMatch(/^CIJD-\d{8}-[A-Z0-9]+\.pdf$/);
+  await group.getByRole("button", { name: "Mark as Invoiced" }).click();
   await expect(page).toHaveURL(/\/office\/payments$/);
   const invoicedState = await (await page.request.get("/api/state")).json();
   const created = invoicedState.data.invoices.find(
@@ -443,7 +440,7 @@ test("invoice once, pay once", async ({ page }) => {
   await page.getByRole("dialog").last().getByRole("button", { name: "Cancel invoice" }).click();
   await expect(page.getByText("Invoice cancelled")).toBeVisible();
   await page.goto("/office");
-  await expect(page.getByRole("button", { name: "Create Invoice" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Mark as Invoiced" }).first()).toBeVisible();
 
 });
 
@@ -627,7 +624,7 @@ test("printing review confirms price before delivery and blocks unconfirmed invo
   const pendingQueue = page.locator("section").filter({ hasText: "Printing price confirmation pending" });
   await expect(pendingQueue.getByText("Waiting for Printing").first()).toBeVisible();
   await expect(pendingQueue.getByRole("checkbox")).toHaveCount(0);
-  await expect(pendingQueue.getByRole("button", { name: "Create Invoice" })).toHaveCount(0);
+  await expect(pendingQueue.getByRole("button", { name: "Mark as Invoiced" })).toHaveCount(0);
   expect(design.data.id).toBeTruthy();
 });
 

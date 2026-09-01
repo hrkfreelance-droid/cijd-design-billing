@@ -1,4 +1,4 @@
-import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
+import { createClient, type PostgrestError, type SupabaseClient } from "@supabase/supabase-js";
 
 import {
   RuleError,
@@ -29,9 +29,20 @@ import {
 } from "./rows";
 import { isProductionComplete, isPrintPriceConfirmed } from "@/lib/derive";
 import { roundMoney } from "@/lib/format";
-import { latestExchangeRate } from "@/lib/exchange-rate";
+import { ExchangeRateUnavailableError, latestExchangeRate } from "@/lib/exchange-rate";
+import { ensureCurrentSupabaseExchangeRate } from "@/lib/exchange-rate-server";
+import { supabaseConfig } from "./config";
 
 const DEFAULT_ACTOR = "Hiroki";
+
+function rateMaintenanceClient(fallback: SupabaseClient): SupabaseClient {
+  const config = supabaseConfig();
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (!config || !serviceRoleKey) return fallback;
+  return createClient(config.url, serviceRoleKey, {
+    auth: { autoRefreshToken: false, detectSessionInUrl: false, persistSession: false },
+  });
+}
 
 function money(value: number): number {
   return roundMoney(value);
@@ -616,13 +627,17 @@ export class SupabaseRepository implements Repository {
   }
 
   async createInvoice(input: CreateInvoiceInput) {
-    const rateTable = await this.db.from("exchange_rates").select("id").limit(1).maybeSingle();
-    if (rateTable.error) {
-      throw new RuleError(
-        "EXCHANGE_RATE_UNAVAILABLE",
-        "The official NBC exchange-rate table is not ready.",
-        503,
-      );
+    try {
+      await ensureCurrentSupabaseExchangeRate(rateMaintenanceClient(this.db));
+    } catch (error) {
+      if (error instanceof ExchangeRateUnavailableError) {
+        throw new RuleError(
+          "EXCHANGE_RATE_UNAVAILABLE",
+          "為替レートを取得できませんでした。しばらくして再度お試しください。",
+          503,
+        );
+      }
+      throw error;
     }
     const invoiceNumber = input.invoiceNumber?.trim() || autoInvoiceNumber();
     const result = await this.db.rpc("create_invoice", {

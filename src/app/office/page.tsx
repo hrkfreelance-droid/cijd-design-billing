@@ -24,7 +24,6 @@ import {
 } from "@/lib/derive";
 import { formatKhr } from "@/lib/exchange-rate";
 import { money, todayIso } from "@/lib/format";
-import { downloadInvoicePdf } from "@/lib/invoice-pdf";
 import type { BillingItem, Client, Invoice } from "@/lib/types";
 
 /** Everything here has completed production. That is the whole rule for this screen. */
@@ -158,7 +157,6 @@ function PrintPriceQueue({ items }: { items: BillingItem[] }) {
 
 function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] }) {
   const { t } = useI18n();
-  const { locale } = useI18n();
   const scope = useScope();
   const router = useRouter();
   const { runResult, busy } = useAction();
@@ -202,18 +200,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
         }),
       { key: "toast.invoiceCreated" },
     );
-    if (created) {
-      downloadInvoicePdf({
-        invoice: created,
-        clientName: client.name,
-        items: selectedItems,
-        projectNames: new Map(
-          projects.map((project) => [project.id, project.name]),
-        ),
-        locale,
-      });
-      router.push("/office/payments");
-    }
+    if (created) router.push("/office/payments");
   };
 
   const toggle = (id: string) => {

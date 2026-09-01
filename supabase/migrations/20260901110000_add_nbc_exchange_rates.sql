@@ -114,7 +114,10 @@ begin
     end if;
     if item.type = 'PRINT'
        and lower(btrim(item.created_by)) <> 'import'
-       and coalesce(item.price_review_status, 'REVIEW_REQUIRED') <> 'CONFIRMED'::public.price_review_status then
+       -- Keep this migration compatible with an older production schema. The
+       -- printing workflow adds the typed column later; JSONB lets this
+       -- function remain safe before that additive migration is installed.
+       and coalesce(to_jsonb(item)->>'price_review_status', 'REVIEW_REQUIRED') <> 'CONFIRMED' then
       raise exception 'PRICE_REVIEW_REQUIRED' using detail = format('"%s" needs a confirmed print price first.', item.description);
     end if;
     if item.billing_status <> 'READY_TO_INVOICE' then
