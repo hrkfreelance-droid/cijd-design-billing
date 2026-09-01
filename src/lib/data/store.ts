@@ -29,6 +29,11 @@ import {
   terminalProductionStatus,
 } from "@/lib/derive";
 import { roundMoney } from "@/lib/format";
+import {
+  ensureCurrentExchangeRate,
+  ExchangeRateUnavailableError,
+  latestExchangeRate,
+} from "@/lib/exchange-rate";
 
 const DEFAULT_ACTOR = "Hiroki";
 
@@ -118,6 +123,8 @@ type LegacyItem = BillingItem & { status?: string };
 function migrate(db: Database): Database {
   if (!Array.isArray(db.telegramSessions)) db.telegramSessions = [];
   if (!Array.isArray(db.notifications)) db.notifications = [];
+  if (!Array.isArray(db.exchangeRates)) db.exchangeRates = [];
+  if (!Array.isArray(db.exchangeRateFailures)) db.exchangeRateFailures = [];
   for (const user of db.users) {
     // "OWNER" predates the designer/billing/accounting split.
     if ((user.role as string) === "OWNER") user.role = "DESIGNER";
@@ -181,6 +188,7 @@ export class Store implements Repository {
       invoices: db.invoices,
       invoiceItems: db.invoiceItems,
       users: db.users,
+      exchangeRate: latestExchangeRate(db.exchangeRates),
       mode: this.mode,
       scope: { production: true, billing: true, payment: true },
     };
@@ -685,7 +693,7 @@ export class Store implements Repository {
   }
 
   createInvoice(input: CreateInvoiceInput) {
-    return this.transaction((db) => {
+    return this.transaction(async (db) => {
       const actor = input.actor ?? "Billing Staff";
       const requestedInvoiceNumber = input.invoiceNumber?.trim();
       let invoiceNumber = requestedInvoiceNumber || autoInvoiceNumber();
@@ -752,12 +760,25 @@ export class Store implements Repository {
       }
 
       const amount = money(items.reduce((sum, i) => sum + i.amount, 0));
+      let exchangeRate;
+      try {
+        exchangeRate = await ensureCurrentExchangeRate(db);
+      } catch (error) {
+        if (error instanceof ExchangeRateUnavailableError) {
+          throw new RuleError("EXCHANGE_RATE_UNAVAILABLE", error.message, 503);
+        }
+        throw error;
+      }
       const invoice: Invoice = {
         id: newId(),
         clientId: input.clientId,
         invoiceNumber,
         invoiceDate: input.invoiceDate || today(),
         amount,
+        exchangeRate: exchangeRate.rate,
+        exchangeRateSource: exchangeRate.source,
+        exchangeRateEffectiveDate: exchangeRate.effectiveDate,
+        exchangeRateFetchedAt: exchangeRate.fetchedAt,
         status: "ISSUED",
         paymentDate: null,
         paymentSlip: null,

@@ -8,6 +8,7 @@ import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { Amount, EmptyState, PageHeader, PageTotal, StatusTag } from "@/components/ui";
 import { flowStatus, isDesignerReady, isOperationalRecord, sum } from "@/lib/derive";
+import { formatKhr } from "@/lib/exchange-rate";
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
@@ -39,7 +40,21 @@ export default function DeliveredPage() {
       <PageHeader
         title={t("delivered.title")}
         subtitle={t("delivered.subtitle")}
-        action={<PageTotal value={money(sum(readyItems))} />}
+        action={
+          <PageTotal
+            value={money(sum(readyItems))}
+            secondaryValue={
+              scope.snapshot.exchangeRate
+                ? formatKhr(sum(readyItems), scope.snapshot.exchangeRate.rate)
+                : undefined
+            }
+            secondaryLabel={
+              scope.snapshot.exchangeRate
+                ? t("currency.rate", { rate: scope.snapshot.exchangeRate.rate })
+                : undefined
+            }
+          />
+        }
       />
 
       {groups.length === 0 ? (

@@ -10,6 +10,7 @@ import { useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { EmptyState, PageHeader, PageTotal, Segmented } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
+import { khrAmount } from "@/lib/exchange-rate";
 import { groupHistoricalItems, sortArchiveInvoices } from "@/lib/historical";
 import { money } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
@@ -59,6 +60,12 @@ function Payments() {
   const total =
     shown.reduce((value, invoice) => value + invoice.amount, 0) +
     shownHistorical.reduce((value, group) => value + group.amount, 0);
+  const hasFixedRates = shown.length > 0 && shownHistorical.length === 0 && shown.every(
+    (invoice) => invoice.exchangeRate && invoice.exchangeRate > 0,
+  );
+  const khrTotal = hasFixedRates
+    ? shown.reduce((value, invoice) => value + khrAmount(invoice.amount, invoice.exchangeRate!), 0)
+    : null;
   const emptyLabel =
     tab === "awaiting"
       ? t("billing.awaitingEmpty")
@@ -75,6 +82,7 @@ function Payments() {
           <PageTotal
             value={money(total)}
             label={tab === "completed" ? t("projects.knownTotal") : undefined}
+            secondaryValue={khrTotal == null ? undefined : `៛${khrTotal.toLocaleString("en-US")}`}
           />
         }
       />

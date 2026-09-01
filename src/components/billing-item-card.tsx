@@ -3,7 +3,9 @@
 import Link from "next/link";
 
 import { ItemProductionAction } from "@/components/delivery";
+import { CurrencyAmount } from "@/components/currency-amount";
 import { useI18n } from "@/components/providers";
+import { useScope } from "@/components/scope";
 import { Amount, StatusPill, type WorkStatus } from "@/components/ui";
 import { isBillingLocked, isProductionComplete, priceState } from "@/lib/derive";
 import { money } from "@/lib/format";
@@ -30,6 +32,7 @@ export function BillingItemCard({
   onOpen?: () => void;
 }) {
   const { t } = useI18n();
+  const scope = useScope();
   const state = priceState(item);
   const finished = isProductionComplete(item);
   const locked = isBillingLocked(item);
@@ -79,10 +82,15 @@ export function BillingItemCard({
         )}
       </div>
 
-      <Amount
-        value={item.amount > 0 ? money(item.amount) : "—"}
-        className="col-start-2 row-start-2 justify-self-end text-[15px]"
-      />
+      {item.amount > 0 ? (
+        <CurrencyAmount
+          usd={item.amount}
+          rate={!history && !locked ? scope?.snapshot.exchangeRate?.rate : null}
+          className="col-start-2 row-start-2 justify-self-end text-[15px]"
+        />
+      ) : (
+        <Amount value="—" className="col-start-2 row-start-2 justify-self-end text-[15px]" />
+      )}
 
       {spec && (
         <p className="col-start-1 row-start-3 mt-1 min-w-0 truncate text-[12.5px] text-muted">

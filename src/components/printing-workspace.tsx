@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { ItemProductionAction } from "@/components/delivery";
+import { CurrencyAmount } from "@/components/currency-amount";
 import { api, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
@@ -12,7 +13,9 @@ import {
   isProductionComplete,
   printPriceReviewState,
 } from "@/lib/derive";
+import { formatKhr } from "@/lib/exchange-rate";
 import { mediumDate, money, roundMoney } from "@/lib/format";
+import type { Locale } from "@/lib/i18n";
 import type { BillingItem } from "@/lib/types";
 
 export type PrintingView = "review" | "ordering" | "delivered" | "history";
@@ -57,6 +60,7 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
       : items.some((item) => printPriceReviewState(item) !== "CONFIRMED")
         ? t("projects.estimatedTotal")
         : undefined;
+  const currentRate = scope.snapshot.exchangeRate?.rate;
 
   return (
     <div className="animate-rise">
@@ -68,7 +72,14 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
             {view === "review" && <span className="ml-2 text-review">{t("printing.reviewCount", { count: items.length })}</span>}
           </span>
         }
-        action={<PageTotal value={knownTotal > 0 ? money(knownTotal) : "—"} label={totalLabel} />}
+        action={
+          <PageTotal
+            value={knownTotal > 0 ? money(knownTotal) : "—"}
+            label={totalLabel}
+            secondaryValue={currentRate ? formatKhr(knownTotal, currentRate) : undefined}
+            secondaryLabel={currentRate ? t("currency.rate", { rate: currentRate }) : undefined}
+          />
+        }
       />
 
       {items.length === 0 ? (
@@ -84,6 +95,7 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
               project={scope.idx.projectById.get(item.projectId)}
               client={scope.clientOf(item.projectId)}
               locale={locale}
+              rate={scope.snapshot.exchangeRate?.rate}
               history={view === "history"}
             />
           ))}
@@ -98,12 +110,14 @@ function PrintItemCard({
   project,
   client,
   locale,
+  rate,
   history,
 }: {
   item: BillingItem;
   project?: { name: string; date: string };
   client?: { name: string };
-  locale: "ja" | "en";
+  locale: Locale;
+  rate?: number;
   history: boolean;
 }) {
   const { t } = useI18n();
@@ -141,12 +155,19 @@ function PrintItemCard({
           {suggestedUnit > 0 && (
             <Info label={t("printing.unitPrice")} value={`${money(suggestedUnit)} / pc`} numeric />
           )}
-          <Info
-            label={t("common.amount")}
-            value={shown > 0 ? money(shown) : t("printing.pricePending")}
-            emphasis={shown <= 0}
-            numeric={shown > 0}
-          />
+          {shown > 0 ? (
+            <div>
+              <span className="block text-[11.5px] text-faint">{t("common.amount")}</span>
+              <CurrencyAmount usd={shown} rate={!history ? rate : undefined} className="mt-1 text-[14px]" />
+            </div>
+          ) : (
+            <Info
+              label={t("common.amount")}
+              value={t("printing.pricePending")}
+              emphasis
+              numeric={false}
+            />
+          )}
           <StatusPill status={workStatus} className="justify-self-start" />
         </div>
       </div>

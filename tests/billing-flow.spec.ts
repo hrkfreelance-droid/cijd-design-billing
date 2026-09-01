@@ -373,8 +373,13 @@ test("invoice once, pay once", async ({ page }) => {
     (invoice: { status: string }) => invoice.status === "ISSUED",
   );
   expect(created.invoiceNumber).toMatch(/^CIJD-/);
+  expect(created.exchangeRate).toBe(4047);
+  expect(created.exchangeRateSource).toBe("NBC");
+  expect(created.exchangeRateEffectiveDate).toBe("2026-09-01");
 
-  await page.getByRole("button", { name: new RegExp(created.invoiceNumber) }).click();
+  const createdInvoiceRow = page.getByRole("button", { name: new RegExp(created.invoiceNumber) });
+  await expect(createdInvoiceRow).toContainText("៛");
+  await createdInvoiceRow.click();
   await expect(page.getByRole("button", { name: "PDF", exact: true })).toBeVisible();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download Invoice", exact: true }).click();
@@ -1040,5 +1045,20 @@ test("Billing and Accounting totals follow the selected client and tab", async (
       );
       expect(overflow, `${path} horizontal overflow at ${width}px`).toBe(0);
     }
+  }
+});
+
+test("Khmer language is available without changing user-entered names", async ({ page }) => {
+  await signIn(page, "u_billing");
+  for (const width of [320, 390, 1280]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/office/progress");
+    await page.getByRole("button", { name: "ខ្មែរ" }).click();
+    await expect(page.locator("html")).toHaveAttribute("lang", "km");
+    await expect(page.getByRole("heading", { name: "វឌ្ឍនភាព", level: 1 })).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `Khmer horizontal overflow at ${width}px`).toBe(0);
   }
 });

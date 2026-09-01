@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 
 import { useI18n, useSession } from "@/components/providers";
+import { CurrencyAmount } from "@/components/currency-amount";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { can } from "@/lib/auth/roles";
@@ -11,7 +12,7 @@ import {
   isProductionComplete,
   isPrintPriceConfirmed,
 } from "@/lib/derive";
-import { mediumDate, money } from "@/lib/format";
+import { mediumDate } from "@/lib/format";
 import type { BillingItem, Client, Project } from "@/lib/types";
 
 type ProgressState =
@@ -123,9 +124,15 @@ export default function ProgressPage() {
                           <span className="min-w-0 flex-1 truncate text-[14px] text-text">
                             {itemLabel(item)}
                           </span>
-                          <span className="tnum shrink-0 text-[13.5px] font-medium text-text">
-                            {itemAmount(item)}
-                          </span>
+                          {itemAmountValue(item) == null ? (
+                            <span className="tnum shrink-0 text-[13.5px] font-medium text-text">—</span>
+                          ) : (
+                            <CurrencyAmount
+                              usd={itemAmountValue(item)!}
+                              rate={scope.snapshot.exchangeRate?.rate}
+                              className="text-[13.5px] font-medium text-text"
+                            />
+                          )}
                           <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium leading-none ${STATE_STYLE[progressState(item)]}`}>
                             {t(STATE_KEY[progressState(item)])}
                           </span>
@@ -164,11 +171,11 @@ function itemLabel(item: BillingItem): string {
 }
 
 /** Show known current or suggested money without implying price certainty. */
-function itemAmount(item: BillingItem): string {
+function itemAmountValue(item: BillingItem): number | null {
   const values =
     item.type === "PRINT" && !isPrintPriceConfirmed(item)
       ? [item.suggestedAmount, item.amount]
       : [item.amount, item.suggestedAmount];
   const amount = values.find((value): value is number => value != null && value > 0);
-  return amount == null ? "—" : money(amount);
+  return amount == null ? null : amount;
 }

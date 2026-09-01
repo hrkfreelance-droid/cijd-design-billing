@@ -1,6 +1,7 @@
 "use client";
 
 import { useI18n } from "@/components/providers";
+import type { Locale } from "@/lib/i18n";
 import { StatusTag } from "@/components/ui";
 import type { HistoricalGroup } from "@/lib/historical";
 import { money } from "@/lib/format";
@@ -56,10 +57,10 @@ export function HistoricalRecordRow({ group }: { group: HistoricalGroup }) {
   );
 }
 
-function formatMonth(month: string, locale: "ja" | "en"): string {
+function formatMonth(month: string, locale: Locale): string {
   const [year, rawMonth] = month.split("-").map(Number);
   if (!year || !rawMonth) return month;
-  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : "en-US", {
+  return new Intl.DateTimeFormat(locale === "ja" ? "ja-JP" : locale === "kh" ? "km-KH" : "en-US", {
     year: "numeric",
     month: "long",
   }).format(new Date(year, rawMonth - 1, 1));

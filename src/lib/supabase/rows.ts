@@ -1,6 +1,7 @@
 import type {
   BillingItem,
   Client,
+  ExchangeRate,
   Invoice,
   InvoiceItem,
   Payment,
@@ -77,6 +78,10 @@ export const toInvoice = (row: Row): Invoice => ({
   invoiceNumber: (row.invoice_number as string) ?? null,
   invoiceDate: (row.invoice_date as string) ?? null,
   amount: numeric(row.amount),
+  exchangeRate: row.exchange_rate == null ? null : numeric(row.exchange_rate),
+  exchangeRateSource: (row.exchange_rate_source as string) ?? null,
+  exchangeRateEffectiveDate: (row.exchange_rate_effective_date as string) ?? null,
+  exchangeRateFetchedAt: (row.exchange_rate_fetched_at as string) ?? null,
   status: row.status as Invoice["status"],
   paymentDate: (row.payment_date as string) ?? null,
   paymentSlip: (row.payment_slip as string) ?? null,
@@ -85,6 +90,15 @@ export const toInvoice = (row: Row): Invoice => ({
   createdBy: str(row.created_by),
   updatedAt: str(row.updated_at),
   updatedBy: str(row.updated_by),
+});
+
+export const toExchangeRate = (row: Row): ExchangeRate => ({
+  id: str(row.id),
+  currencyPair: str(row.currency_pair) as ExchangeRate["currencyPair"],
+  rate: numeric(row.rate),
+  source: str(row.source) as ExchangeRate["source"],
+  effectiveDate: str(row.effective_date),
+  fetchedAt: str(row.fetched_at),
 });
 
 export const toInvoiceItem = (row: Row): InvoiceItem => ({

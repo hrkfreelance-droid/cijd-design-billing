@@ -46,8 +46,10 @@ export function setTheme(theme: Theme) {
 
 export function getLocale(): Locale {
   const stored = localStorage.getItem(LOCALE_KEY);
-  if (stored === "ja" || stored === "en") return stored;
-  return navigator.language.startsWith("ja") ? "ja" : "en";
+  if (stored === "ja" || stored === "en" || stored === "kh") return stored;
+  if (navigator.language.startsWith("ja")) return "ja";
+  if (navigator.language.startsWith("km") || navigator.language.startsWith("kh")) return "kh";
+  return "en";
 }
 
 export function setLocale(locale: Locale) {

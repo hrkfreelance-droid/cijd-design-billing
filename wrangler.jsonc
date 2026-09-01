@@ -5,13 +5,16 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  "main": "vinext/server/fetch-handler",
+  "main": "./worker/index.ts",
   "assets": {
     "directory": "dist/client",
     "not_found_handling": "none",
     "binding": "ASSETS"
   },
   "workers_dev": true,
+  "triggers": {
+    "crons": ["0 1 * * *"]
+  },
   "vars": {
     "CIJD_PREVIEW_MODE": "1",
     "CIJD_ACCESS_LINKS_ENABLED": "1"

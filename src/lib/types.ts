@@ -108,6 +108,11 @@ export interface Invoice {
   /** Null is reserved for imported history where the date was unknown. */
   invoiceDate: string | null; // yyyy-mm-dd
   amount: number;
+  /** The NBC USD/KHR snapshot used when this invoice was issued. */
+  exchangeRate?: number | null;
+  exchangeRateSource?: string | null;
+  exchangeRateEffectiveDate?: string | null;
+  exchangeRateFetchedAt?: string | null;
   status: InvoiceStatus;
   paymentDate?: string | null;
   paymentSlip?: string | null;
@@ -116,6 +121,23 @@ export interface Invoice {
   createdBy: string;
   updatedAt: string;
   updatedBy: string;
+}
+
+export interface ExchangeRate {
+  id: string;
+  currencyPair: "USD/KHR";
+  rate: number;
+  source: "NBC";
+  effectiveDate: string;
+  fetchedAt: string;
+}
+
+export interface ExchangeRateFailure {
+  id: string;
+  source: "NBC";
+  effectiveDate: string;
+  attemptedAt: string;
+  error: string;
 }
 
 export interface InvoiceItem {
@@ -193,6 +215,8 @@ export interface Database {
   auditLogs: AuditLog[];
   telegramSessions: TelegramSession[];
   notifications: Notification[];
+  exchangeRates: ExchangeRate[];
+  exchangeRateFailures: ExchangeRateFailure[];
 }
 
 /** Everything the UI needs, in one round trip. */
@@ -203,6 +227,8 @@ export interface Snapshot {
   invoices: Invoice[];
   invoiceItems: InvoiceItem[];
   users: User[];
+  /** Latest successful NBC rate, used for current operational estimates. */
+  exchangeRate: ExchangeRate | null;
   mode: "local" | "supabase";
   /** Which slice of the data this snapshot contains, given the viewer's role. */
   scope: { production: boolean; billing: boolean; payment: boolean; printing?: boolean };

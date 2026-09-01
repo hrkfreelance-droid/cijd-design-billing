@@ -20,6 +20,7 @@ import type {
 } from "@/lib/types";
 import {
   toClient,
+  toExchangeRate,
   toInvoice,
   toInvoiceItem,
   toItem,
@@ -28,6 +29,7 @@ import {
 } from "./rows";
 import { isProductionComplete, isPrintPriceConfirmed } from "@/lib/derive";
 import { roundMoney } from "@/lib/format";
+import { latestExchangeRate } from "@/lib/exchange-rate";
 
 const DEFAULT_ACTOR = "Hiroki";
 
@@ -66,9 +68,14 @@ function fail(error: PostgrestError | null): never {
     "PRICE_REVIEW_REQUIRED",
     "INVALID_PRINT",
     "HISTORY_READ_ONLY",
+    "EXCHANGE_RATE_UNAVAILABLE",
   ];
   if (known.includes(code)) {
-    throw new RuleError(code, error.details || code, code === "NOT_FOUND" ? 404 : 409);
+    throw new RuleError(
+      code,
+      error.details || code,
+      code === "NOT_FOUND" ? 404 : code === "EXCHANGE_RATE_UNAVAILABLE" ? 503 : 409,
+    );
   }
   // Row level security refused the read or write.
   if (error.code === "42501" || error.code === "PGRST301") {
@@ -80,7 +87,11 @@ function fail(error: PostgrestError | null): never {
   if (error.code === "23514") {
     throw new RuleError("NOT_DELIVERED", "Finish the work before billing it.");
   }
-  throw new RuleError("INTERNAL", error.message || "Database error", 500);
+    throw new RuleError(
+      "INTERNAL",
+      error.message || "Database error",
+      500,
+    );
 }
 
 function unwrap<T>(result: { data: T | null; error: PostgrestError | null }): T {
@@ -106,20 +117,31 @@ export class SupabaseRepository implements Repository {
   ) {}
 
   async getSnapshot(): Promise<Snapshot> {
-    const [clients, projects, items, invoices, invoiceItems, users] = await Promise.all([
+    const [clients, projects, items, invoices, invoiceItems, users, exchangeRates] = await Promise.all([
       this.db.from("clients").select("*").order("name"),
       this.db.from("projects").select("*").is("deleted_at", null),
       this.db.from("billing_items").select("*").is("deleted_at", null),
       this.db.from("invoices").select("*"),
       this.db.from("invoice_items").select("*"),
       this.db.from("users").select("*"),
+      this.db.from("exchange_rates").select("*").eq("currency_pair", "USD/KHR"),
     ]);
     for (const result of [clients, projects, items, invoices, invoiceItems, users]) {
       if (result.error && result.error.code !== "42501" && result.error.code !== "PGRST301") {
         fail(result.error);
       }
     }
+    // The migration is additive. Keep the read-only screens usable while a
+    // deployment is waiting for the migration, but do not allow a new
+    // invoice to be issued until the rate table exists.
+    if (
+      exchangeRates.error &&
+      !["42P01", "PGRST205"].includes(exchangeRates.error.code ?? "")
+    ) {
+      fail(exchangeRates.error);
+    }
     const billingItems = (items.data ?? []).map(toItem);
+    const rates = (exchangeRates.data ?? []).map(toExchangeRate);
     return {
       clients: (clients.data ?? []).map(toClient),
       projects: (projects.data ?? []).map(toProject),
@@ -127,6 +149,7 @@ export class SupabaseRepository implements Repository {
       invoices: (invoices.data ?? []).map(toInvoice),
       invoiceItems: (invoiceItems.data ?? []).map(toInvoiceItem),
       users: (users.data ?? []).map(toUser),
+      exchangeRate: latestExchangeRate(rates),
       mode: this.mode,
       // Filled in by the guard; what came back is already what may be seen.
       scope: { production: true, billing: true, payment: true },
@@ -593,6 +616,14 @@ export class SupabaseRepository implements Repository {
   }
 
   async createInvoice(input: CreateInvoiceInput) {
+    const rateTable = await this.db.from("exchange_rates").select("id").limit(1).maybeSingle();
+    if (rateTable.error) {
+      throw new RuleError(
+        "EXCHANGE_RATE_UNAVAILABLE",
+        "The official NBC exchange-rate table is not ready.",
+        503,
+      );
+    }
     const invoiceNumber = input.invoiceNumber?.trim() || autoInvoiceNumber();
     const result = await this.db.rpc("create_invoice", {
       p_client_id: input.clientId,

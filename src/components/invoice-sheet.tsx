@@ -6,6 +6,7 @@ import { api, useI18n } from "@/components/providers";
 import { useSession } from "@/components/providers";
 import { useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
+import { CurrencyAmount } from "@/components/currency-amount";
 import {
   Amount,
   Button,
@@ -171,7 +172,12 @@ export function InvoiceSheet({
 
           <div className="mt-1 flex items-center justify-between border-t border-line-strong pt-3">
             <span className="text-[14px] font-medium">{t("common.total")}</span>
-            <Amount value={money(invoice.amount)} strong className="text-[17px]" />
+            <CurrencyAmount
+              usd={invoice.amount}
+              rate={invoice.exchangeRate}
+              strong
+              className="text-[17px]"
+            />
           </div>
 
           <dl className="mt-5 space-y-2.5 text-[13.5px]">
@@ -192,6 +198,11 @@ export function InvoiceSheet({
             <Detail label={t("common.status")}>
               {invoice.status === "PAID" ? t("status.PAID") : t("status.INVOICED")}
             </Detail>
+            {invoice.exchangeRate && invoice.exchangeRate > 0 && (
+              <Detail label={t("currency.rateLabel")}>
+                {t("currency.rate", { rate: invoice.exchangeRate })}
+              </Detail>
+            )}
           </dl>
         </div>
       </Sheet>

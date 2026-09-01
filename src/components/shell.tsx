@@ -125,11 +125,11 @@ export function Workspace({
           <div className="flex shrink-0 items-center gap-1">
             {showMode && <ModeBadge mode={mode} className="hidden sm:inline-flex" />}
             <div className="flex items-center rounded-full bg-fill p-[2px]">
-              {(["ja", "en"] as const).map((code) => (
+              {(["ja", "en", "kh"] as const).map((code) => (
                 <button
                   key={code}
                   onClick={() => setLocale(code)}
-                  aria-label={code === "ja" ? "日本語" : "English"}
+                  aria-label={code === "ja" ? "日本語" : code === "kh" ? "ខ្មែរ" : "English"}
                   aria-pressed={locale === code}
                   className={`h-7 rounded-full px-2.5 text-[11.5px] font-medium uppercase tracking-wide transition-colors duration-150 ${
                     locale === code

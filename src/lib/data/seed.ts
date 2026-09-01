@@ -64,6 +64,8 @@ export function buildSeed(): Database {
     payments: [],
     telegramSessions: [],
     notifications: [],
+    exchangeRates: [],
+    exchangeRateFailures: [],
     users: [
       { id: "u_hiroki", name: "Hiroki", role: "DESIGNER" },
       { id: "u_billing", name: "Billing Staff", role: "BILLING" },
@@ -76,6 +78,20 @@ export function buildSeed(): Database {
   const history = buildRingerHutHistory(now);
   db.projects.push(...history.projects);
   db.billingItems.push(...history.billingItems);
+
+  // Playwright runs offline in CI. Its explicit test-only fixture keeps the
+  // accounting flow deterministic without adding a fallback to production.
+  const testRate = Number(process.env.CIJD_TEST_NBC_RATE);
+  if (process.env.CIJD_TEST_MODE === "1" && Number.isFinite(testRate) && testRate > 0) {
+    db.exchangeRates.push({
+      id: "test-nbc-usd-khr",
+      currencyPair: "USD/KHR",
+      rate: testRate,
+      source: "NBC",
+      effectiveDate: process.env.CIJD_TEST_NBC_RATE_DATE ?? "2026-09-01",
+      fetchedAt: now,
+    });
+  }
 
   return db;
 }

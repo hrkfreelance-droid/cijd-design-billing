@@ -240,7 +240,17 @@ export function PageHeader({
   );
 }
 
-export function PageTotal({ value, label }: { value: string; label?: string }) {
+export function PageTotal({
+  value,
+  label,
+  secondaryValue,
+  secondaryLabel,
+}: {
+  value: string;
+  label?: string;
+  secondaryValue?: string;
+  secondaryLabel?: string;
+}) {
   const { t } = useI18n();
   return (
     <div data-testid="page-total" className="shrink-0 text-right">
@@ -250,6 +260,12 @@ export function PageTotal({ value, label }: { value: string; label?: string }) {
       <span className="tnum block text-[19px] font-semibold leading-tight tracking-[-0.02em]">
         {value}
       </span>
+      {secondaryValue && (
+        <span className="tnum mt-0.5 block whitespace-nowrap text-[12px] font-medium text-muted">
+          {secondaryValue}
+          {secondaryLabel ? ` · ${secondaryLabel}` : ""}
+        </span>
+      )}
     </div>
   );
 }

@@ -4,11 +4,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { ChevronDown } from "@/components/icons";
+import { CurrencyAmount } from "@/components/currency-amount";
 import { api, useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
 import {
-  Amount,
   Button,
   Checkbox,
   EmptyState,
@@ -22,6 +22,7 @@ import {
   isProductionComplete,
   sum,
 } from "@/lib/derive";
+import { formatKhr } from "@/lib/exchange-rate";
 import { money, todayIso } from "@/lib/format";
 import { downloadInvoicePdf } from "@/lib/invoice-pdf";
 import type { BillingItem, Client, Invoice } from "@/lib/types";
@@ -73,6 +74,11 @@ export default function OfficeBillingPage() {
 
   if (!scope || !allowed) return <PageSkeleton />;
 
+  const readyTotal = groups
+    .flatMap((group) => group.items)
+    .reduce((total, item) => total + item.amount, 0);
+  const currentRate = scope.snapshot.exchangeRate?.rate;
+
   return (
     <div className="animate-rise">
       <PageHeader
@@ -80,7 +86,9 @@ export default function OfficeBillingPage() {
         subtitle={scope.client ? scope.client.name : t("client.all")}
         action={
           <PageTotal
-            value={money(groups.flatMap((group) => group.items).reduce((total, item) => total + item.amount, 0))}
+            value={money(readyTotal)}
+            secondaryValue={currentRate ? formatKhr(readyTotal, currentRate) : undefined}
+            secondaryLabel={currentRate ? t("currency.rate", { rate: currentRate }) : undefined}
           />
         }
       />
@@ -133,7 +141,7 @@ function PrintPriceQueue({ items }: { items: BillingItem[] }) {
                 </span>
                 <span className="shrink-0 text-right">
                   <span className="block text-[14.5px] tnum">
-                    {unknownAmount ? t("billing.amountUnknown") : money(item.amount)}
+                    {unknownAmount ? t("billing.amountUnknown") : <CurrencyAmount usd={item.amount} rate={scope?.snapshot.exchangeRate?.rate} className="text-[14.5px]" />}
                   </span>
                   <span className="mt-1 block text-[12px] text-review">
                     {t("billing.printPricePending")}
@@ -235,7 +243,12 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
         <span className="text-[12.5px] text-faint">
           {t("billing.items", { count: items.length })}
         </span>
-        <Amount value={money(sum(items))} strong className="text-[15px]" />
+        <CurrencyAmount
+          usd={sum(items)}
+          rate={scope?.snapshot.exchangeRate?.rate}
+          strong
+          className="text-[15px]"
+        />
       </button>
 
       {open && (
@@ -261,8 +274,9 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
                       {project.items.map((item) => item.description).join(" · ")}
                     </span>
                   </button>
-                  <Amount
-                    value={money(project.total)}
+                  <CurrencyAmount
+                    usd={project.total}
+                    rate={scope?.snapshot.exchangeRate?.rate}
                     className={`text-[14.5px] transition-opacity duration-150 ${
                       checked ? "" : "opacity-45"
                     }`}
@@ -275,7 +289,11 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
           <div className="flex flex-col gap-3 border-t border-line px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <span className="text-[13px] text-muted">
               {t("billing.selected", { count: selectedItems.length })} ·{" "}
-              <span className="tnum">{money(sum(selectedItems))}</span>
+              <CurrencyAmount
+                usd={sum(selectedItems)}
+                rate={scope?.snapshot.exchangeRate?.rate}
+                className="inline-block text-[13px]"
+              />
             </span>
             <Button
               variant="primary"

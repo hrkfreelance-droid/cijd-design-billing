@@ -25,6 +25,7 @@ import {
   priceState,
   sum,
 } from "@/lib/derive";
+import { formatKhr } from "@/lib/exchange-rate";
 import { money, monthLabel } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
@@ -79,6 +80,19 @@ export default function ProjectsPage() {
             <PageTotal
               value={money(sum(inProgressItems.filter((item) => item.amount > 0)))}
               label={estimated ? t("projects.estimatedTotal") : undefined}
+              secondaryValue={
+                scope.snapshot.exchangeRate
+                  ? formatKhr(
+                      sum(inProgressItems.filter((item) => item.amount > 0)),
+                      scope.snapshot.exchangeRate.rate,
+                    )
+                  : undefined
+              }
+              secondaryLabel={
+                scope.snapshot.exchangeRate
+                  ? t("currency.rate", { rate: scope.snapshot.exchangeRate.rate })
+                  : undefined
+              }
             />
             <Button variant="secondary" onClick={() => setCreating(true)}>
               <PlusIcon className="h-[15px] w-[15px]" />

@@ -1,11 +1,11 @@
 "use client";
 
 import { ChevronRight } from "@/components/icons";
+import { CurrencyAmount } from "@/components/currency-amount";
 import { useI18n } from "@/components/providers";
 import { useScope } from "@/components/scope";
-import { Amount } from "@/components/ui";
 import { archiveInvoiceDate } from "@/lib/historical";
-import { mediumDate, money } from "@/lib/format";
+import { mediumDate } from "@/lib/format";
 import type { Invoice } from "@/lib/types";
 
 export function InvoiceListRow({
@@ -60,7 +60,11 @@ export function InvoiceListRow({
           </span>
         )}
       </span>
-      <Amount value={money(invoice.amount)} className="text-[15px]" />
+      <CurrencyAmount
+        usd={invoice.amount}
+        rate={invoice.exchangeRate}
+        className="text-[15px]"
+      />
       <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
     </button>
   );

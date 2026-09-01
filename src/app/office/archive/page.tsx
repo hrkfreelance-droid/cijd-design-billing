@@ -10,6 +10,7 @@ import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { EmptyState, PageHeader, PageTotal, Select } from "@/components/ui";
 import { monthKey } from "@/lib/derive";
+import { khrAmount } from "@/lib/exchange-rate";
 import {
   archiveInvoiceDate,
   groupHistoricalItems,
@@ -106,6 +107,12 @@ export default function ArchivePage() {
   const knownTotal =
     paidRows.reduce((total, invoice) => total + invoice.amount, 0) +
     historyRows.reduce((total, group) => total + group.amount, 0);
+  const khrTotal =
+    historyRows.length === 0 && paidRows.length > 0 && paidRows.every(
+      (invoice) => invoice.exchangeRate && invoice.exchangeRate > 0,
+    )
+      ? paidRows.reduce((total, invoice) => total + khrAmount(invoice.amount, invoice.exchangeRate!), 0)
+      : null;
 
   if (!scope) return <PageSkeleton />;
 
@@ -117,7 +124,13 @@ export default function ArchivePage() {
           invoices: paid.length,
           history: historical.reduce((total, group) => total + group.items.length, 0),
         })}
-        action={<PageTotal value={knownTotal > 0 ? money(knownTotal) : "—"} label={t("projects.knownTotal")} />}
+        action={
+          <PageTotal
+            value={knownTotal > 0 ? money(knownTotal) : "—"}
+            label={t("projects.knownTotal")}
+            secondaryValue={khrTotal == null ? undefined : `៛${khrTotal.toLocaleString("en-US")}`}
+          />
+        }
       />
 
       <div className="flex flex-col gap-2.5 px-5 pb-5 sm:flex-row sm:items-center sm:px-8">

@@ -23,7 +23,7 @@ export default defineConfig({
     // .env.local the app boots in Supabase mode, where the development
     // sign-in this suite relies on is correctly refused. Blanking them keeps
     // the run on the throwaway local store and away from production data.
-    command: `rm -f .data/test.json && NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= SUPABASE_SERVICE_ROLE_KEY= CIJD_DATA_FILE=.data/test.json CIJD_NEXT_DIST_DIR=.next-test TELEGRAM_WEBHOOK_SECRET=test-secret npx next dev -p ${PORT}`,
+    command: `rm -f .data/test.json && NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= SUPABASE_SERVICE_ROLE_KEY= CIJD_DATA_FILE=.data/test.json CIJD_NEXT_DIST_DIR=.next-test CIJD_TEST_MODE=1 CIJD_TEST_NBC_RATE=4047 CIJD_TEST_NBC_RATE_DATE=2026-09-01 TELEGRAM_WEBHOOK_SECRET=test-secret npx next dev -p ${PORT}`,
     url: `http://localhost:${PORT}`,
     stdout: "pipe",
     stderr: "pipe",

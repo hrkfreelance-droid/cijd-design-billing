@@ -142,7 +142,7 @@ export function Providers({ children }: { children: ReactNode }) {
   }, [theme]);
 
   useEffect(() => {
-    document.documentElement.lang = locale;
+    document.documentElement.lang = locale === "kh" ? "km" : locale;
   }, [locale]);
 
   const signIn = useCallback(async (userId: string) => {
