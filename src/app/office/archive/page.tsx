@@ -10,6 +10,7 @@ import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { EmptyState, PageHeader, Select } from "@/components/ui";
 import { monthKey } from "@/lib/derive";
+import { formatKhr } from "@/lib/exchange-rate";
 import {
   archiveInvoiceDate,
   groupHistoricalItems,
@@ -112,6 +113,8 @@ export default function ArchivePage() {
 
   if (!scope) return <PageSkeleton />;
 
+  const exchangeRate = scope.snapshot.exchangeRate;
+
   return (
     <div className="animate-rise">
       <PageHeader
@@ -128,6 +131,9 @@ export default function ArchivePage() {
             <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">
               {knownTotal > 0 ? money(knownTotal) : "—"}
             </p>
+            {exchangeRate && knownTotal > 0 ? (
+              <p className="tnum mt-0.5 text-[11px] text-faint">≈{formatKhr(knownTotal, exchangeRate.rate)}</p>
+            ) : null}
           </div>
         }
       />
