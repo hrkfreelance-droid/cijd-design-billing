@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 
+import { CompactSummaryHeader } from "@/components/compact-summary-header";
 import { CompletedMark, DeliveredMark } from "@/components/delivery";
 import { ChevronRight } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, PageTotal, StatusTag } from "@/components/ui";
+import { Amount, EmptyState, StatusTag } from "@/components/ui";
 import { flowStatus, isDesignerReady, isOperationalRecord, sum } from "@/lib/derive";
-import { formatKhr } from "@/lib/exchange-rate";
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
@@ -37,27 +37,11 @@ export default function DeliveredPage() {
 
   return (
     <div className="animate-rise">
-      <PageHeader
+      <CompactSummaryHeader
         title={t("delivered.title")}
         subtitle={t("delivered.subtitle")}
-        action={
-          <PageTotal
-            value={money(sum(readyItems))}
-            secondaryValue={
-              scope.snapshot.exchangeRate
-                ? formatKhr(sum(readyItems), scope.snapshot.exchangeRate.rate)
-                : undefined
-            }
-            secondaryLabel={
-              scope.snapshot.exchangeRate
-                ? t("currency.rate", { rate: scope.snapshot.exchangeRate.rate })
-                : undefined
-            }
-            rate={scope.snapshot.exchangeRate?.rate}
-            rateEffectiveDate={scope.snapshot.exchangeRate?.effectiveDate}
-            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
-          />
-        }
+        label={t("common.total")}
+        value={money(sum(readyItems))}
       />
 
       {groups.length === 0 ? (
@@ -74,9 +58,6 @@ export default function DeliveredPage() {
                 <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">
                   {scope.idx.projectById.get(projectId)?.name}
                 </span>
-                {/* Billing status belongs on the same wrapping line as the
-                    rest of the meta, so it survives a narrow screen instead of
-                    being hidden at the one width where space is tightest. */}
                 <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
                   <span>{scope.clientOf(projectId)?.name}</span>
                   {items[0]?.productionStatus === "COMPLETED" ? (
