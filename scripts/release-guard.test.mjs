@@ -12,7 +12,7 @@ test("manual review deploy is hard-locked to the canonical branch and preview wo
   assert.ok(!source.includes("versions upload"));
 });
 
-test("Cloudflare Git deploy remains compatible while worker target stays preview-only", async () => {
+test("Cloudflare Git deploy remains compatible while worker target stays preview-only and authenticated", async () => {
   const pkg = JSON.parse(await read("package.json"));
   const wrangler = await read("wrangler.jsonc");
   assert.equal(pkg.scripts["deploy:review"], "node scripts/deploy-review.mjs");
@@ -22,6 +22,7 @@ test("Cloudflare Git deploy remains compatible while worker target stays preview
   );
   assert.ok(wrangler.includes('"name": "cijd-design-billing-preview"'));
   assert.ok(!wrangler.includes('"name": "cijd-design-billing"'));
+  assert.ok(!wrangler.includes('"CIJD_PILOT_MODE": "1"'));
 });
 
 test("live verifier compares canonical commit with remote and blocks false completion", async () => {
