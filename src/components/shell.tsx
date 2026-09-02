@@ -49,12 +49,6 @@ function isActive(pathname: string, href: string, nav: NavItem[]) {
   return !nav.some((item) => item.href !== href && pathname.startsWith(item.href));
 }
 
-function workspaceTitle(workspace: "designer" | "printing" | "office") {
-  if (workspace === "designer") return "Design";
-  if (workspace === "printing") return "Printing";
-  return "Billing";
-}
-
 export function Workspace({
   nav,
   workspace,
@@ -97,7 +91,7 @@ export function Workspace({
             <Link href={homeFor(user.role)} className="min-w-0 shrink leading-none">
               <span className="block truncate text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">CIJD</span>
               <span className="mt-[3px] block truncate text-[15px] font-semibold tracking-[-0.012em] text-text">
-                {workspaceTitle(workspace)}
+                Billing
               </span>
             </Link>
 
