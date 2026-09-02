@@ -15,7 +15,6 @@ import {
   priceState,
   sum,
 } from "@/lib/derive";
-import { formatKhr } from "@/lib/exchange-rate";
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
@@ -60,7 +59,6 @@ export default function ProjectsPage() {
 
   const estimated = inProgressItems.some((item) => priceState(item) !== "CONFIRMED");
   const total = sum(inProgressItems.filter((item) => item.amount > 0));
-  const rate = scope.snapshot.exchangeRate?.rate;
 
   return (
     <div className="animate-rise mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
@@ -77,11 +75,6 @@ export default function ProjectsPage() {
             {estimated ? t("projects.estimatedTotal") : t("projects.total")}
           </p>
           <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">{money(total)}</p>
-          {rate ? (
-            <p className="tnum mt-0.5 text-[11.5px] text-muted">
-              {formatKhr(total, rate)} · NBC {rate.toLocaleString()} KHR/USD
-            </p>
-          ) : null}
         </div>
       </header>
 
