@@ -87,23 +87,28 @@ export function Workspace({
     <div className="min-h-dvh bg-bg">
       <header className="header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
         <div className="mx-auto max-w-4xl">
-          <div className="flex min-w-0 items-center justify-between gap-3 px-5 py-3 sm:px-8">
-            <Link href={homeFor(user.role)} className="min-w-0 shrink leading-none">
-              <span className="block truncate text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">CIJD</span>
-              <span className="mt-[3px] block truncate text-[15px] font-semibold tracking-[-0.012em] text-text">
+          <div className="flex min-h-[52px] min-w-0 items-center justify-between gap-2 px-3 py-1 sm:min-h-[60px] sm:gap-3 sm:px-8 sm:py-2.5">
+            <Link
+              href={homeFor(user.role)}
+              className="flex min-w-0 shrink items-baseline gap-2 leading-none sm:gap-2.5"
+            >
+              <span className="truncate text-[10.5px] font-semibold uppercase tracking-[0.16em] text-faint sm:text-[11px]">
+                CIJD
+              </span>
+              <span className="truncate text-[18px] font-semibold tracking-[-0.02em] text-text sm:text-[19px]">
                 Billing
               </span>
             </Link>
 
-            <div className="flex shrink-0 items-center gap-1">
-              <div className="flex items-center rounded-full bg-fill p-[2px]">
+            <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
+              <div className="flex min-h-11 items-center rounded-full bg-fill px-[2px] sm:min-h-0 sm:p-[2px]">
                 {(["ja", "en", "kh"] as const).map((code) => (
                   <button
                     key={code}
                     onClick={() => setLocale(code)}
                     aria-label={code === "ja" ? "日本語" : code === "kh" ? "ខ្មែរ" : "English"}
                     aria-pressed={locale === code}
-                    className={`h-7 rounded-full px-2.5 text-[11.5px] font-medium uppercase tracking-wide transition-colors duration-150 ${
+                    className={`h-11 min-w-11 rounded-full px-2 text-[12px] font-medium uppercase tracking-wide transition-colors duration-150 sm:h-7 sm:min-w-0 sm:px-2.5 sm:text-[11.5px] ${
                       locale === code
                         ? "bg-raise text-text shadow-[0_1px_2px_rgba(0,0,0,0.10)]"
                         : "text-faint hover:text-muted"
@@ -117,6 +122,7 @@ export function Workspace({
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
                 aria-label={t("theme.toggle")}
                 title={t(theme === "dark" ? "theme.light" : "theme.dark")}
+                className="!h-11 !w-11 sm:!h-9 sm:!w-9"
               >
                 {theme === "dark" ? <SunIcon /> : <MoonIcon />}
               </IconButton>
@@ -127,7 +133,7 @@ export function Workspace({
           {workspace !== "office" && <ServiceBar current={workspace} spaces={spaces} />}
 
           <nav aria-label="Workspace navigation" className="border-t border-line">
-            <div className="no-scrollbar flex min-w-0 items-center gap-4 overflow-x-auto px-5 sm:px-8">
+            <div className="no-scrollbar flex min-w-0 items-center gap-5 overflow-x-auto px-4 sm:gap-4 sm:px-8">
               {visibleNav.map(({ href, key }) => {
                 const active = isActive(pathname, href, visibleNav);
                 return (
@@ -135,7 +141,7 @@ export function Workspace({
                     key={href}
                     href={href}
                     aria-current={active ? "page" : undefined}
-                    className={`flex h-10 shrink-0 items-center border-b-2 px-0.5 text-[12px] font-medium transition-colors duration-150 ${
+                    className={`flex h-11 shrink-0 items-center border-b-2 px-0.5 text-[13px] font-medium transition-colors duration-150 sm:h-10 sm:text-[12px] ${
                       active ? "border-accent text-text" : "border-transparent text-faint hover:text-text"
                     }`}
                   >
@@ -173,7 +179,7 @@ function ServiceBar({
 
   return (
     <div className="border-t border-line">
-      <div className="no-scrollbar flex min-w-0 items-center gap-1.5 overflow-x-auto px-5 py-2 sm:px-8">
+      <div className="no-scrollbar flex min-w-0 items-center gap-1.5 overflow-x-auto px-4 py-2 sm:px-8">
         {services.map((service) => {
           if ("disabled" in service) {
             return (
@@ -182,7 +188,7 @@ function ServiceBar({
                 type="button"
                 disabled
                 aria-disabled="true"
-                className="h-7 shrink-0 cursor-not-allowed rounded-full bg-fill/55 px-3 text-[12px] font-medium text-faint/45"
+                className="h-9 shrink-0 cursor-not-allowed rounded-full bg-fill/55 px-3.5 text-[12.5px] font-medium text-faint/45 sm:h-7 sm:px-3 sm:text-[12px]"
               >
                 {service.label}
               </button>
@@ -197,7 +203,7 @@ function ServiceBar({
                 type="button"
                 disabled
                 aria-disabled="true"
-                className="h-7 shrink-0 cursor-not-allowed rounded-full px-3 text-[12px] font-medium text-faint/35"
+                className="h-9 shrink-0 cursor-not-allowed rounded-full px-3.5 text-[12.5px] font-medium text-faint/35 sm:h-7 sm:px-3 sm:text-[12px]"
               >
                 {service.label}
               </button>
@@ -208,7 +214,7 @@ function ServiceBar({
               key={service.label}
               href={service.href}
               aria-current={active ? "page" : undefined}
-              className={`flex h-7 shrink-0 items-center rounded-full px-3 text-[12px] font-medium transition-colors ${
+              className={`flex h-9 shrink-0 items-center rounded-full px-3.5 text-[12.5px] font-medium transition-colors sm:h-7 sm:px-3 sm:text-[12px] ${
                 active ? "bg-accent/10 text-accent" : "text-muted hover:bg-fill hover:text-text"
               }`}
             >
@@ -258,7 +264,7 @@ function UserMenu({ workspace }: { workspace: "designer" | "printing" | "office"
       <button
         onClick={() => setOpen(true)}
         aria-label={user.name}
-        className="ml-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fill text-[12px] font-semibold text-muted transition-colors hover:bg-fill-strong hover:text-text"
+        className="ml-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fill text-[12px] font-semibold text-muted transition-colors hover:bg-fill-strong hover:text-text sm:h-8 sm:w-8"
       >
         {user.name.slice(0, 1).toUpperCase()}
       </button>
