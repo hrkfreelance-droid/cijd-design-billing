@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from "react";
 
+import { CompactSummaryHeader } from "@/components/compact-summary-header";
 import { SearchIcon } from "@/components/icons";
 import { HistoricalRecordRow } from "@/components/historical-record-row";
 import { InvoiceSheet } from "@/components/invoice-sheet";
 import { InvoiceListRow } from "@/components/invoice-list-row";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { EmptyState, PageHeader, Select } from "@/components/ui";
+import { EmptyState, Select } from "@/components/ui";
 import { monthKey } from "@/lib/derive";
 import { formatKhr } from "@/lib/exchange-rate";
 import {
@@ -34,10 +35,7 @@ export default function ArchivePage() {
   );
 
   const historical = useMemo(
-    () =>
-      scope
-        ? groupHistoricalItems(scope.items, scope.idx.projectById, scope.idx.clientById)
-        : [],
+    () => scope ? groupHistoricalItems(scope.items, scope.idx.projectById, scope.idx.clientById) : [],
     [scope],
   );
 
@@ -74,39 +72,24 @@ export default function ArchivePage() {
   const historyRows = useMemo(() => {
     const term = query.trim().toLowerCase();
     const rows = historical.flatMap((group) => {
-      const items = month
-        ? group.items.filter((item) => historicalMonth(item) === month)
-        : group.items;
+      const items = month ? group.items.filter((item) => historicalMonth(item) === month) : group.items;
       if (!items.length) return [];
       if (term) {
-        const searchable = `${group.project.name} ${group.client.name} ${items
-          .map((item) => item.description)
-          .join(" ")}`.toLowerCase();
+        const searchable = `${group.project.name} ${group.client.name} ${items.map((item) => item.description).join(" ")}`.toLowerCase();
         if (!searchable.includes(term)) return [];
       }
       return [{
         ...group,
         items,
         amount: items.reduce((total, item) => total + item.amount, 0),
-        months: Array.from(new Set(items.map(historicalMonth))).sort(
-          (a, b) => b.localeCompare(a),
-        ),
-        statuses: Array.from(
-          new Set(
-            items.map((item) =>
-              item.billingStatus === "INVOICED"
-                ? ("INVOICED" as const)
-                : ("NEEDS_REVIEW" as const),
-            ),
-          ),
-        ),
+        months: Array.from(new Set(items.map(historicalMonth))).sort((a, b) => b.localeCompare(a)),
+        statuses: Array.from(new Set(items.map((item) => item.billingStatus === "INVOICED" ? ("INVOICED" as const) : ("NEEDS_REVIEW" as const)))),
       }];
     });
     return sortHistoricalGroups(rows);
   }, [historical, query, month]);
 
   const hasAnyArchive = paid.length > 0 || historical.length > 0;
-
   const knownTotal =
     paidRows.reduce((total, invoice) => total + invoice.amount, 0) +
     historyRows.reduce((total, group) => total + group.amount, 0);
@@ -117,25 +100,15 @@ export default function ArchivePage() {
 
   return (
     <div className="animate-rise">
-      <PageHeader
+      <CompactSummaryHeader
         title={t("archive.title")}
         subtitle={t("archive.summary", {
           invoices: paid.length,
           history: historical.reduce((total, group) => total + group.items.length, 0),
         })}
-        action={
-          <div className="shrink-0 text-right">
-            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
-              {t("projects.knownTotal")}
-            </p>
-            <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">
-              {knownTotal > 0 ? money(knownTotal) : "—"}
-            </p>
-            {exchangeRate && knownTotal > 0 ? (
-              <p className="tnum mt-0.5 text-[11px] text-faint">≈{formatKhr(knownTotal, exchangeRate.rate)}</p>
-            ) : null}
-          </div>
-        }
+        label={t("projects.knownTotal")}
+        value={knownTotal > 0 ? money(knownTotal) : "—"}
+        secondaryValue={exchangeRate && knownTotal > 0 ? `≈${formatKhr(knownTotal, exchangeRate.rate)}` : undefined}
       />
 
       <div className="flex flex-col gap-2.5 px-5 pb-5 sm:flex-row sm:items-center sm:px-8">
@@ -157,11 +130,7 @@ export default function ArchivePage() {
             aria-label={t("archive.allMonths")}
           >
             <option value="">{t("archive.allMonths")}</option>
-            {months.map((key) => (
-              <option key={key} value={key}>
-                {monthLabel(key, locale)}
-              </option>
-            ))}
+            {months.map((key) => <option key={key} value={key}>{monthLabel(key, locale)}</option>)}
           </Select>
         </div>
       </div>
@@ -174,26 +143,18 @@ export default function ArchivePage() {
         <div className="space-y-8 pb-10">
           {paidRows.length > 0 && (
             <section>
-              <h2 className="px-5 pb-2 text-[15px] font-semibold sm:px-8">
-                {t("archive.paidSection")}
-              </h2>
+              <h2 className="px-5 pb-2 text-[15px] font-semibold sm:px-8">{t("archive.paidSection")}</h2>
               <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
-                {paidRows.map((invoice) => (
-                  <InvoiceListRow key={invoice.id} invoice={invoice} onOpen={setOpen} />
-                ))}
+                {paidRows.map((invoice) => <InvoiceListRow key={invoice.id} invoice={invoice} onOpen={setOpen} />)}
               </div>
             </section>
           )}
 
           {historyRows.length > 0 && (
             <section>
-              <h2 className="px-5 pb-2 text-[15px] font-semibold sm:px-8">
-                {t("archive.historySection")}
-              </h2>
+              <h2 className="px-5 pb-2 text-[15px] font-semibold sm:px-8">{t("archive.historySection")}</h2>
               <div className="space-y-3 sm:px-8">
-                {historyRows.map((group) => (
-                  <HistoricalRecordRow key={group.projectId} group={group} />
-                ))}
+                {historyRows.map((group) => <HistoricalRecordRow key={group.projectId} group={group} />)}
               </div>
             </section>
           )}
