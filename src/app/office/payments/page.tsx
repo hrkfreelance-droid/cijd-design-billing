@@ -11,6 +11,7 @@ import { PageSkeleton, useScope } from "@/components/scope";
 import { EmptyState, PageHeader, Segmented } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
 import { isHistoricalRecord } from "@/lib/derive";
+import { formatKhr } from "@/lib/exchange-rate";
 import {
   archiveInvoiceDate,
   groupHistoricalItems,
@@ -102,6 +103,7 @@ function Payments() {
   const total =
     shown.reduce((value, invoice) => value + invoice.amount, 0) +
     shownHistorical.reduce((value, group) => value + group.amount, 0);
+  const exchangeRate = scope.snapshot.exchangeRate;
   const emptyLabel =
     tab === "awaiting"
       ? t("billing.awaitingEmpty")
@@ -122,6 +124,9 @@ function Payments() {
             <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">
               {money(total)}
             </p>
+            {exchangeRate ? (
+              <p className="tnum mt-0.5 text-[11px] text-faint">≈{formatKhr(total, exchangeRate.rate)}</p>
+            ) : null}
           </div>
         }
       />
