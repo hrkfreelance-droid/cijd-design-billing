@@ -61,13 +61,13 @@ export default function ProjectsPage() {
   const total = sum(inProgressItems.filter((item) => item.amount > 0));
 
   return (
-    <div className="animate-rise mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className="animate-rise mx-auto w-full max-w-[1000px] px-4 py-6 sm:px-6 sm:py-8">
       <header className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-[26px] font-semibold tracking-tight text-text sm:text-[30px]">
-            {t("projects.title")}
+          <h1 className="text-[28px] font-semibold tracking-[-0.025em] text-text sm:text-[32px]">
+            Designing
           </h1>
-          <p className="mt-1 text-[13.5px] text-muted">{t("projects.count", { count: rows.length })}</p>
+          <p className="mt-1 text-[13px] text-muted">{t("projects.count", { count: rows.length })}</p>
         </div>
 
         <div className="shrink-0 text-right">
