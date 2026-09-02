@@ -1,7 +1,5 @@
 "use client";
 
-import Link from "next/link";
-
 import { ItemProductionAction } from "@/components/delivery";
 import { CurrencyAmount } from "@/components/currency-amount";
 import { useI18n } from "@/components/providers";
@@ -11,16 +9,10 @@ import { isBillingLocked, isProductionComplete, priceState } from "@/lib/derive"
 import { money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
-/**
- * One billing item, the unit the workspace actually operates on.
- *
- * A compact two-column row keeps the project as the container: status and item
- * name stay together on the left, while USD, KHR, review state, and the next
- * action share one stable right-hand rail.
- */
+/** A full-row work item. The row surface, not just its title, is the target. */
 export function BillingItemCard({
   item,
-  projectId,
+  projectId: _projectId,
   history = false,
   onOpen,
 }: {
@@ -42,42 +34,43 @@ export function BillingItemCard({
     : state === "SUGGESTED" || state === "PENDING"
       ? "NEEDS_REVIEW"
       : "IN_PROGRESS";
-  const reviewHref = `/designer/projects/${projectId}?item=${encodeURIComponent(item.id)}`;
   const needsPriceReview = !history && !locked && state !== "CONFIRMED";
   const spec = specLine(item, typeLabel);
 
-  const name = (
-    <span className="block truncate text-[15px] font-medium tracking-[-0.008em]">
-      {item.description}
-    </span>
-  );
+  const open = (event: React.SyntheticEvent) => {
+    if (!onOpen || hasInteractiveTarget(event.target)) return;
+    event.stopPropagation();
+    onOpen();
+  };
 
   return (
     <article
       data-testid="designer-project-item"
-      className="grid grid-cols-[minmax(0,1fr)_84px] items-start gap-x-4 gap-y-0.5 py-1.5 sm:grid-cols-[minmax(0,1fr)_auto]"
+      role={onOpen ? "button" : undefined}
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? item.description : undefined}
+      onClick={open}
+      onKeyDown={(event) => {
+        if (!onOpen || hasInteractiveTarget(event.target)) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        onOpen();
+      }}
+      className={`grid grid-cols-[minmax(0,1fr)_84px] items-start gap-x-4 gap-y-0.5 rounded-xl px-2 py-2 sm:grid-cols-[minmax(0,1fr)_auto] ${
+        onOpen
+          ? "cursor-pointer outline-none transition-colors hover:bg-fill focus-visible:ring-2 focus-visible:ring-accent"
+          : ""
+      }`}
     >
       <div className="col-start-1 row-span-2 row-start-1 min-w-0">
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex min-w-0 items-center gap-2">
           <StatusPill status={workStatus} className="shrink-0" />
-          {onOpen ? (
-            <button
-              type="button"
-              onClick={onOpen}
-              className="min-w-0 flex-1 text-left transition-colors duration-150 hover:text-muted"
-            >
-              {name}
-            </button>
-          ) : (
-            <Link
-              href={`/designer/projects/${projectId}`}
-              className="min-w-0 flex-1 text-left transition-colors duration-150 hover:text-muted"
-            >
-              {name}
-            </Link>
-          )}
+          <span className="block min-w-0 flex-1 truncate text-[15px] font-medium tracking-[-0.008em]">
+            {item.description}
+          </span>
         </div>
-        {spec && <p className="mt-0.5 min-w-0 truncate text-[12.5px] text-muted">{spec}</p>}
+        {spec && <p className="mt-1 min-w-0 truncate text-[12.5px] text-muted">{spec}</p>}
       </div>
 
       <div className="col-start-2 row-start-1 flex min-w-[84px] flex-col items-end">
@@ -90,27 +83,32 @@ export function BillingItemCard({
         ) : (
           <Amount value="—" className="text-[15px]" />
         )}
-
+        {item.type === "PRINT" && item.billingPriceManual && (
+          <span className="mt-0.5 text-[10.5px] text-faint">Manual</span>
+        )}
       </div>
 
       {!history && !locked && (
         <div className="col-start-1 col-span-2 row-start-2 flex flex-wrap justify-end gap-1.5 sm:col-start-2 sm:col-span-1">
-          {needsPriceReview &&
-            (onOpen ? (
-              <button type="button" onClick={onOpen} className={REVIEW_BUTTON}>
-                {t("projects.reviewPrice")}
-              </button>
-            ) : (
-              <Link href={reviewHref} className={REVIEW_BUTTON}>
-                {t("projects.reviewPrice")}
-              </Link>
-            ))}
-          {/* Until the price is settled, finishing the work is the lesser action. */}
-          <ItemProductionAction
-            item={item}
-            size="sm"
-            variant={needsPriceReview ? "secondary" : undefined}
-          />
+          {needsPriceReview && onOpen && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen();
+              }}
+              className={REVIEW_BUTTON}
+            >
+              {t("projects.reviewPrice")}
+            </button>
+          )}
+          <span onClick={(event) => event.stopPropagation()}>
+            <ItemProductionAction
+              item={item}
+              size="sm"
+              variant={needsPriceReview ? "secondary" : undefined}
+            />
+          </span>
         </div>
       )}
     </article>
@@ -120,16 +118,13 @@ export function BillingItemCard({
 const REVIEW_BUTTON =
   "inline-flex h-8 min-w-[84px] shrink-0 items-center justify-center rounded-full bg-accent px-3 text-[12.5px] font-medium text-on-accent transition-colors duration-150 hover:bg-accent-hover";
 
-/**
- * What this item actually is, in one line: the print run and its
- * specification, or a priced quantity. Returns empty when the name already
- * says everything — echoing "Revision" under "Revision" is noise, not detail.
- */
+function hasInteractiveTarget(target: EventTarget | null) {
+  return target instanceof Element &&
+    !!target.closest("button, a, input, select, textarea, [role='checkbox'], [data-no-row-open]");
+}
+
 function specLine(item: BillingItem, typeLabel: string): string {
   const parts: string[] = [];
-  // Real descriptions lead with the type ("Print x100", "Design & Map"), and
-  // are stored in English while the label is localised — so the stored type has
-  // to be matched too, or 印刷 reappears beside a name that already says Print.
   const name = item.description.trim().toLowerCase();
   const leadsWithType = (word: string) =>
     name === word || name.startsWith(`${word} `) || name.startsWith(`${word}×`);
@@ -137,18 +132,15 @@ function specLine(item: BillingItem, typeLabel: string): string {
     parts.push(typeLabel);
   }
   if (item.quantity !== 1) {
-    // "2000 × —" says nothing; with no rate yet the run size is the fact.
-    parts.push(
-      item.unitPrice > 0
-        ? `${item.quantity} × ${money(item.unitPrice)}`
-        : `×${item.quantity}`,
-    );
+    if (item.type === "PRINT") parts.push(`×${item.quantity}`);
+    else {
+      parts.push(item.unitPrice > 0 ? `${item.quantity} × ${money(item.unitPrice)}` : `×${item.quantity}`);
+    }
   }
   if (item.printSize) parts.push(item.printSize);
   return parts.join(" · ");
 }
 
-/** Keep existing OTHER records intact while giving well-known item names a useful UI label. */
 function displayTypeLabel(item: BillingItem, fallback: string): string {
   if (item.type !== "OTHER") return fallback;
   const normalized = item.description.trim().toLowerCase();

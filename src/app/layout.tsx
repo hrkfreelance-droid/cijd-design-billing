@@ -1,11 +1,18 @@
 import type { Metadata, Viewport } from "next";
 
 import { Providers } from "@/components/providers";
+import { getBuildInfo } from "@/lib/build-info";
 import "./globals.css";
+
+const build = getBuildInfo();
 
 export const metadata: Metadata = {
   title: "CIJD DESIGN Billing",
   description: "Project, invoicing and payment tracking for CIJD DESIGN.",
+  other: {
+    "cijd-build-sha": build.commit,
+    "cijd-build-branch": build.branch,
+  },
 };
 
 export const viewport: Viewport = {

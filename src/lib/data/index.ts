@@ -1,16 +1,16 @@
 import { filePersistence } from "./file-persistence";
 import { Store } from "./store";
 import type { Repository } from "./repository";
-import { currentAccessUser } from "@/lib/auth/access-links";
-import { isPilotMode } from "@/lib/runtime";
-import type { Role } from "@/lib/auth/roles";
 
 /**
  * Single switch point for the data layer.
  *
- * With Supabase configured, Google sessions use the caller's RLS-bound client;
- * Access Link sessions use the server-only service key and the GuardedRepository
- * role boundary. A local JSON store is only selected during local development.
+ * With Supabase configured, OAuth sessions use the caller's RLS-bound client.
+ * Access Link / Pilot sessions receive a server-only service-role client, but
+ * every route is still wrapped by GuardedRepository before it reaches here.
+ * Keeping one SupabaseRepository path is important: print cost and billing
+ * price writes always go through the same controlled database RPCs instead of
+ * a second direct-table implementation drifting out of sync.
  */
 let localStore: Repository | null = null;
 
@@ -26,9 +26,7 @@ export async function getRepository(): Promise<Repository> {
   const client = await supabaseServerClient();
   if (!client) throw new Error("Supabase server client is unavailable.");
   const { SupabaseRepository } = await import("@/lib/supabase/repository");
-  const accessUser = await currentAccessUser();
-  const accessRole: Role | null = accessUser?.role ?? (isPilotMode() ? "ADMIN" : null);
-  return new SupabaseRepository(client, accessRole);
+  return new SupabaseRepository(client);
 }
 
 export { RuleError } from "./repository";

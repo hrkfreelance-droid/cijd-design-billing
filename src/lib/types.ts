@@ -70,8 +70,9 @@ export interface BillingItem {
   description: string;
   type: ItemType;
   quantity: number;
+  /** Customer-facing billing unit price. PRINT cost is stored separately. */
   unitPrice: number;
-  /** quantity x unitPrice unless a custom price was entered. */
+  /** Customer-facing final billing total. */
   amount: number;
   customAmount: boolean;
   productionStatus: ProductionStatus;
@@ -86,12 +87,20 @@ export interface BillingItem {
   /** Printing-only specification and price certainty fields. */
   printSize?: string | null;
   priceReviewStatus?: PriceReviewStatus | null;
+  /** Suggested customer-facing price calculated from print cost. */
   suggestedUnitPrice?: number | null;
   suggestedAmount?: number | null;
   priceSource?: string | null;
   priceReason?: string | null;
   priceConfirmedBy?: string | null;
   priceConfirmedAt?: string | null;
+  /** Internal printing cost. Never use these values as invoice totals. */
+  printCostUnitPrice?: number | null;
+  printCostAmount?: number | null;
+  printCostConfirmedBy?: string | null;
+  printCostConfirmedAt?: string | null;
+  /** Once true, later cost changes update the suggestion but never overwrite final billing. */
+  billingPriceManual?: boolean;
   note?: string;
   createdAt: string;
   createdBy: string;
