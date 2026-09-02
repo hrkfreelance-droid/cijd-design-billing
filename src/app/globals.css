@@ -78,6 +78,7 @@
   --color-paid: var(--c-paid);
   --color-review: var(--c-review);
 
+  /* Keep the CIJD type stack as the canonical product font treatment. */
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica,
     "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
@@ -120,6 +121,20 @@
   button {
     font: inherit;
     letter-spacing: inherit;
+  }
+}
+
+/* Mirror the recent DAISHIN mobile polish without changing CIJD typography.
+   iOS Safari zooms form controls whose computed type is below 16px. */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea,
+  [role="combobox"] {
+    font-size: 16px !important;
+    line-height: 1.35 !important;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 }
 
