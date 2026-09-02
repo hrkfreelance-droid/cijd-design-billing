@@ -6,6 +6,7 @@ import { ItemProductionAction } from "@/components/delivery";
 import { api, useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
+import { useLinkedAmounts } from "@/components/use-linked-amounts";
 import { Amount, Button, EmptyState, Field, Input, PageHeader, PageTotal, Sheet, StatusPill, type WorkStatus } from "@/components/ui";
 import {
   isBillingLocked,
@@ -176,14 +177,18 @@ function PrintEditSheet({ item, open, onClose }: { item: BillingItem; open: bool
   const { run, busy } = useAction();
   const [size, setSize] = useState(item.printSize ?? "");
   const [quantity, setQuantity] = useState(String(item.quantity));
-  const [costUnit, setCostUnit] = useState(String(item.printCostUnitPrice || ""));
+  const cost = useLinkedAmounts({
+    quantity,
+    initialUnit: item.printCostUnitPrice,
+    initialTotal: item.printCostAmount,
+    initialSource: "unit",
+  });
 
   const quantityValue = parseNumber(quantity);
-  const costUnitValue = parseNumber(costUnit);
-  const calculatedCost = calculateTotal(quantity, costUnit);
-  const costTotal = calculatedCost === "" ? 0 : Number(calculatedCost);
+  const costUnitValue = cost.unitNumber;
+  const costTotal = cost.totalNumber ?? 0;
   const suggested = costTotal > 0 ? suggestedPrintBillingTotal(costTotal) : 0;
-  const valid = !!quantityValue && quantityValue > 0 && !!costUnitValue && costUnitValue > 0 && costTotal > 0;
+  const valid = !!quantityValue && quantityValue > 0 && costUnitValue != null && costUnitValue > 0 && costTotal > 0;
 
   const setCost = async () => {
     if (!valid || quantityValue == null || costUnitValue == null) return;
@@ -223,15 +228,20 @@ function PrintEditSheet({ item, open, onClose }: { item: BillingItem; open: bool
         <Field label={copy(locale, "数量", "Quantity")}>
           <Input inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} className="tnum" />
         </Field>
-        <div className="grid grid-cols-2 gap-3">
+
+        <div className="space-y-3 rounded-2xl border border-line bg-fill/40 p-3.5">
+          <p className="text-[12px] leading-relaxed text-muted">
+            {copy(locale, "単価・合計どちらを入力しても、もう片方を自動計算します。", "Enter either unit cost or total cost. The other value updates automatically.")}
+          </p>
           <Field label={copy(locale, "原価 / 1個", "Cost / unit")}>
-            <Input inputMode="decimal" value={costUnit} onChange={(event) => setCostUnit(event.target.value)} className="tnum" />
+            <Input inputMode="decimal" value={cost.unit} onChange={(event) => cost.setUnit(event.target.value)} placeholder="0" className="tnum" />
           </Field>
           <Field label={copy(locale, "原価合計", "Cost total")}>
-            <Input value={calculatedCost} readOnly placeholder="—" className="tnum cursor-default bg-fill" />
+            <Input inputMode="decimal" value={cost.total} onChange={(event) => cost.setTotal(event.target.value)} placeholder="0" className="tnum" />
           </Field>
         </div>
-        <div className="rounded-xl bg-fill px-3.5 py-3">
+
+        <div className="rounded-2xl bg-fill px-3.5 py-3">
           <p className="text-[11.5px] text-faint">{copy(locale, "Billingへの推奨価格", "Suggested billing price")}</p>
           <Amount value={suggested > 0 ? money(suggested) : "—"} strong className="mt-1 block text-[18px]" />
           <p className="mt-1 text-[11px] leading-relaxed text-muted">
@@ -248,13 +258,6 @@ function parseNumber(value: string): number | null {
   if (!trimmed) return null;
   const parsed = Number(trimmed);
   return Number.isFinite(parsed) ? parsed : null;
-}
-
-function calculateTotal(quantity: string, unit: string): string {
-  const q = parseNumber(quantity);
-  const u = parseNumber(unit);
-  if (q == null || q <= 0 || u == null || u < 0) return "";
-  return roundMoney(q * u).toFixed(2);
 }
 
 function copy(locale: string, ja: string, en: string) {

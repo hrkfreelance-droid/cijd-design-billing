@@ -8,6 +8,7 @@ import { PlusIcon } from "@/components/icons";
 import { api, useI18n } from "@/components/providers";
 import { useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
+import { useLinkedAmounts } from "@/components/use-linked-amounts";
 import {
   Amount,
   Button,
@@ -73,11 +74,7 @@ export function ProjectEditorModal({
         onClose={close}
         title={project.name}
         description={`${client?.name ?? ""} · ${mediumDate(project.date, locale)} · ${project.createdBy}`}
-        footer={
-          <Button variant="secondary" full onClick={close}>
-            {t("common.close")}
-          </Button>
-        }
+        footer={<Button variant="secondary" full onClick={close}>{t("common.close")}</Button>}
       >
         <div className="space-y-4 pb-2">
           <ProjectNameEditor key={`${project.id}:${project.name}`} project={project} />
@@ -87,9 +84,7 @@ export function ProjectEditorModal({
               <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
                 {estimated ? t("projects.estimatedTotal") : t("project.total")}
               </p>
-              <p className="mt-1 text-[12px] text-muted">
-                {items.length} {items.length === 1 ? "item" : "items"}
-              </p>
+              <p className="mt-1 text-[12px] text-muted">{items.length} {items.length === 1 ? "item" : "items"}</p>
             </div>
             <Amount value={total > 0 ? money(total) : "—"} strong className="text-[20px]" />
           </div>
@@ -106,13 +101,7 @@ export function ProjectEditorModal({
             ))}
           </div>
 
-          <Button
-            type="button"
-            variant="secondary"
-            full
-            onClick={() => setAdding(true)}
-            className="!h-11"
-          >
+          <Button type="button" variant="secondary" full onClick={() => setAdding(true)} className="!h-11">
             <PlusIcon className="h-4 w-4" />
             {t("project.addItem")}
           </Button>
@@ -151,36 +140,25 @@ function ProjectNameEditor({ project }: { project: Project }) {
   };
 
   return (
-    <div className="rounded-2xl border border-line bg-fill/60 p-3.5">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <p className="text-[12px] font-medium text-muted">
-          {copy(locale, "案件タイトル", "Project title")}
-        </p>
+    <div className="space-y-2 rounded-2xl border border-line bg-fill/40 p-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[12px] font-medium text-muted">{copy(locale, "案件タイトル", "Project title")}</p>
         {changed && <span className="text-[11px] text-faint">{copy(locale, "未保存", "Unsaved")}</span>}
       </div>
-      <div className="flex items-center gap-2">
-        <Input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              void save();
-            }
-          }}
-          className="min-w-0 flex-1 bg-panel"
-        />
-        <Button
-          type="button"
-          variant="primary"
-          size="sm"
-          disabled={!changed || busy}
-          onClick={() => void save()}
-          className="!h-11 min-w-[78px]"
-        >
-          {copy(locale, "保存", "Save")}
-        </Button>
-      </div>
+      <Input
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            void save();
+          }
+        }}
+        className="bg-panel"
+      />
+      <Button type="button" variant="primary" full disabled={!changed || busy} onClick={() => void save()}>
+        {copy(locale, "タイトルを保存", "Save title")}
+      </Button>
     </div>
   );
 }
@@ -201,29 +179,50 @@ function ProjectItemSheet({
   const [description, setDescription] = useState(item?.description ?? "");
   const [type, setType] = useState<ItemType>(item?.type ?? "DESIGN");
   const [quantity, setQuantity] = useState(String(item?.quantity ?? 1));
-  const [unitPrice, setUnitPrice] = useState(String(item?.unitPrice || ""));
-  const [typedAmount, setTypedAmount] = useState(String(item?.amount || ""));
-  const [custom, setCustom] = useState(item?.customAmount ?? false);
   const [printSize, setPrintSize] = useState(item?.printSize ?? "");
-  const [costUnit, setCostUnit] = useState(String(item?.printCostUnitPrice || ""));
-  const [finalBilling, setFinalBilling] = useState(
-    item?.type === "PRINT" && item.billingPriceManual ? String(item.amount) : "",
-  );
   const [note, setNote] = useState(item?.note ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  const initialOrdinaryUnit = item
+    ? item.customAmount && item.quantity > 0
+      ? item.amount / item.quantity
+      : item.unitPrice
+    : 0;
+  const ordinaryPrice = useLinkedAmounts({
+    quantity,
+    initialUnit: initialOrdinaryUnit,
+    initialTotal: item?.amount,
+    initialSource: item?.customAmount ? "total" : "unit",
+  });
+  const printCost = useLinkedAmounts({
+    quantity,
+    initialUnit: item?.type === "PRINT" ? item.printCostUnitPrice : null,
+    initialTotal: item?.type === "PRINT" ? item.printCostAmount : null,
+    initialSource: "unit",
+  });
+  const manualBillingTotal = item?.type === "PRINT" && item.billingPriceManual ? item.amount : null;
+  const billingOverride = useLinkedAmounts({
+    quantity,
+    initialUnit: manualBillingTotal && item && item.quantity > 0 ? manualBillingTotal / item.quantity : null,
+    initialTotal: manualBillingTotal,
+    initialSource: "total",
+  });
+
   const locked = !!item && isBillingLocked(item);
   const qty = positiveNumber(quantity);
-  const ordinaryComputed = roundMoney((qty ?? 0) * (positiveNumber(unitPrice) ?? 0));
-  const ordinaryAmount = custom ? Number(typedAmount) || 0 : ordinaryComputed;
-  const costUnitValue = positiveNumber(costUnit);
-  const printCostTotal = qty && costUnitValue ? roundMoney(qty * costUnitValue) : 0;
+  const isPrint = type === "PRINT";
+  const printCostTotal = printCost.totalNumber ?? 0;
+  const costUnitValue = printCost.unitNumber;
   const calculatedSuggested = printCostTotal > 0
     ? suggestedPrintBillingTotal(printCostTotal)
-    : item?.suggestedAmount ?? 0;
-  const finalBillingValue = positiveNumber(finalBilling);
-  const isPrint = type === "PRINT";
+    : item?.type === "PRINT"
+      ? item.suggestedAmount ?? 0
+      : 0;
+  const suggestedUnit = qty && calculatedSuggested > 0 ? calculatedSuggested / qty : 0;
+  const finalBillingValue = billingOverride.totalNumber;
   const printNeedsReview = !!item && item.type === "PRINT" && priceState(item) !== "CONFIRMED";
+  const quantityChanged = !!item && qty != null && roundMoney(qty) !== roundMoney(item.quantity);
+  const printCostValid = costUnitValue != null && costUnitValue > 0 && printCostTotal > 0;
 
   const save = async () => {
     if (!description.trim() || !qty) return;
@@ -233,16 +232,15 @@ function ProjectItemSheet({
         description,
         type,
         quantity: qty,
-        unitPrice: Number(unitPrice) || 0,
-        amount: custom ? ordinaryAmount : null,
+        unitPrice: ordinaryPrice.unitNumber ?? 0,
+        amount: ordinaryPrice.source === "total" ? ordinaryPrice.totalNumber ?? 0 : null,
         confirmPrice: !!item,
         note,
       };
       const ok = await run(
-        () =>
-          item
-            ? api(`/api/billing-items/${item.id}`, { method: "PATCH", body })
-            : api("/api/billing-items", { method: "POST", body: { projectId, ...body } }),
+        () => item
+          ? api(`/api/billing-items/${item.id}`, { method: "PATCH", body })
+          : api("/api/billing-items", { method: "POST", body: { projectId, ...body } }),
         { key: item ? "toast.itemUpdated" : "toast.itemAdded" },
       );
       if (ok) onClose();
@@ -287,7 +285,14 @@ function ProjectItemSheet({
         });
       }
 
-      if (costUnitValue && printCostTotal > 0) {
+      const shouldConfirmCost = printCostValid && (
+        !item ||
+        item.type !== "PRINT" ||
+        printCost.touched ||
+        quantityChanged ||
+        item.priceReviewStatus !== "CONFIRMED"
+      );
+      if (shouldConfirmCost && costUnitValue != null) {
         current = await api<BillingItem>(`/api/printing-items/${current.id}/price`, {
           method: "POST",
           body: {
@@ -298,11 +303,9 @@ function ProjectItemSheet({
         });
       }
 
-      if (finalBillingValue && finalBillingValue > 0) {
+      if (billingOverride.touched && finalBillingValue != null && finalBillingValue > 0) {
         const suggested = current.suggestedAmount ?? calculatedSuggested;
-        const shouldOverride =
-          current.billingPriceManual ||
-          roundMoney(finalBillingValue) !== roundMoney(suggested || 0);
+        const shouldOverride = current.billingPriceManual || roundMoney(finalBillingValue) !== roundMoney(suggested || 0);
         if (shouldOverride) {
           current = await api<BillingItem>(`/api/billing-items/${current.id}/billing-price`, {
             method: "POST",
@@ -353,9 +356,7 @@ function ProjectItemSheet({
             <SummaryRow label={copy(locale, "推奨請求", "Suggested billing")}><Amount value={money(item.suggestedAmount)} /></SummaryRow>
           )}
           <SummaryRow label={copy(locale, "最終請求", "Final billing")}><Amount value={money(item.amount)} strong /></SummaryRow>
-          <p className="rounded-2xl bg-fill px-4 py-3 text-[13px] leading-relaxed text-muted">
-            {t("project.lockedNotice")}
-          </p>
+          <p className="rounded-2xl bg-fill px-4 py-3 text-[13px] leading-relaxed text-muted">{t("project.lockedNotice")}</p>
         </div>
       </Sheet>
     );
@@ -370,9 +371,7 @@ function ProjectItemSheet({
         footer={
           <div className="grid min-w-0 gap-2 sm:grid-cols-2">
             <Button variant="secondary" full onClick={onClose}>{t("common.cancel")}</Button>
-            <Button variant="primary" full onClick={save} disabled={!description.trim() || !qty || busy}>
-              {t("common.save")}
-            </Button>
+            <Button variant="primary" full onClick={save} disabled={!description.trim() || !qty || busy}>{t("common.save")}</Button>
           </div>
         }
       >
@@ -394,58 +393,68 @@ function ProjectItemSheet({
               <Field label={t("item.quantity")}>
                 <Input inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} className="tnum" />
               </Field>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={copy(locale, "原価 / 1個", "Cost / unit")}>
-                  <Input inputMode="decimal" value={costUnit} onChange={(event) => setCostUnit(event.target.value)} placeholder="0" className="tnum" />
-                </Field>
-                <Field label={copy(locale, "原価合計", "Cost total")}>
-                  <Input value={printCostTotal > 0 ? printCostTotal.toFixed(2) : ""} readOnly placeholder="—" className="tnum cursor-default bg-fill" />
-                </Field>
-              </div>
-              <div className="rounded-2xl border border-line bg-fill/60 p-3.5">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[11.5px] text-faint">{copy(locale, "推奨請求", "Suggested billing")}</p>
-                    <Amount value={calculatedSuggested > 0 ? money(calculatedSuggested) : "—"} strong className="mt-1 block text-[17px]" />
-                    <p className="mt-1 text-[10.5px] leading-snug text-faint">
-                      {copy(locale, "原価から自動計算・5/10単位で切り上げ", "Calculated from cost, rounded up to 5/10")}
-                    </p>
+
+              <LinkedPriceSection
+                title={copy(locale, "印刷原価", "Print cost")}
+                hint={copy(locale, "単価・合計どちらからでも入力できます。", "Enter either unit or total cost.")}
+                unitLabel={copy(locale, "原価 / 1個", "Cost / unit")}
+                totalLabel={copy(locale, "原価合計", "Cost total")}
+                unit={printCost.unit}
+                total={printCost.total}
+                onUnitChange={printCost.setUnit}
+                onTotalChange={printCost.setTotal}
+              />
+
+              <div className="space-y-3 rounded-2xl border border-line bg-fill/40 p-3.5">
+                <div>
+                  <p className="text-[11.5px] text-faint">{copy(locale, "推奨請求", "Suggested billing")}</p>
+                  <Amount value={calculatedSuggested > 0 ? money(calculatedSuggested) : "—"} strong className="mt-1 block text-[18px]" />
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                    {copy(locale, "原価から自動計算し、5ドル / 10ドル単位で切り上げます。", "Calculated from cost and rounded upward to clean $5 / $10 steps.")}
+                  </p>
+                </div>
+                <div className="border-t border-line pt-3">
+                  <p className="mb-3 text-[12px] leading-relaxed text-muted">
+                    {copy(locale, "請求額を手入力する場合も、単価・合計どちらからでも入力できます。空欄なら推奨額を使います。", "For a manual billing price, enter either unit or total. Leave both blank to use the suggested price.")}
+                  </p>
+                  <div className="space-y-3">
+                    <Field label={copy(locale, "請求 / 1個", "Billing / unit")}>
+                      <Input
+                        inputMode="decimal"
+                        value={billingOverride.unit}
+                        onChange={(event) => billingOverride.setUnit(event.target.value)}
+                        placeholder={suggestedUnit > 0 ? formatUnit(suggestedUnit) : "—"}
+                        className="tnum bg-panel"
+                      />
+                    </Field>
+                    <Field label={copy(locale, "請求合計", "Billing total")}>
+                      <Input
+                        inputMode="decimal"
+                        value={billingOverride.total}
+                        onChange={(event) => billingOverride.setTotal(event.target.value)}
+                        placeholder={calculatedSuggested > 0 ? calculatedSuggested.toFixed(2) : "—"}
+                        className="tnum bg-panel"
+                      />
+                    </Field>
                   </div>
-                  <Field label={copy(locale, "最終請求", "Final billing")}>
-                    <Input
-                      inputMode="decimal"
-                      value={finalBilling}
-                      onChange={(event) => setFinalBilling(event.target.value)}
-                      placeholder={calculatedSuggested > 0 ? String(calculatedSuggested) : "—"}
-                      className="tnum bg-panel"
-                    />
-                  </Field>
                 </div>
               </div>
             </>
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label={t("item.quantity")}>
-                  <Input inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} className="tnum" />
-                </Field>
-                <Field label={t("item.unitPrice")}>
-                  <Input inputMode="decimal" value={unitPrice} onChange={(event) => setUnitPrice(event.target.value)} className="tnum" />
-                </Field>
-              </div>
-              <Field label={t("item.amount")} hint={custom ? undefined : t("item.calculated")}>
-                <Input
-                  inputMode="decimal"
-                  value={custom ? typedAmount : String(ordinaryComputed)}
-                  onChange={(event) => { setCustom(true); setTypedAmount(event.target.value); }}
-                  className="tnum"
-                />
+              <Field label={t("item.quantity")}>
+                <Input inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} className="tnum" />
               </Field>
-              {custom && (
-                <button type="button" onClick={() => setCustom(false)} className="-mt-2 text-[12.5px] text-accent hover:underline">
-                  {t("item.useCalculated")}
-                </button>
-              )}
+              <LinkedPriceSection
+                title={copy(locale, "請求額", "Billing price")}
+                hint={copy(locale, "単価・合計どちらを入力しても、もう片方を自動計算します。", "Enter either unit price or total. The other value updates automatically.")}
+                unitLabel={t("item.unitPrice")}
+                totalLabel={t("item.amount")}
+                unit={ordinaryPrice.unit}
+                total={ordinaryPrice.total}
+                onUnitChange={ordinaryPrice.setUnit}
+                onTotalChange={ordinaryPrice.setTotal}
+              />
             </>
           )}
 
@@ -494,9 +503,49 @@ function ProjectItemSheet({
   );
 }
 
+function LinkedPriceSection({
+  title,
+  hint,
+  unitLabel,
+  totalLabel,
+  unit,
+  total,
+  onUnitChange,
+  onTotalChange,
+}: {
+  title: string;
+  hint: string;
+  unitLabel: string;
+  totalLabel: string;
+  unit: string;
+  total: string;
+  onUnitChange: (value: string) => void;
+  onTotalChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-2xl border border-line bg-fill/40 p-3.5">
+      <div>
+        <p className="text-[12px] font-medium text-text">{title}</p>
+        <p className="mt-1 text-[11.5px] leading-relaxed text-muted">{hint}</p>
+      </div>
+      <Field label={unitLabel}>
+        <Input inputMode="decimal" value={unit} onChange={(event) => onUnitChange(event.target.value)} placeholder="0" className="tnum bg-panel" />
+      </Field>
+      <Field label={totalLabel}>
+        <Input inputMode="decimal" value={total} onChange={(event) => onTotalChange(event.target.value)} placeholder="0" className="tnum bg-panel" />
+      </Field>
+    </div>
+  );
+}
+
 function positiveNumber(value: string): number | null {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function formatUnit(value: number): string {
+  const rounded = Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+  return rounded.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function copy(locale: string, ja: string, en: string) {
