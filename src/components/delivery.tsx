@@ -5,7 +5,7 @@ import { useState } from "react";
 import { api, useI18n } from "@/components/providers";
 import { useAction } from "@/components/use-action";
 import { Button, ConfirmSheet } from "@/components/ui";
-import { isProductionComplete, productionAction } from "@/lib/derive";
+import { isProductionComplete, printPriceReviewState, productionAction } from "@/lib/derive";
 import type { BillingItem } from "@/lib/types";
 
 /**
@@ -123,8 +123,10 @@ export function ItemProductionAction({
   const undoLabel = delivery ? t("delivery.undo") : t("production.undoComplete");
   const activeToast = delivery ? "delivery.toast" : "production.completeToast";
   const undoToast = delivery ? "delivery.undoToast" : "production.undoCompleteToast";
+  const priceBlocked = delivery && !finished && printPriceReviewState(item) !== "CONFIRMED";
 
   const apply = async () => {
+    if (priceBlocked) return;
     const ok = await run(
       () => api(`/api/billing-items/${item.id}/${endpoint}`, { method: finished ? "DELETE" : "POST" }),
       { key: finished ? undoToast : activeToast },
@@ -139,11 +141,12 @@ export function ItemProductionAction({
         variant={variant ?? (finished ? "secondary" : "primary")}
         size={size}
         full={full}
-        disabled={busy}
+        disabled={busy || priceBlocked}
+        title={priceBlocked ? t("error.PRICE_REVIEW_REQUIRED") : undefined}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          setAsking(true);
+          if (!priceBlocked) setAsking(true);
         }}
       >
         {finished ? undoLabel : size === "sm" ? (delivery ? t("delivery.markShort") : t("production.completeShort")) : activeLabel}
