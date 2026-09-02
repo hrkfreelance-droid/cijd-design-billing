@@ -8,9 +8,8 @@ import { InvoiceSheet } from "@/components/invoice-sheet";
 import { InvoiceListRow } from "@/components/invoice-list-row";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { EmptyState, PageHeader, PageTotal, Select } from "@/components/ui";
+import { EmptyState, PageHeader, Select } from "@/components/ui";
 import { monthKey } from "@/lib/derive";
-import { khrAmount } from "@/lib/exchange-rate";
 import {
   archiveInvoiceDate,
   groupHistoricalItems,
@@ -110,13 +109,6 @@ export default function ArchivePage() {
   const knownTotal =
     paidRows.reduce((total, invoice) => total + invoice.amount, 0) +
     historyRows.reduce((total, group) => total + group.amount, 0);
-  const khrTotal =
-    historyRows.length === 0 && paidRows.length > 0 && paidRows.every(
-      (invoice) => invoice.exchangeRate && invoice.exchangeRate > 0,
-    )
-      ? paidRows.reduce((total, invoice) => total + khrAmount(invoice.amount, invoice.exchangeRate!), 0)
-      : null;
-  const exchangeRate = scope?.snapshot.exchangeRate;
 
   if (!scope) return <PageSkeleton />;
 
@@ -129,15 +121,14 @@ export default function ArchivePage() {
           history: historical.reduce((total, group) => total + group.items.length, 0),
         })}
         action={
-          <PageTotal
-            value={knownTotal > 0 ? money(knownTotal) : "—"}
-            label={t("projects.knownTotal")}
-            secondaryValue={khrTotal == null ? undefined : `៛${khrTotal.toLocaleString("en-US")}`}
-            secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
-            rate={exchangeRate?.rate}
-            rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
-          />
+          <div className="shrink-0 text-right">
+            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
+              {t("projects.knownTotal")}
+            </p>
+            <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">
+              {knownTotal > 0 ? money(knownTotal) : "—"}
+            </p>
+          </div>
         }
       />
 
@@ -153,19 +144,19 @@ export default function ArchivePage() {
           />
         </div>
         <div className="sm:w-52">
-        <Select
-          variant="filter"
-          value={month}
-          onChange={(event) => setMonth(event.target.value)}
-          aria-label={t("archive.allMonths")}
-        >
-          <option value="">{t("archive.allMonths")}</option>
-          {months.map((key) => (
-            <option key={key} value={key}>
-              {monthLabel(key, locale)}
-            </option>
-          ))}
-        </Select>
+          <Select
+            variant="filter"
+            value={month}
+            onChange={(event) => setMonth(event.target.value)}
+            aria-label={t("archive.allMonths")}
+          >
+            <option value="">{t("archive.allMonths")}</option>
+            {months.map((key) => (
+              <option key={key} value={key}>
+                {monthLabel(key, locale)}
+              </option>
+            ))}
+          </Select>
         </div>
       </div>
 
