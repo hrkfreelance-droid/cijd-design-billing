@@ -67,7 +67,7 @@ export function buildSeed(): Database {
     exchangeRates: [],
     exchangeRateFailures: [],
     users: [
-      { id: "u_hiroki", name: "Hiroki", role: "DESIGNER" },
+      { id: "u_hiroki", name: "Hiroki", role: "ADMIN" },
       { id: "u_billing", name: "Billing Staff", role: "BILLING" },
       { id: "u_accounting", name: "Accounting", role: "ACCOUNTING" },
       { id: "u_admin", name: "Admin", role: "ADMIN" },
