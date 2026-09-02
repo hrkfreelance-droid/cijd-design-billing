@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("review deploy is hard-locked to the canonical branch and preview worker", async () => {
+test("manual review deploy is hard-locked to the canonical branch and preview worker", async () => {
   const source = await read("scripts/deploy-review.mjs");
   assert.ok(source.includes('const BRANCH = "integrate-production-workspace"'));
   assert.ok(source.includes('const REVIEW_WORKER = "cijd-design-billing-preview"'));
@@ -12,11 +12,16 @@ test("review deploy is hard-locked to the canonical branch and preview worker", 
   assert.ok(!source.includes("versions upload"));
 });
 
-test("package deploy aliases cannot call a production deploy directly", async () => {
+test("Cloudflare Git deploy remains compatible while worker target stays preview-only", async () => {
   const pkg = JSON.parse(await read("package.json"));
+  const wrangler = await read("wrangler.jsonc");
   assert.equal(pkg.scripts["deploy:review"], "node scripts/deploy-review.mjs");
-  assert.equal(pkg.scripts["deploy:vinext"], "node scripts/deploy-review.mjs");
-  assert.ok(!JSON.stringify(pkg.scripts).includes("vinext-cloudflare deploy"));
+  assert.equal(
+    pkg.scripts["deploy:vinext"],
+    "vinext-cloudflare deploy --config dist/server/wrangler.json",
+  );
+  assert.ok(wrangler.includes('"name": "cijd-design-billing-preview"'));
+  assert.ok(!wrangler.includes('"name": "cijd-design-billing"'));
 });
 
 test("live verifier compares canonical commit with remote and blocks false completion", async () => {
