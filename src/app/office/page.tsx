@@ -3,36 +3,19 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { CurrencyAmount } from "@/components/currency-amount";
 import { ChevronDown } from "@/components/icons";
 import { api, useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
-import {
-  Button,
-  Checkbox,
-  EmptyState,
-  Field,
-  Input,
-  PageHeader,
-  PageTotal,
-  Sheet,
-  StatusPill,
-} from "@/components/ui";
+import { Amount, Button, Checkbox, EmptyState, Field, Input, Sheet } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
-import {
-  isOperationalRecord,
-  isPrintPriceConfirmed,
-  isProductionComplete,
-  sum,
-} from "@/lib/derive";
-import { formatKhr } from "@/lib/exchange-rate";
-import { mediumDate, money, roundMoney, todayIso } from "@/lib/format";
+import { isOperationalRecord, isPrintPriceConfirmed, isProductionComplete, sum } from "@/lib/derive";
+import { money, roundMoney, todayIso } from "@/lib/format";
 import type { BillingItem, Client, Invoice } from "@/lib/types";
 
 export default function OfficeBillingPage() {
   const scope = useScope();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user } = useSession();
   const router = useRouter();
   const allowed = !!user && can(user.role, "billing:read");
@@ -57,90 +40,50 @@ export default function OfficeBillingPage() {
     return Array.from(byClient)
       .map(([clientId, items]) => ({ client: scope.idx.clientById.get(clientId)!, items }))
       .filter((group) => group.client)
-      .sort((a, b) => {
-        const aDate = firstProjectDate(a.items, (id) => scope.idx.projectById.get(id)?.date);
-        const bDate = firstProjectDate(b.items, (id) => scope.idx.projectById.get(id)?.date);
-        return aDate.localeCompare(bDate);
-      });
+      .sort((a, b) => firstProjectDate(a.items, (id) => scope.idx.projectById.get(id)?.date)
+        .localeCompare(firstProjectDate(b.items, (id) => scope.idx.projectById.get(id)?.date)));
   }, [scope]);
 
   const pendingPrintItems = useMemo(
-    () =>
-      scope?.items
-        .filter((item) => isOperationalRecord(item) && item.type === "PRINT" && !isPrintPriceConfirmed(item))
-        .slice()
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)) ?? [],
+    () => scope?.items
+      .filter((item) => isOperationalRecord(item) && item.type === "PRINT" && !isPrintPriceConfirmed(item))
+      .slice()
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)) ?? [],
     [scope],
   );
 
   if (!scope || !allowed) return <PageSkeleton />;
 
-  const readyTotal = sum(groups.flatMap((group) => group.items));
-  const exchangeRate = scope.snapshot.exchangeRate;
+  const readyItems = groups.flatMap((group) => group.items);
+  const readyTotal = sum(readyItems);
 
   return (
-    <div className="animate-rise">
-      <PageHeader
-        title={t("billing.ready")}
-        subtitle={scope.client ? scope.client.name : t("client.all")}
-        action={
-          <PageTotal
-            value={money(readyTotal)}
-            secondaryValue={exchangeRate ? formatKhr(readyTotal, exchangeRate.rate) : undefined}
-            secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
-            rate={exchangeRate?.rate}
-            rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
-          />
-        }
-      />
+    <div className="animate-rise mx-auto w-full max-w-[1000px] px-4 py-6 sm:px-6 sm:py-8">
+      <header className="mb-6 flex items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-[28px] font-semibold tracking-[-0.025em] text-text sm:text-[32px]">
+            {t("billing.ready")}
+          </h1>
+          <p className="mt-1 text-[13px] text-muted">
+            {readyItems.length} {readyItems.length === 1 ? copy(locale, "件", "item") : copy(locale, "件", "items")}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">{copy(locale, "合計", "Total")}</p>
+          <Amount value={readyTotal > 0 ? money(readyTotal) : "—"} strong className="mt-0.5 block text-[22px]" />
+        </div>
+      </header>
 
       {groups.length === 0 ? (
         <EmptyState title={t("billing.readyEmpty")} />
       ) : (
-        <div className="space-y-3 px-5 pb-8 sm:px-8">
+        <div className="space-y-3">
           {groups.map((group) => <ReadyGroup key={group.client.id} client={group.client} items={group.items} />)}
         </div>
       )}
 
       {pendingPrintItems.length > 0 && <PrintPriceQueue items={pendingPrintItems} />}
     </div>
-  );
-}
-
-function PrintPriceQueue({ items }: { items: BillingItem[] }) {
-  const { t, locale } = useI18n();
-  const scope = useScope();
-
-  return (
-    <section className="pt-6">
-      <div className="px-5 pb-1 sm:px-8">
-        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">{t("billing.printPricePendingTitle")}</h2>
-        <p className="mt-1 text-[12.5px] leading-relaxed text-faint">
-          {copy(locale, "印刷スタッフまたはデザイナーが原価を確定すると、推奨請求額が自動計算されます。", "Printing staff or a Designer confirms cost first; the suggested billing price is then calculated automatically.")}
-        </p>
-      </div>
-      <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
-        {items.map((item) => {
-          const project = scope?.idx.projectById.get(item.projectId);
-          const client = project ? scope?.idx.clientById.get(project.clientId) : undefined;
-          return (
-            <div key={item.id} className="flex items-start gap-3 px-5 py-2.5 sm:px-6">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14.5px] font-medium">{project?.name ?? ""}</span>
-                <span className="mt-0.5 block truncate text-[12.5px] text-faint">{client?.name} · {printLabel(item)}</span>
-              </span>
-              <span className="shrink-0 text-right">
-                <span className="block text-[13px] tnum">{item.printCostAmount ? `${copy(locale, "原価", "Cost")} ${money(item.printCostAmount)}` : copy(locale, "原価未確定", "Cost pending")}</span>
-                {item.suggestedAmount != null && item.suggestedAmount > 0 && (
-                  <span className="mt-1 block text-[11.5px] text-faint">{copy(locale, "推奨", "Suggested")} {money(item.suggestedAmount)}</span>
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </section>
   );
 }
 
@@ -153,18 +96,18 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
 
   const projects = useMemo(() => {
-    const groups = new Map<string, BillingItem[]>();
+    const grouped = new Map<string, BillingItem[]>();
     for (const item of items) {
-      const list = groups.get(item.projectId);
+      const list = grouped.get(item.projectId);
       if (list) list.push(item);
-      else groups.set(item.projectId, [item]);
+      else grouped.set(item.projectId, [item]);
     }
-    return Array.from(groups)
-      .map(([projectId, projectItems]) => ({
-        id: projectId,
-        name: scope?.idx.projectById.get(projectId)?.name ?? "",
-        date: scope?.idx.projectById.get(projectId)?.date ?? "",
-        createdAt: scope?.idx.projectById.get(projectId)?.createdAt ?? "",
+    return Array.from(grouped)
+      .map(([id, projectItems]) => ({
+        id,
+        name: scope?.idx.projectById.get(id)?.name ?? "",
+        date: scope?.idx.projectById.get(id)?.date ?? "",
+        createdAt: scope?.idx.projectById.get(id)?.createdAt ?? "",
         items: projectItems.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
         total: sum(projectItems),
       }))
@@ -175,17 +118,6 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
   const selectedItems = selectedProjects.flatMap((project) => project.items);
   const editingProject = projects.find((project) => project.id === editingProjectId) ?? null;
 
-  const markInvoiced = async () => {
-    if (!selectedItems.length) return;
-    await runResult<Invoice>(
-      () => api<Invoice>("/api/invoices", {
-        method: "POST",
-        body: { clientId: client.id, invoiceDate: todayIso(), billingItemIds: selectedItems.map((item) => item.id) },
-      }),
-      { key: "toast.invoiceCreated" },
-    );
-  };
-
   const toggle = (id: string) => {
     setSkipped((current) => {
       const next = new Set(current);
@@ -195,18 +127,34 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
     });
   };
 
+  const markInvoiced = async () => {
+    if (!selectedItems.length) return;
+    await runResult<Invoice>(
+      () => api<Invoice>("/api/invoices", {
+        method: "POST",
+        body: {
+          clientId: client.id,
+          invoiceDate: todayIso(),
+          billingItemIds: selectedItems.map((item) => item.id),
+        },
+      }),
+      { key: "toast.invoiceCreated" },
+    );
+  };
+
   return (
     <>
-      <section className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border">
+      <section className="overflow-hidden rounded-2xl border border-line bg-panel">
         <button
+          type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors duration-150 hover:bg-fill sm:px-6"
+          className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-fill/50 sm:px-5"
         >
-          <ChevronDown className={`h-4 w-4 shrink-0 text-faint transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
-          <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em]">{client.name}</span>
-          <span className="text-[12.5px] text-faint">{t("billing.items", { count: items.length })}</span>
-          <CurrencyAmount usd={sum(items)} rate={scope?.snapshot.exchangeRate?.rate} strong className="text-[15px]" />
+          <ChevronDown className={`h-4 w-4 shrink-0 text-faint transition-transform ${open ? "" : "-rotate-90"}`} />
+          <span className="min-w-0 flex-1 truncate text-[16px] font-semibold">{client.name}</span>
+          <span className="shrink-0 text-[12px] text-faint">{items.length} {copy(locale, "件", "items")}</span>
+          <Amount value={money(sum(items))} strong className="shrink-0 text-[16px]" />
         </button>
 
         {open && (
@@ -228,29 +176,29 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
                       event.preventDefault();
                       setEditingProjectId(project.id);
                     }}
-                    className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 px-5 py-2.5 outline-none transition-colors hover:bg-fill focus-visible:ring-2 focus-visible:ring-accent sm:px-6 sm:py-2"
+                    className="grid cursor-pointer grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 outline-none transition-colors hover:bg-fill/40 focus-visible:ring-2 focus-visible:ring-accent sm:px-5"
                   >
                     <Checkbox checked={checked} onChange={() => toggle(project.id)} label={project.name} />
-                    <div className={`min-w-0 transition-opacity duration-150 ${checked ? "" : "opacity-45"}`}>
-                      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className="min-w-0 truncate text-[14.5px] font-medium">{project.name}</span>
-                        <StatusPill status="READY_TO_INVOICE" />
-                      </span>
-                      <span className="mt-1 block truncate text-[12.5px] text-faint">
-                        {project.items.map((item) => item.description).join(" · ")} · {mediumDate(project.date, locale)}
-                      </span>
+                    <div className={`min-w-0 ${checked ? "" : "opacity-40"}`}>
+                      <p className="truncate text-[15px] font-medium text-text">{project.name}</p>
+                      <p className="mt-0.5 truncate text-[12px] text-faint">
+                        {project.items.length} {project.items.length === 1 ? copy(locale, "項目", "item") : copy(locale, "項目", "items")}
+                        {project.items[0]?.type === "PRINT" && project.items[0].printCostAmount != null
+                          ? ` · ${copy(locale, "原価", "Cost")} ${money(project.items[0].printCostAmount)}`
+                          : ""}
+                      </p>
                     </div>
-                    <CurrencyAmount usd={project.total} rate={scope?.snapshot.exchangeRate?.rate} className={`text-[14.5px] transition-opacity duration-150 ${checked ? "" : "opacity-45"}`} />
+                    <Amount value={money(project.total)} strong className={`text-[15px] ${checked ? "" : "opacity-40"}`} />
                   </div>
                 );
               })}
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-line px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <span className="text-[13px] text-muted">
-                {t("billing.selected", { count: selectedItems.length })} · <CurrencyAmount usd={sum(selectedItems)} rate={scope?.snapshot.exchangeRate?.rate} className="inline-block text-[13px]" />
-              </span>
-              <Button variant="primary" onClick={markInvoiced} disabled={selectedItems.length === 0 || busy} className="w-full sm:w-auto">
+            <div className="flex items-center justify-between gap-3 border-t border-line px-4 py-3 sm:px-5">
+              <p className="min-w-0 truncate text-[12.5px] text-muted">
+                {t("billing.selected", { count: selectedItems.length })} · {money(sum(selectedItems))}
+              </p>
+              <Button variant="primary" onClick={markInvoiced} disabled={!selectedItems.length || busy}>
                 {t("billing.createInvoice")}
               </Button>
             </div>
@@ -258,20 +206,21 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
         )}
       </section>
 
-      <BillingProjectModal project={editingProject} open={editingProject !== null} onClose={() => setEditingProjectId(null)} />
+      <BillingProjectModal
+        project={editingProject}
+        open={editingProject !== null}
+        onClose={() => setEditingProjectId(null)}
+      />
     </>
   );
 }
 
-type BillingDraft = {
-  unit: string;
-  total: string;
-};
+type BillingDraft = { unit: string; total: string };
 
 function draftFor(item: BillingItem): BillingDraft {
   const total = roundMoney(item.amount);
   const unit = item.quantity > 0 ? total / item.quantity : 0;
-  return { unit: formatUnit(unit), total: total.toFixed(2) };
+  return { unit: formatUnit(unit), total: total > 0 ? total.toFixed(2) : "" };
 }
 
 function BillingProjectModal({
@@ -294,6 +243,14 @@ function BillingProjectModal({
 
   if (!project) return null;
 
+  const setTotal = (item: BillingItem, value: string) => {
+    setValues((current) => {
+      const parsed = parseAmount(value);
+      const unit = parsed == null || item.quantity <= 0 ? "" : formatUnit(parsed / item.quantity);
+      return { ...current, [item.id]: { total: value, unit } };
+    });
+  };
+
   const setUnit = (item: BillingItem, value: string) => {
     setValues((current) => {
       const parsed = parseAmount(value);
@@ -302,17 +259,16 @@ function BillingProjectModal({
     });
   };
 
-  const setTotal = (item: BillingItem, value: string) => {
-    setValues((current) => {
-      const parsed = parseAmount(value);
-      const unit = parsed == null || item.quantity <= 0 ? "" : formatUnit(parsed / item.quantity);
-      return { ...current, [item.id]: { unit, total: value } };
-    });
-  };
+  const invalid = project.items.some((item) => {
+    const draft = values[item.id] ?? draftFor(item);
+    const total = parseAmount(draft.total);
+    return total == null || total <= 0;
+  });
 
   const save = async () => {
+    if (invalid) return;
     const changes = project.items
-      .map((item) => ({ item, amount: parseAmount(values[item.id]?.total ?? "") }))
+      .map((item) => ({ item, amount: parseAmount((values[item.id] ?? draftFor(item)).total) }))
       .filter(({ item, amount }) => amount != null && amount > 0 && roundMoney(amount) !== roundMoney(item.amount));
     if (!changes.length) {
       onClose();
@@ -337,56 +293,81 @@ function BillingProjectModal({
       open={open}
       onClose={onClose}
       title={project.name}
-      description={copy(locale, "請求前なら単価・合計どちらからでも最終金額を訂正できます", "Before invoicing, edit either unit price or total; the other value updates automatically")}
+      description={copy(locale, "請求合計・単価のどちらを入力しても、もう片方を自動計算します", "Enter either billing total or unit price; the other updates automatically")}
       footer={
         <div className="grid min-w-0 gap-2 sm:grid-cols-2">
           <Button variant="secondary" full onClick={onClose}>{copy(locale, "閉じる", "Close")}</Button>
-          <Button variant="primary" full onClick={save} disabled={busy}>{copy(locale, "変更を保存", "Save changes")}</Button>
+          <Button variant="primary" full onClick={save} disabled={busy || invalid}>{copy(locale, "保存", "Save")}</Button>
         </div>
       }
     >
-      <div className="space-y-3 pb-2">
+      <div className="divide-y divide-line pb-2">
         {project.items.map((item) => {
           const draft = values[item.id] ?? draftFor(item);
           return (
-            <div key={item.id} className="space-y-3 rounded-2xl border border-line bg-fill/30 p-3.5">
-              <div className="flex items-start justify-between gap-3">
+            <section key={item.id} className="py-4 first:pt-1">
+              <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="truncate text-[14px] font-medium">{item.description}</p>
-                  <p className="mt-0.5 text-[11.5px] text-faint">{item.type} · ×{item.quantity}</p>
+                  <p className="truncate text-[14.5px] font-medium text-text">{item.description}</p>
+                  <p className="mt-0.5 text-[11.5px] text-faint">×{item.quantity}</p>
                 </div>
-                {item.billingPriceManual && <span className="shrink-0 text-[10.5px] font-medium text-review">Manual</span>}
+                {item.type === "PRINT" && (
+                  <p className="shrink-0 text-right text-[11.5px] text-muted">
+                    {copy(locale, "原価", "Cost")} {item.printCostAmount != null ? money(item.printCostAmount) : "—"}
+                    {item.suggestedAmount != null ? ` · ${copy(locale, "推奨", "Suggested")} ${money(item.suggestedAmount)}` : ""}
+                  </p>
+                )}
               </div>
 
-              {item.type === "PRINT" && (
-                <p className="text-[12px] leading-relaxed text-muted">
-                  {copy(locale, "原価", "Cost")} {item.printCostAmount != null ? money(item.printCostAmount) : "—"}
-                  <span className="mx-1.5 text-faint">·</span>
-                  {copy(locale, "推奨", "Suggested")} {item.suggestedAmount != null ? money(item.suggestedAmount) : "—"}
-                </p>
-              )}
-
-              <Field label={copy(locale, "請求 / 1個", "Billing / unit")}>
-                <Input
-                  inputMode="decimal"
-                  value={draft.unit}
-                  onChange={(event) => setUnit(item, event.target.value)}
-                  className="tnum bg-panel"
-                />
-              </Field>
               <Field label={copy(locale, "請求合計", "Billing total")}>
                 <Input
                   inputMode="decimal"
                   value={draft.total}
                   onChange={(event) => setTotal(item, event.target.value)}
-                  className="tnum bg-panel"
+                  placeholder="0"
+                  className="tnum"
                 />
               </Field>
-            </div>
+              <div className="mt-3">
+                <Field label={copy(locale, "単価", "Unit price")}>
+                  <Input
+                    inputMode="decimal"
+                    value={draft.unit}
+                    onChange={(event) => setUnit(item, event.target.value)}
+                    placeholder="0"
+                    className="tnum"
+                  />
+                </Field>
+              </div>
+            </section>
           );
         })}
       </div>
     </Sheet>
+  );
+}
+
+function PrintPriceQueue({ items }: { items: BillingItem[] }) {
+  const { locale } = useI18n();
+  const scope = useScope();
+  return (
+    <section className="mt-8 border-t border-line pt-5">
+      <h2 className="text-[14px] font-semibold">{copy(locale, "印刷原価待ち", "Waiting for print cost")}</h2>
+      <div className="mt-2 divide-y divide-line rounded-2xl border border-line bg-panel">
+        {items.map((item) => {
+          const project = scope?.idx.projectById.get(item.projectId);
+          return (
+            <div key={item.id} className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-[14px] font-medium">{project?.name ?? item.description}</p>
+                <p className="mt-0.5 truncate text-[11.5px] text-faint">{item.description} · ×{item.quantity}</p>
+              </div>
+              <span className="shrink-0 text-[12px] font-medium text-review">{copy(locale, "原価未確定", "Cost pending")}</span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -408,13 +389,6 @@ function firstProjectDate(items: BillingItem[], getDate: (projectId: string) => 
     const value = getDate(item.projectId) ?? item.createdAt;
     return !oldest || value < oldest ? value : oldest;
   }, "");
-}
-
-function printLabel(item: BillingItem): string {
-  const description = item.description.trim();
-  if (/\bprint(?:ing)?\b\s+(?:[x×]\s*)?\d+\b/i.test(description)) return description;
-  if (/\b[x×]\s*\d+\b/i.test(description)) return description;
-  return `${description} ×${item.quantity}`;
 }
 
 function copy(locale: string, ja: string, en: string) {
