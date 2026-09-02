@@ -48,7 +48,7 @@ npm run verify:live
 LIVE PASS
 ```
 
-`npm run deploy:review` は次を強制します。
+`npm run deploy:review` はローカル/手動デプロイ用の強制ガードです。
 
 - 現在ブランチが `integrate-production-workspace` 以外なら停止
 - local HEAD と remote HEAD が違えば停止
@@ -57,7 +57,7 @@ LIVE PASS
 - `wrangler deploy` を使用
 - Production Worker 名では deploy できない
 
-既存の `deploy:vinext` も同じ安全な Review deploy script に向けます。
+Cloudflare Git integration は CI の detached HEAD でも動作する必要があるため、`deploy:vinext` は vinext 標準の deploy command を維持します。ただし root `wrangler.jsonc` の Worker 名は `cijd-design-billing-preview` に固定し、Git integration の対象も Review Worker のみとします。
 
 ## Version gate
 
