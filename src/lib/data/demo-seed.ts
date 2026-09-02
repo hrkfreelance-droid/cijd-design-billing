@@ -11,10 +11,10 @@ export function buildDemoSeed(): Database {
   // The operational Correction $15 belongs to Production only. Preview keeps
   // the other RH Kids prices as UI fixtures without copying that base record.
   db.billingItems = db.billingItems.filter((item) => item.id !== "bi_rh_kids_correction");
-  // Hiroki owns the full Design → Printing → Billing → Accounting handoff in
-  // the preview while each supporting operator keeps a narrow workspace.
+  // Hiroki mirrors the real Admin account in preview. Supporting operators keep
+  // narrow workspaces so role boundaries are still visible during UI review.
   db.users = [
-    { id: "u_hiroki", name: "Hiroki", role: "DESIGNER" },
+    { id: "u_hiroki", name: "Hiroki", role: "ADMIN" },
     { id: "u_printing", name: "Printing Staff", role: "PRINTING" },
     { id: "u_billing", name: "Billing Staff", role: "BILLING" },
     { id: "u_accounting", name: "Accounting", role: "ACCOUNTING" },
