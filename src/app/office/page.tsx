@@ -263,6 +263,17 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
   );
 }
 
+type BillingDraft = {
+  unit: string;
+  total: string;
+};
+
+function draftFor(item: BillingItem): BillingDraft {
+  const total = roundMoney(item.amount);
+  const unit = item.quantity > 0 ? total / item.quantity : 0;
+  return { unit: formatUnit(unit), total: total.toFixed(2) };
+}
+
 function BillingProjectModal({
   project,
   open,
@@ -274,19 +285,35 @@ function BillingProjectModal({
 }) {
   const { locale } = useI18n();
   const { run, busy } = useAction();
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, BillingDraft>>({});
 
   useEffect(() => {
     if (!project) return;
-    setValues(Object.fromEntries(project.items.map((item) => [item.id, String(item.amount)])));
+    setValues(Object.fromEntries(project.items.map((item) => [item.id, draftFor(item)])));
   }, [project]);
 
   if (!project) return null;
 
+  const setUnit = (item: BillingItem, value: string) => {
+    setValues((current) => {
+      const parsed = parseAmount(value);
+      const total = parsed == null ? "" : roundMoney(parsed * item.quantity).toFixed(2);
+      return { ...current, [item.id]: { unit: value, total } };
+    });
+  };
+
+  const setTotal = (item: BillingItem, value: string) => {
+    setValues((current) => {
+      const parsed = parseAmount(value);
+      const unit = parsed == null || item.quantity <= 0 ? "" : formatUnit(parsed / item.quantity);
+      return { ...current, [item.id]: { unit, total: value } };
+    });
+  };
+
   const save = async () => {
     const changes = project.items
-      .map((item) => ({ item, amount: Number(values[item.id]) }))
-      .filter(({ item, amount }) => Number.isFinite(amount) && amount > 0 && roundMoney(amount) !== roundMoney(item.amount));
+      .map((item) => ({ item, amount: parseAmount(values[item.id]?.total ?? "") }))
+      .filter(({ item, amount }) => amount != null && amount > 0 && roundMoney(amount) !== roundMoney(item.amount));
     if (!changes.length) {
       onClose();
       return;
@@ -310,7 +337,7 @@ function BillingProjectModal({
       open={open}
       onClose={onClose}
       title={project.name}
-      description={copy(locale, "請求前なら最終金額をここで訂正できます", "Final billing amounts can be corrected here before invoicing")}
+      description={copy(locale, "請求前なら単価・合計どちらからでも最終金額を訂正できます", "Before invoicing, edit either unit price or total; the other value updates automatically")}
       footer={
         <div className="grid min-w-0 gap-2 sm:grid-cols-2">
           <Button variant="secondary" full onClick={onClose}>{copy(locale, "閉じる", "Close")}</Button>
@@ -319,42 +346,61 @@ function BillingProjectModal({
       }
     >
       <div className="space-y-3 pb-2">
-        {project.items.map((item) => (
-          <div key={item.id} className="rounded-xl border border-line px-3.5 py-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate text-[14px] font-medium">{item.description}</p>
-                <p className="mt-0.5 text-[11.5px] text-faint">{item.type} · ×{item.quantity}</p>
-              </div>
-              {item.billingPriceManual && <span className="shrink-0 text-[10.5px] font-medium text-review">Manual</span>}
-            </div>
-            {item.type === "PRINT" && (
-              <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg bg-fill px-3 py-2.5 text-[12px]">
-                <div>
-                  <p className="text-faint">{copy(locale, "原価", "Cost")}</p>
-                  <span className="tnum mt-0.5 block">{item.printCostAmount != null ? money(item.printCostAmount) : "—"}</span>
+        {project.items.map((item) => {
+          const draft = values[item.id] ?? draftFor(item);
+          return (
+            <div key={item.id} className="space-y-3 rounded-2xl border border-line bg-fill/30 p-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] font-medium">{item.description}</p>
+                  <p className="mt-0.5 text-[11.5px] text-faint">{item.type} · ×{item.quantity}</p>
                 </div>
-                <div>
-                  <p className="text-faint">{copy(locale, "推奨請求", "Suggested")}</p>
-                  <span className="tnum mt-0.5 block">{item.suggestedAmount != null ? money(item.suggestedAmount) : "—"}</span>
-                </div>
+                {item.billingPriceManual && <span className="shrink-0 text-[10.5px] font-medium text-review">Manual</span>}
               </div>
-            )}
-            <div className="mt-3">
-              <Field label={copy(locale, "最終請求額", "Final billing")}>
+
+              {item.type === "PRINT" && (
+                <p className="text-[12px] leading-relaxed text-muted">
+                  {copy(locale, "原価", "Cost")} {item.printCostAmount != null ? money(item.printCostAmount) : "—"}
+                  <span className="mx-1.5 text-faint">·</span>
+                  {copy(locale, "推奨", "Suggested")} {item.suggestedAmount != null ? money(item.suggestedAmount) : "—"}
+                </p>
+              )}
+
+              <Field label={copy(locale, "請求 / 1個", "Billing / unit")}>
                 <Input
                   inputMode="decimal"
-                  value={values[item.id] ?? String(item.amount)}
-                  onChange={(event) => setValues((current) => ({ ...current, [item.id]: event.target.value }))}
-                  className="tnum"
+                  value={draft.unit}
+                  onChange={(event) => setUnit(item, event.target.value)}
+                  className="tnum bg-panel"
+                />
+              </Field>
+              <Field label={copy(locale, "請求合計", "Billing total")}>
+                <Input
+                  inputMode="decimal"
+                  value={draft.total}
+                  onChange={(event) => setTotal(item, event.target.value)}
+                  className="tnum bg-panel"
                 />
               </Field>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Sheet>
   );
+}
+
+function parseAmount(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function formatUnit(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  const rounded = Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+  return rounded.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function firstProjectDate(items: BillingItem[], getDate: (projectId: string) => string | undefined) {
