@@ -2,9 +2,9 @@
 
 import { useMemo } from "react";
 
+import { CompactSummaryHeader } from "@/components/compact-summary-header";
 import { useI18n, useSession } from "@/components/providers";
-import { CurrencyAmount } from "@/components/currency-amount";
-import { Amount, EmptyState, PageHeader } from "@/components/ui";
+import { Amount, EmptyState } from "@/components/ui";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { can } from "@/lib/auth/roles";
 import {
@@ -55,12 +55,7 @@ interface ProjectGroup {
   items: BillingItem[];
 }
 
-/**
- * A deliberately passive view for Billing and Accounting. It exposes the
- * same client → project → item hierarchy as Design, but has no links,
- * controls, notes, or audit metadata to accidentally operate. Amounts are
- * display-only evidence and never become an editing control here.
- */
+/** Passive operational progress for Billing/Admin. */
 export default function ProgressPage() {
   const scope = useScope();
   const { t, locale } = useI18n();
@@ -89,9 +84,7 @@ export default function ProgressPage() {
   }, [scope]);
 
   const progressItems = groups.flatMap((group) => group.items);
-  const knownTotal = sum(
-    progressItems.map((item) => ({ amount: itemAmountValue(item) ?? 0 })),
-  );
+  const knownTotal = sum(progressItems.map((item) => ({ amount: itemAmountValue(item) ?? 0 })));
   const pendingCount = progressItems.filter((item) => itemAmountValue(item) == null).length;
   const estimated = progressItems.some((item) => priceState(item) !== "CONFIRMED");
 
@@ -99,25 +92,17 @@ export default function ProgressPage() {
 
   return (
     <div className="animate-rise" data-testid="progress-readonly">
-      <PageHeader
+      <CompactSummaryHeader
         title={t("nav.progress")}
         subtitle={t("office.progressSubtitle")}
-        action={
-          <div className="shrink-0 text-right">
-            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
-              {t(estimated ? "projects.estimatedTotal" : "projects.total")}
-            </p>
-            <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">
-              {knownTotal > 0 ? money(knownTotal) : "—"}
-            </p>
-            {pendingCount > 0 && (
-              <p className="mt-0.5 text-[11px] font-medium text-review">
-                {pendingCount === 1
-                  ? t("projects.pendingPricesOne", { count: pendingCount })
-                  : t("projects.pendingPrices", { count: pendingCount })}
-              </p>
-            )}
-          </div>
+        label={t(estimated ? "projects.estimatedTotal" : "projects.total")}
+        value={knownTotal > 0 ? money(knownTotal) : "—"}
+        meta={
+          pendingCount > 0
+            ? pendingCount === 1
+              ? t("projects.pendingPricesOne", { count: pendingCount })
+              : t("projects.pendingPrices", { count: pendingCount })
+            : undefined
         }
       />
 
@@ -139,7 +124,7 @@ export default function ProgressPage() {
                       {group.client.name} · {mediumDate(group.project.date, locale)}
                     </p>
                   </div>
-                  <ProgressProjectTotal items={group.items} rate={scope.snapshot.exchangeRate?.rate} />
+                  <ProgressProjectTotal items={group.items} />
                 </div>
                 <div className="mt-2 divide-y divide-line">
                   {group.items
@@ -151,18 +136,11 @@ export default function ProgressPage() {
                         data-testid={`progress-item-${item.id}`}
                         className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 py-1.5 first:pt-0 last:pb-0"
                       >
-                        <span className="min-w-0 truncate text-[14px] text-text">
-                          {itemLabel(item)}
-                        </span>
-                        {itemAmountValue(item) == null ? (
-                          <span className="tnum shrink-0 text-[13.5px] font-medium text-text">—</span>
-                        ) : (
-                          <CurrencyAmount
-                            usd={itemAmountValue(item)!}
-                            rate={scope.snapshot.exchangeRate?.rate}
-                            className="text-[13.5px] font-medium text-text"
-                          />
-                        )}
+                        <span className="min-w-0 truncate text-[14px] text-text">{itemLabel(item)}</span>
+                        <Amount
+                          value={itemAmountValue(item) == null ? "—" : money(itemAmountValue(item)!)}
+                          className="shrink-0 text-[13.5px] font-medium text-text"
+                        />
                         <span className={`shrink-0 whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-medium leading-none ${STATE_STYLE[progressState(item)]}`}>
                           {t(STATE_KEY[progressState(item)])}
                         </span>
@@ -192,14 +170,12 @@ function progressState(item: BillingItem): ProgressState {
 
 function itemLabel(item: BillingItem): string {
   if (item.type !== "PRINT") return item.description;
-  if (/\bprint(?:ing)?\b\s+(?:[x×]\s*)?\d+\b/i.test(item.description)) {
-    return item.description;
-  }
+  if (/\bprint(?:ing)?\b\s+(?:[x×]\s*)?\d+\b/i.test(item.description)) return item.description;
   if (/\b[x×]\s*\d+\b/i.test(item.description)) return item.description;
   return `${item.description} ×${item.quantity}`;
 }
 
-function ProgressProjectTotal({ items, rate }: { items: BillingItem[]; rate?: number }) {
+function ProgressProjectTotal({ items }: { items: BillingItem[] }) {
   const { t } = useI18n();
   const total = items.reduce((amount, item) => amount + (itemAmountValue(item) ?? 0), 0);
   const estimated = items.some((item) => priceState(item) !== "CONFIRMED");
@@ -208,16 +184,11 @@ function ProgressProjectTotal({ items, rate }: { items: BillingItem[]; rate?: nu
       <p className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-faint">
         {t(estimated ? "projects.estimatedTotal" : "projects.total")}
       </p>
-      {total > 0 ? (
-        <CurrencyAmount usd={total} rate={rate} strong className="mt-0.5 text-[15px]" />
-      ) : (
-        <Amount value="—" strong className="mt-0.5 block text-[15px]" />
-      )}
+      <Amount value={total > 0 ? money(total) : "—"} strong className="mt-0.5 block text-[15px]" />
     </div>
   );
 }
 
-/** Show known current or suggested money without implying price certainty. */
 function itemAmountValue(item: BillingItem): number | null {
   const values =
     item.type === "PRINT" && !isPrintPriceConfirmed(item)
