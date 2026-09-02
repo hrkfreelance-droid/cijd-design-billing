@@ -18,7 +18,7 @@ const worker = {
 
   scheduled(_controller: unknown, env: WorkerEnv, ctx: WorkerContext) {
     ctx.waitUntil(
-      refreshNbcExchangeRate(env).catch((error) => {
+      refreshNbcExchangeRate(env, { force: true }).catch((error) => {
         console.error("[exchange-rate] scheduled refresh failed", error);
       }),
     );

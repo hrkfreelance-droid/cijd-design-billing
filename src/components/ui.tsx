@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import {
   useEffect,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -11,9 +12,9 @@ import {
 } from "react";
 
 import { CheckIcon, ChevronDown } from "@/components/icons";
-import { useI18n } from "@/components/providers";
-import { phnomPenhDate } from "@/lib/exchange-rate";
-import { formatPhnomPenhDateTime } from "@/lib/format";
+import { api, useData, useI18n, useToast } from "@/components/providers";
+import { NBC_OFFICIAL_URL, formatRate, phnomPenhDate } from "@/lib/exchange-rate";
+import { formatPhnomPenhDateTime, mediumDate } from "@/lib/format";
 import type { MessageKey } from "@/lib/i18n";
 import type { FlowStatus } from "@/lib/types";
 
@@ -51,7 +52,7 @@ export function Button({
       {...props}
       className={`inline-flex max-w-full shrink-0 items-center justify-center gap-1.5 rounded-full font-medium transition-colors duration-150 disabled:cursor-not-allowed ${
         size === "sm"
-          ? "h-9 px-3.5 text-[12.5px]"
+          ? "h-8 px-3 text-[12.5px]"
           : "h-10 px-[18px] text-[13.5px]"
       } ${full ? "min-w-0 w-full" : size === "sm" ? "min-w-[84px]" : "min-w-[104px]"} ${
         VARIANTS[variant]
@@ -224,17 +225,17 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="grid grid-cols-1 items-start gap-x-6 gap-y-3 px-5 pb-4 pt-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-8 sm:pt-7">
+    <div className="grid grid-cols-1 items-start gap-x-6 gap-y-2 px-5 pb-3 pt-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:px-8 sm:pt-6">
       <div className="min-w-0 flex-1 basis-[min(100%,14rem)]">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.021em] sm:text-[30px]">
           {title}
         </h1>
         {subtitle && (
-          <p className="mt-1 text-[13.5px] text-muted">{subtitle}</p>
+          <p className="mt-0.5 text-[13.5px] text-muted">{subtitle}</p>
         )}
       </div>
       {action && (
-        <div className="flex min-w-0 max-w-full flex-wrap items-center justify-start gap-3 sm:justify-end">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center justify-start gap-2 sm:justify-end">
           {action}
         </div>
       )}
@@ -247,16 +248,20 @@ export function PageTotal({
   label,
   secondaryValue,
   secondaryLabel,
+  rate,
   rateEffectiveDate,
   rateFetchedAt,
+  showRateActions = true,
   meta,
 }: {
   value: string;
   label?: string;
   secondaryValue?: string;
   secondaryLabel?: string;
+  rate?: number | null;
   rateEffectiveDate?: string | null;
   rateFetchedAt?: string | null;
+  showRateActions?: boolean;
   meta?: ReactNode;
 }) {
   const { t, locale } = useI18n();
@@ -270,19 +275,78 @@ export function PageTotal({
       <span className="tnum block text-[19px] font-semibold leading-tight tracking-[-0.02em]">
         {value}
       </span>
-      {(secondaryValue || secondaryLabel) && (
-        <span className="tnum mt-0.5 block max-w-full text-[12px] font-medium text-muted">
+      {(secondaryValue || (secondaryLabel && !rate)) && (
+        <span className="tnum mt-px block max-w-full text-[12px] font-medium text-muted">
           {secondaryValue}
-          {secondaryValue && secondaryLabel ? " · " : ""}
-          {secondaryLabel}
+          {secondaryValue && secondaryLabel && !rate ? " · " : ""}
+          {!rate ? secondaryLabel : ""}
         </span>
       )}
-      {updatedAt && (
-        <span className="mt-0.5 block max-w-full text-[11px] leading-snug text-faint">
+      {rate && rate > 0 && (
+        <span className="tnum mt-px block max-w-full text-[11px] font-medium text-muted">
+          {t("currency.rate", { rate: formatRate(rate) })}
+        </span>
+      )}
+      {updatedAt && !rate && (
+        <span className="sr-only">
           {t(isCurrentRate ? "currency.updated" : "currency.lastUpdated", { date: updatedAt })}
         </span>
       )}
+      {rate && rate > 0 && rateEffectiveDate && (
+        <div className="mt-1.5 space-y-0.5 text-[10.5px] leading-snug text-faint">
+          <span className="block">{t("currency.rateDate", { date: mediumDate(rateEffectiveDate, locale) })}</span>
+          {updatedAt && <span className="block">{t("currency.lastChecked", { date: updatedAt })}</span>}
+          {showRateActions && <ExchangeRateActions />}
+        </div>
+      )}
       {meta && <span className="mt-1 block max-w-full text-[12px] font-medium text-review">{meta}</span>}
+    </div>
+  );
+}
+
+function ExchangeRateActions() {
+  const { t } = useI18n();
+  const { refresh } = useData();
+  const { toast } = useToast();
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function handleRefresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const result = await api<{ checked: boolean }>("/api/exchange-rate/refresh", {
+        method: "POST",
+      });
+      await refresh();
+      toast(t(result.checked ? "currency.refreshSuccess" : "currency.refreshRecent"));
+    } catch {
+      toast(t("currency.refreshError"), "error");
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap justify-end gap-1 pt-0.5">
+      <a
+        href={NBC_OFFICIAL_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex min-h-7 items-center rounded-full border border-line px-2 text-[10.5px] font-medium text-muted transition-colors hover:bg-fill hover:text-text"
+        data-testid="exchange-rate-official-link"
+      >
+        {t("currency.openOfficial")}
+      </a>
+      <button
+        type="button"
+        onClick={() => void handleRefresh()}
+        disabled={refreshing}
+        aria-busy={refreshing}
+        className="inline-flex min-h-7 items-center rounded-full px-2 text-[10.5px] font-medium text-muted transition-colors hover:bg-fill hover:text-text disabled:cursor-wait disabled:text-faint"
+        data-testid="exchange-rate-refresh"
+      >
+        {refreshing ? t("currency.refreshing") : t("currency.refresh")}
+      </button>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import type { Database, ExchangeRate } from "@/lib/types";
  */
 export const NBC_RATE_ENDPOINT =
   "https://data.mef.gov.kh/api/v1/realtime-api/exchange-rate?currency_id=USD";
+export const NBC_OFFICIAL_URL = "https://www.nbc.gov.kh/english/economic_research/exchange_rate.php";
 export const CURRENCY_PAIR = "USD/KHR" as const;
 export const RATE_SOURCE = "NBC" as const;
 export const PHNOM_PENH_TIME_ZONE = "Asia/Phnom_Penh";
@@ -47,21 +48,42 @@ export function phnomPenhDate(now = new Date()): string {
   }).format(now);
 }
 
-export function latestExchangeRate(
+function isUsableOfficialRate(rate: ExchangeRate): boolean {
+  return (
+    rate.currencyPair === CURRENCY_PAIR &&
+    rate.source === RATE_SOURCE &&
+    rate.rate > 0 &&
+    validDate(rate.effectiveDate)
+  );
+}
+
+/**
+ * The rate a screen or invoice may use. A rate published for a future working
+ * day can be stored safely, but it must not be used before its effective date.
+ */
+export function getApplicableOfficialRate(
   rates: ExchangeRate[] | undefined,
   now = new Date(),
 ): ExchangeRate | null {
   const today = phnomPenhDate(now);
   return [...(rates ?? [])]
-    .filter(
-      (rate) =>
-        rate.currencyPair === CURRENCY_PAIR &&
-        rate.source === RATE_SOURCE &&
-        rate.rate > 0 &&
-        rate.effectiveDate <= today,
-    )
+    .filter((rate) => isUsableOfficialRate(rate) && rate.effectiveDate <= today)
     .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate))[0] ?? null;
 }
+
+/** Last successful official check, independent of whether its effective date has arrived. */
+export function latestOfficialRateCheckedAt(
+  rates: ExchangeRate[] | undefined,
+): string | null {
+  return (
+    [...(rates ?? [])]
+      .filter((rate) => isUsableOfficialRate(rate) && !Number.isNaN(Date.parse(rate.fetchedAt)))
+      .sort((a, b) => Date.parse(b.fetchedAt) - Date.parse(a.fetchedAt))[0]?.fetchedAt ?? null
+  );
+}
+
+/** Backward-compatible name for existing callers; new code should be explicit. */
+export const latestExchangeRate = getApplicableOfficialRate;
 
 export function khrAmount(usdAmount: number, rate: number): number {
   return Math.round(usdAmount * rate);
@@ -80,7 +102,9 @@ export function formatRate(rate: number): string {
 }
 
 function validDate(value: unknown): value is string {
-  return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 export async function fetchNbcExchangeRate(
@@ -129,26 +153,43 @@ export async function fetchNbcExchangeRate(
   };
 }
 
+/**
+ * Fetches and stores the latest official snapshot without an effective-date
+ * shortcut. Tomorrow's working-day rate may therefore be saved in advance.
+ */
+export async function fetchAndStoreLatestOfficialRate(
+  db: Database,
+  fetcher: typeof fetch = fetch,
+): Promise<ExchangeRate> {
+  const fetched = await fetchNbcExchangeRate(fetcher);
+  const existing = db.exchangeRates.find(
+    (rate) =>
+      rate.currencyPair === fetched.currencyPair &&
+      rate.source === fetched.source &&
+      rate.effectiveDate === fetched.effectiveDate,
+  );
+  const current: ExchangeRate = existing ?? { id: newId(), ...fetched };
+  Object.assign(current, fetched);
+  if (!existing) db.exchangeRates.push(current);
+  return current;
+}
+
 function newId(): string {
   return globalThis.crypto.randomUUID();
 }
 
 /** Local/demo persistence helper. Production uses the scheduled Worker. */
 export async function ensureCurrentExchangeRate(db: Database): Promise<ExchangeRate> {
-  const previous = latestExchangeRate(db.exchangeRates);
+  const previous = getApplicableOfficialRate(db.exchangeRates);
   const today = phnomPenhDate();
   if (previous?.effectiveDate === today) return previous;
   try {
-    const fetched = await fetchNbcExchangeRate();
-    const existing = db.exchangeRates.find(
-      (rate) =>
-        rate.currencyPair === fetched.currencyPair &&
-        rate.effectiveDate === fetched.effectiveDate,
+    await fetchAndStoreLatestOfficialRate(db);
+    const applicable = getApplicableOfficialRate(db.exchangeRates);
+    if (applicable) return applicable;
+    throw new ExchangeRateUnavailableError(
+      "NBC returned a rate for a future effective date.",
     );
-    const current: ExchangeRate = existing ?? { id: newId(), ...fetched };
-    Object.assign(current, fetched);
-    if (!existing) db.exchangeRates.push(current);
-    return current;
   } catch (error) {
     const effectiveDate = today;
     const failure = db.exchangeRateFailures.find(

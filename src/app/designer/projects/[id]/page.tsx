@@ -81,7 +81,7 @@ export default function ProjectPage() {
 
   return (
     <div className="animate-rise">
-      <div className="px-5 pt-4 sm:px-8 sm:pt-6">
+      <div className="px-5 pt-3 sm:px-8 sm:pt-5">
         <Link
           href={backHref}
           className="inline-flex items-center gap-1 text-[13px] text-muted transition-colors hover:text-text"
@@ -91,12 +91,12 @@ export default function ProjectPage() {
         </Link>
       </div>
 
-      <div className="flex items-start justify-between gap-6 px-5 pb-4 pt-2 sm:px-8">
+      <div className="flex items-start justify-between gap-6 px-5 pb-3 pt-1.5 sm:px-8">
         <div className="min-w-0">
           <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.021em] sm:text-[30px]">
             {project.name}
           </h1>
-          <p className="mt-1.5 text-[13.5px] text-muted">
+          <p className="mt-1 text-[13.5px] text-muted">
             {client?.name} · {mediumDate(project.date, locale)} ·{" "}
             {historyView ? t("productionArchive.historyLabel") : project.createdBy}
           </p>
@@ -106,8 +106,9 @@ export default function ProjectPage() {
           label={t(hasSuggested ? "projects.estimatedTotal" : "project.total")}
           secondaryValue={exchangeRate && projectTotal > 0 ? formatKhr(projectTotal, exchangeRate.rate) : undefined}
           secondaryLabel={exchangeRate && projectTotal > 0 ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+          rate={exchangeRate?.rate}
           rateEffectiveDate={exchangeRate?.effectiveDate}
-          rateFetchedAt={exchangeRate?.fetchedAt}
+          rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
         />
       </div>
 
@@ -125,7 +126,7 @@ export default function ProjectPage() {
         </p>
       )}
 
-      <div className="mt-3 divide-y divide-line border-y border-line bg-panel px-5 sm:mx-8 sm:rounded-2xl sm:border sm:px-6">
+      <div className="mt-2 divide-y divide-line border-y border-line bg-panel px-5 sm:mx-8 sm:rounded-2xl sm:border sm:px-6">
         {items.length === 0 ? (
           <div className="py-10 text-center">
             <p className="text-[14px] text-muted">{t("project.noItems")}</p>
@@ -146,7 +147,7 @@ export default function ProjectPage() {
         {!historyView && (
           <button
             onClick={() => setAdding(true)}
-            className="flex w-full items-center gap-2 py-3 text-left text-[14.5px] font-medium text-accent transition-colors duration-150 hover:text-accent-hover"
+            className="flex w-full items-center gap-2 py-2.5 text-left text-[14.5px] font-medium text-accent transition-colors duration-150 hover:text-accent-hover"
           >
             <PlusIcon className="h-4 w-4" />
             {t("project.addItem")}

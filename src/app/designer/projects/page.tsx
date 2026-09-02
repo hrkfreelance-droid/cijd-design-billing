@@ -93,8 +93,9 @@ export default function ProjectsPage() {
                   ? t("currency.rate", { rate: scope.snapshot.exchangeRate.rate })
                   : undefined
               }
+              rate={scope.snapshot.exchangeRate?.rate}
               rateEffectiveDate={scope.snapshot.exchangeRate?.effectiveDate}
-              rateFetchedAt={scope.snapshot.exchangeRate?.fetchedAt}
+              rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
             />
             <Button variant="primary" onClick={() => setCreating(true)}>
               <PlusIcon className="h-[15px] w-[15px]" />
@@ -104,7 +105,7 @@ export default function ProjectsPage() {
         }
       />
 
-      <div className="-mt-1 px-5 pb-4 sm:px-8">
+      <div className="-mt-1.5 px-5 pb-2 sm:px-8">
         <div className="relative max-w-sm">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
           <input
@@ -112,7 +113,7 @@ export default function ProjectsPage() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("projects.search")}
             aria-label={t("projects.search")}
-            className="h-10 w-full rounded-xl bg-fill pl-9 pr-3 text-[14px] placeholder:text-faint focus:outline-none focus:ring-1 focus:ring-accent"
+            className="h-9 w-full rounded-xl bg-fill pl-9 pr-3 text-[14px] placeholder:text-faint focus:outline-none focus:ring-1 focus:ring-accent"
           />
         </div>
       </div>
@@ -122,7 +123,7 @@ export default function ProjectsPage() {
       ) : rows.length === 0 ? (
         <EmptyState title={t("projects.noMatch")} />
       ) : (
-        <div className="space-y-4 px-5 pb-8 sm:px-8">
+        <div className="space-y-3 px-5 pb-8 sm:px-8">
           {rows.map(({ project, client, items }) => (
             <article
               key={project.id}
@@ -142,13 +143,13 @@ export default function ProjectsPage() {
             >
               {/* Name, client, date, owner and money — everything needed to
                   recognise the project without opening it. */}
-              <div className="border-b border-line px-5 py-4 transition-colors duration-150 group-hover:bg-fill active:bg-fill sm:px-6">
+              <div className="border-b border-line px-5 py-1.5 transition-colors duration-150 group-hover:bg-fill active:bg-fill sm:px-6">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="text-[18px] font-semibold leading-tight tracking-[-0.014em] [overflow-wrap:anywhere]">
                       {project.name}
                     </h2>
-                    <p className="mt-1.5 truncate text-[12.5px] text-faint">
+                    <p className="mt-1 truncate text-[12.5px] text-faint">
                       {client?.name} · {mediumDate(project.date, locale)} ·{" "}
                       {project.createdBy}
                     </p>

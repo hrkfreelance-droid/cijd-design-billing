@@ -2,6 +2,8 @@
 
 この文書は、Supabase接続後に社内で毎日使うための短い手順です。業務データの正本はSupabaseです。`localStorage`、`.data/db.json`、`.data/runtime/db.json`は本番台帳として使いません。
 
+現在のcheckout・NBC公式Rate・Refresh運用の引き継ぎ正本は、[HANDOFF_NBC_RATE_OPERATIONS.md](./HANDOFF_NBC_RATE_OPERATIONS.md)です。
+
 ## 毎日の流れ
 
 1. DesignerがClient / Project / Billing Itemを登録する。

@@ -131,8 +131,9 @@ function Payments() {
             label={tab === "completed" ? t("projects.knownTotal") : undefined}
             secondaryValue={khrTotal == null ? undefined : `៛${khrTotal.toLocaleString("en-US")}`}
             secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rate={exchangeRate?.rate}
             rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={exchangeRate?.fetchedAt}
+            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
           />
         }
       />

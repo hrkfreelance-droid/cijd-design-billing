@@ -21,7 +21,7 @@ export function CurrencyAmount({
         {moneyExact(usd)}
       </span>
       {rate && rate > 0 ? (
-        <span className="mt-0.5 block whitespace-nowrap text-[12px] font-medium text-muted">
+        <span className="mt-px block whitespace-nowrap text-[12px] font-medium text-muted">
           {formatKhr(usd, rate)}
         </span>
       ) : null}

@@ -13,7 +13,12 @@
   },
   "workers_dev": true,
   "triggers": {
-    "crons": ["0 1 * * *"]
+    "crons": [
+      "35 9 * * 1-5",
+      "50 9 * * 1-5",
+      "5 10 * * 1-5",
+      "0 1 * * *"
+    ]
   },
   "vars": {
     "CIJD_PREVIEW_MODE": "1",

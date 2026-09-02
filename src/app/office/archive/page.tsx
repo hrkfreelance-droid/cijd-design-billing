@@ -134,8 +134,9 @@ export default function ArchivePage() {
             label={t("projects.knownTotal")}
             secondaryValue={khrTotal == null ? undefined : `៛${khrTotal.toLocaleString("en-US")}`}
             secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rate={exchangeRate?.rate}
             rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={exchangeRate?.fetchedAt}
+            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
           />
         }
       />

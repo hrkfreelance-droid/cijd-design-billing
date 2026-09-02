@@ -110,8 +110,10 @@ export default function ProgressPage() {
             label={estimated ? t("projects.estimatedTotal") : undefined}
             secondaryValue={exchangeRate && knownTotal > 0 ? formatKhr(knownTotal, exchangeRate.rate) : undefined}
             secondaryLabel={exchangeRate && knownTotal > 0 ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rate={exchangeRate?.rate}
             rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={exchangeRate?.fetchedAt}
+            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
+            showRateActions={false}
             meta={
               pendingCount === 1
                 ? t("projects.pendingPricesOne", { count: pendingCount })
@@ -126,14 +128,14 @@ export default function ProgressPage() {
       {groups.length === 0 ? (
         <EmptyState title={t("office.progressEmpty")} />
       ) : (
-        <div className="space-y-4 px-5 pb-10 sm:px-8">
+        <div className="space-y-3 px-5 pb-10 sm:px-8">
           {groups.map((group) => (
             <section
               key={group.project.id}
               data-testid={`progress-project-${group.project.id}`}
               className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
             >
-              <div className="border-b border-line px-5 py-4 sm:px-6">
+              <div className="border-b border-line px-5 py-2 sm:px-6">
                 <div className="flex min-w-0 items-start justify-between gap-4">
                   <div className="min-w-0">
                     <h2 className="truncate text-[17px] font-semibold tracking-[-0.012em]">{group.project.name}</h2>
@@ -143,7 +145,7 @@ export default function ProgressPage() {
                   </div>
                   <ProgressProjectTotal items={group.items} rate={scope.snapshot.exchangeRate?.rate} />
                 </div>
-                <div className="mt-3 divide-y divide-line">
+                <div className="mt-2 divide-y divide-line">
                   {group.items
                     .slice()
                     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -151,7 +153,7 @@ export default function ProgressPage() {
                       <div
                         key={item.id}
                         data-testid={`progress-item-${item.id}`}
-                        className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 py-2.5 first:pt-0 last:pb-0"
+                        className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 py-1.5 first:pt-0 last:pb-0"
                       >
                         <span className="min-w-0 truncate text-[14px] text-text">
                           {itemLabel(item)}

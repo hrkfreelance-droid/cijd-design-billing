@@ -229,6 +229,8 @@ export interface Snapshot {
   users: User[];
   /** Latest successful NBC rate, used for current operational estimates. */
   exchangeRate: ExchangeRate | null;
+  /** Last successful official API check, including a future effective-date response. */
+  exchangeRateLastCheckedAt: string | null;
   mode: "local" | "supabase";
   /** Which slice of the data this snapshot contains, given the viewer's role. */
   scope: { production: boolean; billing: boolean; payment: boolean; printing?: boolean };

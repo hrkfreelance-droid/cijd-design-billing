@@ -55,10 +55,10 @@ export function BillingItemCard({
   return (
     <article
       data-testid="designer-project-item"
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 py-3.5 sm:py-3"
+      className="grid grid-cols-[minmax(0,1fr)_84px] items-start gap-x-4 gap-y-0.5 py-1.5 sm:grid-cols-[minmax(0,1fr)_auto]"
     >
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="col-start-1 row-span-2 row-start-1 min-w-0">
+        <div className="flex min-w-0 items-center gap-1">
           <StatusPill status={workStatus} className="shrink-0" />
           {onOpen ? (
             <button
@@ -77,10 +77,10 @@ export function BillingItemCard({
             </Link>
           )}
         </div>
-        {spec && <p className="mt-1 min-w-0 truncate text-[12.5px] text-muted">{spec}</p>}
+        {spec && <p className="mt-0.5 min-w-0 truncate text-[12.5px] text-muted">{spec}</p>}
       </div>
 
-      <div className="row-span-2 flex min-w-[84px] flex-col items-end gap-1">
+      <div className="col-start-2 row-start-1 flex min-w-[84px] flex-col items-end">
         {item.amount > 0 ? (
           <CurrencyAmount
             usd={item.amount}
@@ -91,35 +91,34 @@ export function BillingItemCard({
           <Amount value="—" className="text-[15px]" />
         )}
 
-        <PriceStateCaption state={state} />
-
-        {!history && !locked && (
-          <div className="mt-1 flex flex-wrap justify-end gap-2">
-            {needsPriceReview &&
-              (onOpen ? (
-                <button type="button" onClick={onOpen} className={REVIEW_BUTTON}>
-                  {t("projects.reviewPrice")}
-                </button>
-              ) : (
-                <Link href={reviewHref} className={REVIEW_BUTTON}>
-                  {t("projects.reviewPrice")}
-                </Link>
-              ))}
-            {/* Until the price is settled, finishing the work is the lesser action. */}
-            <ItemProductionAction
-              item={item}
-              size="sm"
-              variant={needsPriceReview ? "secondary" : undefined}
-            />
-          </div>
-        )}
       </div>
+
+      {!history && !locked && (
+        <div className="col-start-1 col-span-2 row-start-2 flex flex-wrap justify-end gap-1.5 sm:col-start-2 sm:col-span-1">
+          {needsPriceReview &&
+            (onOpen ? (
+              <button type="button" onClick={onOpen} className={REVIEW_BUTTON}>
+                {t("projects.reviewPrice")}
+              </button>
+            ) : (
+              <Link href={reviewHref} className={REVIEW_BUTTON}>
+                {t("projects.reviewPrice")}
+              </Link>
+            ))}
+          {/* Until the price is settled, finishing the work is the lesser action. */}
+          <ItemProductionAction
+            item={item}
+            size="sm"
+            variant={needsPriceReview ? "secondary" : undefined}
+          />
+        </div>
+      )}
     </article>
   );
 }
 
 const REVIEW_BUTTON =
-  "inline-flex h-9 min-w-[84px] shrink-0 items-center justify-center rounded-full bg-accent px-3.5 text-[12.5px] font-medium text-on-accent transition-colors duration-150 hover:bg-accent-hover";
+  "inline-flex h-8 min-w-[84px] shrink-0 items-center justify-center rounded-full bg-accent px-3 text-[12.5px] font-medium text-on-accent transition-colors duration-150 hover:bg-accent-hover";
 
 /**
  * What this item actually is, in one line: the print run and its
@@ -156,20 +155,4 @@ function displayTypeLabel(item: BillingItem, fallback: string): string {
   if (normalized.startsWith("revision")) return "Revision";
   if (normalized.startsWith("istand") || normalized.startsWith("i-stand")) return "iStand";
   return fallback;
-}
-
-/**
- * Certainty of the amount printed above it. A confirmed price says nothing —
- * the number on its own already means confirmed.
- */
-function PriceStateCaption({ state }: { state: ReturnType<typeof priceState> }) {
-  const { t } = useI18n();
-  if (state === "CONFIRMED") return null;
-  return (
-    <span className="whitespace-nowrap text-[11.5px] font-medium text-review">
-      {state === "PENDING" ? t("projects.pricePending") : t("projects.priceSuggestedShort")}
-      {" · "}
-      {t("projects.priceReview")}
-    </span>
-  );
 }

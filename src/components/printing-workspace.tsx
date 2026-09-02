@@ -81,8 +81,9 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
             label={totalLabel}
             secondaryValue={exchangeRate ? formatKhr(knownTotal, exchangeRate.rate) : undefined}
             secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rate={exchangeRate?.rate}
             rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={exchangeRate?.fetchedAt}
+            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
           />
         }
       />
@@ -92,10 +93,10 @@ export function PrintingWorkspace({ view }: { view: PrintingView }) {
           title={view === "history" ? t("printing.emptyHistory") : t("printing.emptyReview")}
         />
       ) : (
-        <div className="space-y-4 px-5 pb-10 sm:px-8">
+        <div className="space-y-3 px-5 pb-10 sm:px-8">
           {projectGroups.map((group) => (
             <PrintProjectBlock
-              key={group.project?.name ?? group.items[0].projectId}
+              key={group.items[0].projectId}
               group={group}
               locale={locale}
               rate={scope.snapshot.exchangeRate?.rate}
@@ -138,13 +139,13 @@ function PrintProjectBlock({
       data-testid="printing-project-group"
       className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border"
     >
-      <div className="border-b border-line px-5 py-4 sm:px-6">
+      <div className="border-b border-line px-5 py-2 sm:px-6">
         <div className="flex min-w-0 items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="truncate text-[17px] font-semibold tracking-[-0.012em]">
               {group.project?.name ?? ""}
             </h2>
-            <p className="mt-1 truncate text-[12.5px] text-faint">
+            <p className="mt-0.5 truncate text-[12.5px] text-faint">
               {group.client?.name} · {group.project ? mediumDate(group.project.date, locale) : ""}
             </p>
           </div>
@@ -207,23 +208,23 @@ function PrintItemCard({
   return (
     <article
       data-testid="printing-item-card"
-      className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 px-5 py-3.5 sm:px-6 sm:py-3"
+      className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 px-5 py-1.5 sm:px-6"
     >
       <span className="sr-only">{projectName}</span>
       <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1">
           <StatusPill status={workStatus} className="shrink-0" />
           <h3 className="min-w-0 truncate text-[15px] font-medium tracking-[-0.006em]">
             {t("printing.itemType")} ×{item.quantity}
           </h3>
         </div>
-        <div className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-[12px] text-muted">
+        <div className="mt-0.5 flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-muted">
           {item.printSize && <span className="truncate">{t("printing.size")}: {item.printSize}</span>}
           {suggestedUnit > 0 && <span className="tnum whitespace-nowrap">{money(suggestedUnit)} / pc</span>}
         </div>
       </div>
 
-      <div className="row-span-2 flex min-w-[84px] flex-col items-end gap-1">
+      <div className="row-span-2 flex min-w-[84px] flex-col items-end gap-0.5">
         {shown > 0 ? (
           <CurrencyAmount usd={shown} rate={!history ? rate : undefined} className="text-[14px]" />
         ) : (

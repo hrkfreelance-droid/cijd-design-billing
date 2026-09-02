@@ -87,8 +87,9 @@ export default function OfficeBillingPage() {
             value={money(readyTotal)}
             secondaryValue={exchangeRate ? formatKhr(readyTotal, exchangeRate.rate) : undefined}
             secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rate={exchangeRate?.rate}
             rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={exchangeRate?.fetchedAt}
+            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
           />
         }
       />
@@ -96,7 +97,7 @@ export default function OfficeBillingPage() {
       {groups.length === 0 ? (
         <EmptyState title={t("billing.readyEmpty")} />
       ) : (
-        <div className="space-y-4 px-5 pb-8 sm:px-8">
+        <div className="space-y-3 px-5 pb-8 sm:px-8">
           {groups.map((group) => (
             <ReadyGroup key={group.client.id} client={group.client} items={group.items} />
           ))}
@@ -114,8 +115,8 @@ function PrintPriceQueue({ items }: { items: BillingItem[] }) {
   const scope = useScope();
 
   return (
-    <section className="pt-8">
-      <div className="px-5 pb-2 sm:px-8">
+    <section className="pt-6">
+      <div className="px-5 pb-1 sm:px-8">
         <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
           {t("billing.printPricePendingTitle")}
         </h2>
@@ -129,7 +130,7 @@ function PrintPriceQueue({ items }: { items: BillingItem[] }) {
           const client = project ? scope?.idx.clientById.get(project.clientId) : undefined;
           const unknownAmount = item.amount <= 0;
           return (
-            <div key={item.id} className="flex flex-col gap-2 px-5 py-3.5 sm:px-6">
+            <div key={item.id} className="flex flex-col gap-2 px-5 py-2.5 sm:px-6">
               <div className="flex items-start gap-3">
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14.5px] font-medium">
@@ -218,7 +219,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
       <button
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="flex w-full items-center gap-3 px-5 py-3.5 text-left transition-colors duration-150 hover:bg-fill sm:px-6"
+        className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors duration-150 hover:bg-fill sm:px-6"
       >
         <ChevronDown
           className={`h-4 w-4 shrink-0 text-faint transition-transform duration-200 ${
@@ -245,7 +246,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
             {projects.map((project) => {
               const checked = !skipped.has(project.id);
               return (
-                <div key={project.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 px-5 py-3.5 sm:px-6 sm:py-3">
+                <div key={project.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 px-5 py-2.5 sm:px-6 sm:py-2">
                   <Checkbox
                     checked={checked}
                     onChange={() => toggle(project.id)}
@@ -278,7 +279,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
             })}
           </div>
 
-          <div className="flex flex-col gap-3 border-t border-line px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex flex-col gap-3 border-t border-line px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
             <span className="text-[13px] text-muted">
               {t("billing.selected", { count: selectedItems.length })} ·{" "}
               <CurrencyAmount

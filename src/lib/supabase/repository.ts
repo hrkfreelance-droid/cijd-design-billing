@@ -29,7 +29,11 @@ import {
 } from "./rows";
 import { isProductionComplete, isPrintPriceConfirmed } from "@/lib/derive";
 import { roundMoney } from "@/lib/format";
-import { ExchangeRateUnavailableError, latestExchangeRate } from "@/lib/exchange-rate";
+import {
+  ExchangeRateUnavailableError,
+  getApplicableOfficialRate,
+  latestOfficialRateCheckedAt,
+} from "@/lib/exchange-rate";
 import { ensureCurrentSupabaseExchangeRate } from "@/lib/exchange-rate-server";
 import { supabaseConfig } from "./config";
 
@@ -160,7 +164,8 @@ export class SupabaseRepository implements Repository {
       invoices: (invoices.data ?? []).map(toInvoice),
       invoiceItems: (invoiceItems.data ?? []).map(toInvoiceItem),
       users: (users.data ?? []).map(toUser),
-      exchangeRate: latestExchangeRate(rates),
+      exchangeRate: getApplicableOfficialRate(rates),
+      exchangeRateLastCheckedAt: latestOfficialRateCheckedAt(rates),
       mode: this.mode,
       // Filled in by the guard; what came back is already what may be seen.
       scope: { production: true, billing: true, payment: true },

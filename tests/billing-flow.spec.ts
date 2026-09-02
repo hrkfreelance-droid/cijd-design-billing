@@ -80,6 +80,31 @@ test("designer Hiroki can move work through downstream workspaces", async ({ pag
   expect(officeNavHrefs).toEqual(["/office/progress", "/office", "/office/payments", "/office/archive"]);
 });
 
+test("billing shows the official rate details and preserves the saved rate on refresh failure", async ({ page }) => {
+  await signIn(page, "u_billing");
+  await page.goto("/office");
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  const before = (await (await page.request.get("/api/state")).json()).data.exchangeRate;
+  await expect(page.getByText("Rate date", { exact: false })).toBeVisible();
+  await expect(page.getByText("Last checked", { exact: false })).toBeVisible();
+  await expect(page.getByTestId("exchange-rate-official-link")).toHaveAttribute(
+    "href",
+    "https://www.nbc.gov.kh/english/economic_research/exchange_rate.php",
+  );
+  await expect(page.getByTestId("exchange-rate-official-link")).toBeVisible();
+  await expect(page.getByTestId("exchange-rate-refresh")).toBeVisible();
+
+  await page.getByTestId("exchange-rate-refresh").click();
+  await expect(
+    page.getByText("Official rate could not be refreshed. The latest saved rate is still in use.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  const after = (await (await page.request.get("/api/state")).json()).data.exchangeRate;
+  expect(after).toEqual(before);
+});
+
 test("undelivered work cannot reach billing", async ({ page }) => {
   await signIn(page, "u_hiroki");
   const { itemId } = await newProjectWithItem(page, "Gate Check");
@@ -372,7 +397,14 @@ test("invoice once, pay once", async ({ page }) => {
   expect(created.invoiceNumber).toMatch(/^CIJD-/);
   expect(created.exchangeRate).toBe(4047);
   expect(created.exchangeRateSource).toBe("NBC");
-  expect(created.exchangeRateEffectiveDate).toBe("2026-09-01");
+  expect(created.exchangeRateEffectiveDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  expect(created.exchangeRateFetchedAt).toMatch(/T/);
+  const frozenRate = {
+    exchangeRate: created.exchangeRate,
+    exchangeRateSource: created.exchangeRateSource,
+    exchangeRateEffectiveDate: created.exchangeRateEffectiveDate,
+    exchangeRateFetchedAt: created.exchangeRateFetchedAt,
+  };
 
   const createdInvoiceRow = page.getByRole("button", { name: new RegExp(created.invoiceNumber) });
   await expect(createdInvoiceRow).toContainText("៛");
@@ -418,6 +450,7 @@ test("invoice once, pay once", async ({ page }) => {
 
   const paidState = await (await page.request.get("/api/state")).json();
   const paid = paidState.data.invoices.find((i: { id: string; status: string }) => i.id === created.id);
+  expect(paid).toEqual(expect.objectContaining(frozenRate));
   const again = await page.request.post(`/api/invoices/${paid.id}/payment`, {
     data: { paymentDate: "2026-01-01" },
   });

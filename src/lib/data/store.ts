@@ -32,7 +32,8 @@ import { roundMoney } from "@/lib/format";
 import {
   ensureCurrentExchangeRate,
   ExchangeRateUnavailableError,
-  latestExchangeRate,
+  getApplicableOfficialRate,
+  latestOfficialRateCheckedAt,
 } from "@/lib/exchange-rate";
 
 const DEFAULT_ACTOR = "Hiroki";
@@ -188,7 +189,8 @@ export class Store implements Repository {
       invoices: db.invoices,
       invoiceItems: db.invoiceItems,
       users: db.users,
-      exchangeRate: latestExchangeRate(db.exchangeRates),
+      exchangeRate: getApplicableOfficialRate(db.exchangeRates),
+      exchangeRateLastCheckedAt: latestOfficialRateCheckedAt(db.exchangeRates),
       mode: this.mode,
       scope: { production: true, billing: true, payment: true },
     };
