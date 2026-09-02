@@ -63,8 +63,8 @@ export function BillingItemCard({
         event.stopPropagation();
         onOpen();
       }}
-      className={`min-w-0 rounded-2xl px-3 py-3 outline-none transition-colors ${
-        onOpen ? "cursor-pointer hover:bg-fill focus-visible:ring-2 focus-visible:ring-accent" : ""
+      className={`min-w-0 px-3 py-3 outline-none transition-colors ${
+        onOpen ? "cursor-pointer hover:bg-fill/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent" : ""
       }`}
     >
       <div className="flex min-w-0 items-start justify-between gap-4">
