@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { passwordPolicyProblem } from "@/lib/auth/password";
 import { ROLES, type Role } from "@/lib/auth/roles";
 import { currentUser } from "@/lib/auth/session";
 import { supabaseAdminClient } from "@/lib/supabase/admin";
@@ -64,7 +65,8 @@ export async function POST(request: Request) {
 
   if (!EMAIL_RE.test(email)) return fail("INVALID_EMAIL", "Enter a valid email address.", 400);
   if (!name || name.length > 120) return fail("INVALID_NAME", "Enter a name up to 120 characters.", 400);
-  if (password.length < 8) return fail("INVALID_PASSWORD", "Password must be at least 8 characters.", 400);
+  const passwordProblem = passwordPolicyProblem(password);
+  if (passwordProblem) return fail("INVALID_PASSWORD", passwordProblem, 400);
   if (!ROLES.includes(role as Role)) return fail("INVALID_ROLE", "Choose a valid role.", 400);
 
   const { actor, admin } = context;
