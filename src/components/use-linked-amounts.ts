@@ -15,9 +15,18 @@ export function useLinkedAmounts({
   initialTotal?: number | null;
   initialSource?: LinkedAmountSource;
 }) {
-  const [unit, setUnitValue] = useState(() => initialInput(initialUnit, 6));
-  const [total, setTotalValue] = useState(() => initialInput(initialTotal, 2));
-  const [source, setSource] = useState<LinkedAmountSource>(initialSource);
+  const initialUnitText = initialInput(initialUnit, 6);
+  const initialTotalText = initialInput(initialTotal, 2);
+  const effectiveInitialSource: LinkedAmountSource =
+    initialSource === "unit" && !initialUnitText && initialTotalText
+      ? "total"
+      : initialSource === "total" && !initialTotalText && initialUnitText
+        ? "unit"
+        : initialSource;
+
+  const [unit, setUnitValue] = useState(initialUnitText);
+  const [total, setTotalValue] = useState(initialTotalText);
+  const [source, setSource] = useState<LinkedAmountSource>(effectiveInitialSource);
   const [touched, setTouched] = useState(false);
 
   const quantityNumber = positive(quantity);
