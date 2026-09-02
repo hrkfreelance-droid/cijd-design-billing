@@ -3,12 +3,13 @@
 import { useRouter } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
+import { CompactSummaryHeader } from "@/components/compact-summary-header";
 import { HistoricalRecordRow } from "@/components/historical-record-row";
 import { InvoiceSheet } from "@/components/invoice-sheet";
 import { InvoiceListRow } from "@/components/invoice-list-row";
 import { useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { EmptyState, PageHeader, Segmented } from "@/components/ui";
+import { EmptyState, Segmented } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
 import { isHistoricalRecord } from "@/lib/derive";
 import { formatKhr } from "@/lib/exchange-rate";
@@ -90,14 +91,11 @@ function Payments() {
   ].sort((a, b) => {
     const dateOrder = b.sortDate.localeCompare(a.sortDate);
     if (dateOrder) return dateOrder;
-    if (a.kind === "invoice" && b.kind === "invoice") {
-      return b.invoice.id.localeCompare(a.invoice.id);
-    }
-    if (a.kind === "historical" && b.kind === "historical") {
-      return a.group.project.name.localeCompare(b.group.project.name);
-    }
+    if (a.kind === "invoice" && b.kind === "invoice") return b.invoice.id.localeCompare(a.invoice.id);
+    if (a.kind === "historical" && b.kind === "historical") return a.group.project.name.localeCompare(b.group.project.name);
     return a.kind === "invoice" ? -1 : 1;
   });
+
   const shown = tab === "awaiting" ? awaiting : tab === "receipts" ? receipts : completed;
   const shownHistorical = tab === "completed" ? historical : [];
   const total =
@@ -113,22 +111,12 @@ function Payments() {
 
   return (
     <div className="animate-rise">
-      <PageHeader
+      <CompactSummaryHeader
         title={t("office.payments")}
         subtitle={scope.client ? scope.client.name : t("client.all")}
-        action={
-          <div className="shrink-0 text-right">
-            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
-              {tab === "completed" ? t("projects.knownTotal") : t("common.total")}
-            </p>
-            <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">
-              {money(total)}
-            </p>
-            {exchangeRate ? (
-              <p className="tnum mt-0.5 text-[11px] text-faint">≈{formatKhr(total, exchangeRate.rate)}</p>
-            ) : null}
-          </div>
-        }
+        label={tab === "completed" ? t("projects.knownTotal") : t("common.total")}
+        value={money(total)}
+        secondaryValue={exchangeRate ? `≈${formatKhr(total, exchangeRate.rate)}` : undefined}
       />
 
       <div className="px-5 pb-5 sm:px-8">
