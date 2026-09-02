@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import { ChevronRight } from "@/components/icons";
 import { useI18n, useSession } from "@/components/providers";
-import { Button } from "@/components/ui";
+import { Button, Field, Input } from "@/components/ui";
 import { homeFor } from "@/lib/auth/roles";
 import { supabaseBrowserClient } from "@/lib/supabase/browser";
 
@@ -24,7 +24,7 @@ export default function SignInPage() {
 
   if (auth === "supabase") {
     if (access === "denied") return <AccessDenied onSignOut={signOut} />;
-    return <GoogleSignIn busy={busy} setBusy={setBusy} />;
+    return <SupabaseSignIn busy={busy} setBusy={setBusy} />;
   }
 
   return (
@@ -65,23 +65,31 @@ export default function SignInPage() {
   );
 }
 
-function GoogleSignIn({
-  busy,
-  setBusy,
-}: {
-  busy: boolean;
-  setBusy: (busy: boolean) => void;
-}) {
+function SupabaseSignIn({ busy, setBusy }: { busy: boolean; setBusy: (busy: boolean) => void }) {
   const { t } = useI18n();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const client = supabaseBrowserClient();
 
-  const continueWithGoogle = async () => {
-    if (busy) return;
-    if (!client) {
-      setError(t("signin.setupRequired"));
+  const signInWithEmail = async () => {
+    if (busy || !client) return;
+    setBusy(true);
+    setError(null);
+    const result = await client.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (result.error) {
+      setBusy(false);
+      setError("Email or password is incorrect.");
       return;
     }
+    window.location.assign("/");
+  };
+
+  const continueWithGoogle = async () => {
+    if (busy || !client) return;
     setBusy(true);
     setError(null);
     const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/")}`;
@@ -100,16 +108,56 @@ function GoogleSignIn({
       <div className="mb-8">
         <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">CIJD</p>
         <h1 className="mt-1 text-[28px] font-semibold tracking-[-0.021em]">Billing</h1>
-        <p className="mt-2 text-[13.5px] text-muted">{t("signin.required")}</p>
+        <p className="mt-2 text-[13.5px] text-muted">Sign in with your registered email</p>
       </div>
+
       {(error || !client) && (
         <p className="mb-4 text-[13px] text-review" role="alert">
           {error ?? t("signin.setupRequired")}
         </p>
       )}
+
+      <div className="space-y-4">
+        <Field label="Email">
+          <Input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            placeholder="name@example.com"
+          />
+        </Field>
+        <Field label="Password">
+          <Input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="current-password"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void signInWithEmail();
+            }}
+          />
+        </Field>
+        <Button
+          type="button"
+          variant="primary"
+          full
+          onClick={() => void signInWithEmail()}
+          disabled={busy || !client || !email.trim() || password.length < 1}
+        >
+          Sign in
+        </Button>
+      </div>
+
+      <div className="my-6 flex items-center gap-3 text-[11px] text-faint">
+        <span className="h-px flex-1 bg-line" />
+        <span>Admin / existing account</span>
+        <span className="h-px flex-1 bg-line" />
+      </div>
+
       <Button
         type="button"
-        variant="primary"
+        variant="secondary"
         full
         onClick={() => void continueWithGoogle()}
         disabled={busy || !client}

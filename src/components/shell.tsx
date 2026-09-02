@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import {
   ArchiveIcon,
@@ -11,20 +11,18 @@ import {
   ChevronRight,
   ListIcon,
   MoonIcon,
-  PlusIcon,
   SunIcon,
 } from "@/components/icons";
-import { api, useData, useI18n, useSession, useTheme } from "@/components/providers";
-import { useAction } from "@/components/use-action";
-import { Button, Field, IconButton, Input, Sheet } from "@/components/ui";
-import { can, canAny, homeFor, workspacesFor, type Permission } from "@/lib/auth/roles";
+import { useData, useI18n, useSession, useTheme } from "@/components/providers";
+import { Button, IconButton, Sheet } from "@/components/ui";
+import { canAny, homeFor, workspacesFor, type Permission } from "@/lib/auth/roles";
 import type { MessageKey } from "@/lib/i18n";
-import type { Client } from "@/lib/types";
 
 export interface NavItem {
   href: string;
   key: MessageKey;
   Icon: typeof ListIcon;
+  requires?: Permission[];
 }
 
 export const DESIGNER_NAV: NavItem[] = [
@@ -34,10 +32,10 @@ export const DESIGNER_NAV: NavItem[] = [
 ];
 
 export const OFFICE_NAV: NavItem[] = [
-  { href: "/office/progress", key: "nav.progress", Icon: ListIcon },
-  { href: "/office", key: "nav.billing", Icon: BillIcon },
-  { href: "/office/payments", key: "nav.payments", Icon: ListIcon },
-  { href: "/office/archive", key: "nav.archive", Icon: ArchiveIcon },
+  { href: "/office/progress", key: "nav.progress", Icon: ListIcon, requires: ["progress:read"] },
+  { href: "/office", key: "nav.billing", Icon: BillIcon, requires: ["billing:read"] },
+  { href: "/office/payments", key: "nav.payments", Icon: ListIcon, requires: ["payment:read"] },
+  { href: "/office/archive", key: "nav.archive", Icon: ArchiveIcon, requires: ["payment:read"] },
 ];
 
 export const PRINTING_NAV: NavItem[] = [
@@ -49,6 +47,12 @@ function isActive(pathname: string, href: string, nav: NavItem[]) {
   if (pathname === href) return true;
   if (!pathname.startsWith(`${href}/`)) return false;
   return !nav.some((item) => item.href !== href && pathname.startsWith(item.href));
+}
+
+function workspaceTitle(workspace: "designer" | "printing" | "office") {
+  if (workspace === "designer") return "Design";
+  if (workspace === "printing") return "Printing";
+  return "Billing";
 }
 
 export function Workspace({
@@ -67,7 +71,6 @@ export function Workspace({
   const { theme, setTheme } = useTheme();
   const { user, ready } = useSession();
   const router = useRouter();
-  const [clientsOpen, setClientsOpen] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
@@ -75,12 +78,16 @@ export function Workspace({
     else if (!canAny(user.role, requires)) router.replace(homeFor(user.role));
   }, [ready, user, requires, router]);
 
+  const visibleNav = useMemo(
+    () => user ? nav.filter((item) => !item.requires || canAny(user.role, item.requires)) : [],
+    [nav, user],
+  );
+
   if (!ready || !user || !canAny(user.role, requires)) {
     return <div className="min-h-dvh bg-bg" />;
   }
 
   const spaces = workspacesFor(user.role);
-  const canManageClients = can(user.role, "client:write");
 
   return (
     <div className="min-h-dvh bg-bg">
@@ -88,11 +95,9 @@ export function Workspace({
         <div className="mx-auto max-w-4xl">
           <div className="flex min-w-0 items-center justify-between gap-3 px-5 py-3 sm:px-8">
             <Link href={homeFor(user.role)} className="min-w-0 shrink leading-none">
-              <span className="block truncate text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">
-                CIJD
-              </span>
+              <span className="block truncate text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">CIJD</span>
               <span className="mt-[3px] block truncate text-[15px] font-semibold tracking-[-0.012em] text-text">
-                Billing
+                {workspaceTitle(workspace)}
               </span>
             </Link>
 
@@ -121,21 +126,16 @@ export function Workspace({
               >
                 {theme === "dark" ? <SunIcon /> : <MoonIcon />}
               </IconButton>
-              <UserMenu />
+              <UserMenu workspace={workspace} />
             </div>
           </div>
 
-          <ServiceBar
-            current={workspace}
-            spaces={spaces}
-            canManageClients={canManageClients}
-            onManageClients={() => setClientsOpen(true)}
-          />
+          {workspace !== "office" && <ServiceBar current={workspace} spaces={spaces} />}
 
           <nav aria-label="Workspace navigation" className="border-t border-line">
             <div className="no-scrollbar flex min-w-0 items-center gap-4 overflow-x-auto px-5 sm:px-8">
-              {nav.map(({ href, key }) => {
-                const active = isActive(pathname, href, nav);
+              {visibleNav.map(({ href, key }) => {
+                const active = isActive(pathname, href, visibleNav);
                 return (
                   <Link
                     key={href}
@@ -157,8 +157,6 @@ export function Workspace({
       <main className="mx-auto max-w-4xl">
         <Content>{children}</Content>
       </main>
-
-      {canManageClients && <ClientsSheet open={clientsOpen} onClose={() => setClientsOpen(false)} />}
     </div>
   );
 }
@@ -166,13 +164,9 @@ export function Workspace({
 function ServiceBar({
   current,
   spaces,
-  canManageClients,
-  onManageClients,
 }: {
-  current: "designer" | "printing" | "office";
+  current: "designer" | "printing";
   spaces: ("designer" | "printing" | "office")[];
-  canManageClients: boolean;
-  onManageClients: () => void;
 }) {
   const services = [
     { label: "Passport", disabled: true as const },
@@ -181,7 +175,6 @@ function ServiceBar({
     { label: "Printing", space: "printing" as const, href: "/printing" },
     { label: "Attend", disabled: true as const },
     { label: "Translation", disabled: true as const },
-    { label: "Billing", space: "office" as const, href: "/office" },
   ];
 
   return (
@@ -229,17 +222,6 @@ function ServiceBar({
             </Link>
           );
         })}
-
-        {canManageClients && (
-          <button
-            type="button"
-            onClick={onManageClients}
-            className="ml-1 flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-[12px] font-medium text-muted transition-colors hover:bg-fill hover:text-text"
-          >
-            <PlusIcon className="h-3.5 w-3.5" />
-            Clients
-          </button>
-        )}
       </div>
     </div>
   );
@@ -261,12 +243,21 @@ function Content({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function UserMenu() {
+function UserMenu({ workspace }: { workspace: "designer" | "printing" | "office" }) {
   const { t } = useI18n();
   const { user, signOut } = useSession();
   const router = useRouter();
   const [open, setOpen] = useState(false);
   if (!user) return null;
+
+  const adminLinks = user.role === "ADMIN"
+    ? [
+        { href: "/designer/projects", label: "Design", active: workspace === "designer" },
+        { href: "/printing", label: "Printing", active: workspace === "printing" },
+        { href: "/office", label: "Billing", active: workspace === "office" },
+        { href: "/admin", label: "Admin", active: false },
+      ]
+    : [];
 
   return (
     <>
@@ -284,134 +275,35 @@ function UserMenu() {
         description={t(`role.${user.role}`)}
         footer={
           <div className="space-y-2">
-            <Button variant="secondary" full onClick={() => setOpen(false)}>
-              {t("common.close")}
-            </Button>
+            <Button variant="secondary" full onClick={() => setOpen(false)}>{t("common.close")}</Button>
             <button
-              onClick={() => {
-                void signOut().then(() => router.push("/signin"));
-              }}
+              onClick={() => void signOut().then(() => router.push("/signin"))}
               className="block w-full py-1.5 text-center text-[13px] text-faint transition-colors hover:text-review"
             >
               {t("signin.signOut")}
             </button>
           </div>
         }
-      />
-    </>
-  );
-}
-
-function ClientsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { t } = useI18n();
-  const { snapshot } = useData();
-  const [editing, setEditing] = useState<Client | "new" | null>(null);
-  const clients = snapshot?.clients ?? [];
-
-  return (
-    <>
-      <Sheet
-        open={open && editing === null}
-        onClose={onClose}
-        title={t("client.manage")}
-        footer={<Button variant="secondary" full onClick={onClose}>{t("common.close")}</Button>}
       >
-        <div className="divide-y divide-line pb-2">
-          {clients.map((client) => (
-            <button
-              key={client.id}
-              onClick={() => setEditing(client)}
-              className="flex w-full items-center gap-3 py-3 text-left"
-            >
-              <span className="min-w-0 flex-1 truncate text-[15px]">{client.name}</span>
-              {!client.active && <span className="text-[12px] text-faint">{t("client.hidden")}</span>}
-              <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
-            </button>
-          ))}
-          <button
-            onClick={() => setEditing("new")}
-            className="flex w-full items-center gap-2 py-3 text-left text-[14.5px] font-medium text-accent"
-          >
-            <PlusIcon className="h-4 w-4" />
-            {t("client.new")}
-          </button>
-        </div>
-      </Sheet>
-
-      <ClientEditSheet
-        key={editing === "new" ? "new" : (editing?.id ?? "none")}
-        open={editing !== null}
-        client={editing === "new" ? null : editing}
-        onClose={() => setEditing(null)}
-      />
-    </>
-  );
-}
-
-function ClientEditSheet({
-  open,
-  client,
-  onClose,
-}: {
-  open: boolean;
-  client: Client | null;
-  onClose: () => void;
-}) {
-  const { t } = useI18n();
-  const { run, busy } = useAction();
-  const [name, setName] = useState(client?.name ?? "");
-
-  const submit = async () => {
-    if (!name.trim()) return;
-    const ok = await run(
-      () => client
-        ? api(`/api/clients/${client.id}`, { method: "PATCH", body: { name } })
-        : api("/api/clients", { method: "POST", body: { name } }),
-      { key: client ? "toast.itemUpdated" : "toast.clientCreated" },
-    );
-    if (ok) onClose();
-  };
-
-  const toggleActive = async () => {
-    if (!client) return;
-    const ok = await run(
-      () => api(`/api/clients/${client.id}`, { method: "PATCH", body: { active: !client.active } }),
-      { key: "toast.itemUpdated" },
-    );
-    if (ok) onClose();
-  };
-
-  return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title={client ? t("client.edit") : t("client.new")}
-      footer={
-        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-          <Button variant="secondary" full onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" full onClick={submit} disabled={!name.trim() || busy}>{t("common.save")}</Button>
-        </div>
-      }
-    >
-      <div className="space-y-4 pb-2">
-        <Field label={t("client.name")}>
-          <Input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("client.namePlaceholder")}
-            onKeyDown={(event) => { if (event.key === "Enter") void submit(); }}
-          />
-        </Field>
-        {client && (
-          <button
-            onClick={toggleActive}
-            disabled={busy}
-            className="block w-full border-t border-line py-3 text-center text-[13px] text-muted transition-colors hover:text-text"
-          >
-            {t(client.active ? "client.hide" : "client.show")}
-          </button>
+        {adminLinks.length > 0 && (
+          <div className="divide-y divide-line pb-2">
+            {adminLinks.map((item) => (
+              <button
+                key={item.href}
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  router.push(item.href);
+                }}
+                className="flex min-h-11 w-full items-center gap-3 py-3 text-left"
+              >
+                <span className={`flex-1 text-[15px] ${item.active ? "font-medium text-accent" : "text-text"}`}>{item.label}</span>
+                <ChevronRight className="h-4 w-4 text-faint" />
+              </button>
+            ))}
+          </div>
         )}
-      </div>
-    </Sheet>
+      </Sheet>
+    </>
   );
 }
