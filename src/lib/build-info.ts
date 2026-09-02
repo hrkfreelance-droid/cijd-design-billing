@@ -1,3 +1,5 @@
+import { GENERATED_BUILD_INFO } from "./build-info.generated";
+
 export type BuildInfo = {
   commit: string;
   shortCommit: string;
@@ -7,17 +9,17 @@ export type BuildInfo = {
 };
 
 /**
- * Deployment identity is injected by scripts/deploy-review.mjs. Never hand-edit
- * a SHA into the UI or docs: /api/version and the HTML meta tag must describe
- * the exact running build.
+ * Review build identity is captured as source before vinext compiles the app.
+ * Cloudflare Workers Builds exposes WORKERS_CI_COMMIT_SHA / WORKERS_CI_BRANCH
+ * only while building, so runtime verification reads these immutable literals.
  */
 export function getBuildInfo(): BuildInfo {
-  const commit = process.env.CIJD_BUILD_COMMIT?.trim() || "unknown";
+  const commit = GENERATED_BUILD_INFO.commit || "unknown";
   return {
     commit,
     shortCommit: commit === "unknown" ? "unknown" : commit.slice(0, 8),
-    branch: process.env.CIJD_BUILD_BRANCH?.trim() || "unknown",
-    builtAt: process.env.CIJD_BUILT_AT?.trim() || "unknown",
-    environment: process.env.CIJD_BUILD_ENVIRONMENT?.trim() || "unknown",
+    branch: GENERATED_BUILD_INFO.branch || "unknown",
+    builtAt: GENERATED_BUILD_INFO.builtAt || "unknown",
+    environment: GENERATED_BUILD_INFO.environment || "unknown",
   };
 }
