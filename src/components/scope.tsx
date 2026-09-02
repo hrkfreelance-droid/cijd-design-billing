@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 
-import { useClientFilter, useData } from "@/components/providers";
+import { useData } from "@/components/providers";
 import { index, type Indexed } from "@/lib/derive";
 import type { BillingItem, Client, Invoice, Project, Snapshot } from "@/lib/types";
 
@@ -17,41 +17,32 @@ export interface Scope {
   clientOf: (projectId: string) => Client | undefined;
 }
 
-/** Everything on screen respects the client chip at the top of the app. */
+/**
+ * Client chips were removed from the global header. Screens now work from the
+ * full dataset and group or label clients where that context is useful.
+ */
 export function useScope(): Scope | null {
   const { snapshot } = useData();
-  const { clientId } = useClientFilter();
 
   return useMemo(() => {
     if (!snapshot) return null;
     const idx = index(snapshot);
-    const projects = clientId
-      ? snapshot.projects.filter((p) => p.clientId === clientId)
-      : snapshot.projects;
-    const projectIds = new Set(projects.map((p) => p.id));
-    const items = clientId
-      ? snapshot.billingItems.filter((i) => projectIds.has(i.projectId))
-      : snapshot.billingItems;
-    const invoices = clientId
-      ? snapshot.invoices.filter((i) => i.clientId === clientId)
-      : snapshot.invoices;
     return {
       snapshot,
       idx,
-      clientId,
-      client: clientId ? (idx.clientById.get(clientId) ?? null) : null,
-      projects,
-      items,
-      invoices,
+      clientId: null,
+      client: null,
+      projects: snapshot.projects,
+      items: snapshot.billingItems,
+      invoices: snapshot.invoices,
       clientOf: (projectId: string) => {
         const project = idx.projectById.get(projectId);
         return project ? idx.clientById.get(project.clientId) : undefined;
       },
     };
-  }, [snapshot, clientId]);
+  }, [snapshot]);
 }
 
-/** Deliberately quiet: a couple of grey bars, no shimmer. */
 export function PageSkeleton() {
   return (
     <div className="animate-fade px-5 pt-9 sm:px-8">

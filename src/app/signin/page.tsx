@@ -20,7 +20,6 @@ export default function SignInPage() {
   }, [ready, router, user]);
 
   if (!ready) return <div className="min-h-dvh bg-bg" />;
-
   if (user) return <div className="min-h-dvh bg-bg" />;
 
   if (auth === "supabase") {
@@ -31,12 +30,8 @@ export default function SignInPage() {
   return (
     <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6 py-16">
       <div className="mb-8">
-        <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">
-          {t("brand.company")}
-        </p>
-        <h1 className="mt-1 text-[28px] font-semibold tracking-[-0.021em]">
-          {t("signin.title")}
-        </h1>
+        <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">CIJD</p>
+        <h1 className="mt-1 text-[28px] font-semibold tracking-[-0.021em]">Billing</h1>
         <p className="mt-2 text-[13.5px] text-muted">{t("signin.hint")}</p>
       </div>
 
@@ -58,9 +53,7 @@ export default function SignInPage() {
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[15px] font-medium">{candidate.name}</span>
-              <span className="mt-0.5 block text-[12.5px] text-faint">
-                {t(`role.${candidate.role}`)}
-              </span>
+              <span className="mt-0.5 block text-[12.5px] text-faint">{t(`role.${candidate.role}`)}</span>
             </span>
             <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
           </button>
@@ -105,10 +98,9 @@ function GoogleSignIn({
   return (
     <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6 py-16">
       <div className="mb-8">
-        <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">
-          {t("brand.company")}
-        </p>
-        <h1 className="mt-1 text-[28px] font-semibold tracking-[-0.021em]">{t("brand.app")}</h1>
+        <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">CIJD</p>
+        <h1 className="mt-1 text-[28px] font-semibold tracking-[-0.021em]">Billing</h1>
+        <p className="mt-2 text-[13.5px] text-muted">{t("signin.required")}</p>
       </div>
       {(error || !client) && (
         <p className="mb-4 text-[13px] text-review" role="alert">
@@ -135,9 +127,8 @@ function AccessDenied({ onSignOut }: { onSignOut: () => Promise<void> }) {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6 py-16">
-      <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">
-        {t("brand.company")}
-      </p>
+      <p className="text-[9.5px] font-medium uppercase tracking-[0.18em] text-faint">CIJD</p>
+      <p className="mt-1 text-[28px] font-semibold tracking-[-0.021em]">Billing</p>
       <p className="mt-3 text-[16px] font-medium text-text">{t("signin.accessDenied")}</p>
       <button
         type="button"

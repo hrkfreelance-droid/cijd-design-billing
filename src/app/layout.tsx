@@ -7,8 +7,8 @@ import "./globals.css";
 const build = getBuildInfo();
 
 export const metadata: Metadata = {
-  title: "CIJD DESIGN Billing",
-  description: "Project, invoicing and payment tracking for CIJD DESIGN.",
+  title: "CIJD Billing",
+  description: "Billing and service workflow for CIJD.",
   other: {
     "cijd-build-sha": build.commit,
     "cijd-build-branch": build.branch,
