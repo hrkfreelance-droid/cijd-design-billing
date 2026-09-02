@@ -35,7 +35,7 @@
 - `npm run build`: PASS
 - `npm run build:vinext`: PASS（Wrangler log fileはmacOS権限によりEPERM警告が出るが、build自体は完了）
 - `npm test`: 29 passed, 3 skipped, 0 failed
-- Cloudflare push: PASS。GitHub branch HEAD `61183781bd6c3fe19c54c2d20a8342a95e4bc986`。
+- Cloudflare push: PASS。GitHub branch HEAD `c075087b903f7bc8a214aefdab0124d30e5809c9`。
 - 固定URLの公開画面: PASS。最終HTTP statusはredirect後`200`。
 - 固定URLでManual Refresh: PASS。`4,047 KHR/USD`、Rate date `2026-09-02`、Last checked `2026-09-02 11:20` Phnom Penh、成功表示を確認済み。
 - 固定URLのOfficial link: PASS。hrefは上記NBC公式Exchange Rateページ、`target="_blank"`、`rel="noopener noreferrer"`。
