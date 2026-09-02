@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronRight, MoonIcon, PlusIcon, SunIcon } from "@/components/icons";
 import { api, useData, useI18n, useSession, useTheme, useToast } from "@/components/providers";
 import { Button, EmptyState, Field, IconButton, Input, Segmented, Select, Sheet } from "@/components/ui";
+import { generateTemporaryPassword, isAcceptablePassword } from "@/lib/auth/password";
 import { homeFor, type Role } from "@/lib/auth/roles";
 import type { Client } from "@/lib/types";
 
@@ -43,7 +44,7 @@ const COPY = {
     email: "メールアドレス",
     role: "権限",
     tempPassword: "初期パスワード",
-    passwordHint: "本人へ安全に共有してください。作成後は再表示されません",
+    passwordHint: "12文字以上・大文字/小文字/数字を含めます。本人へ安全に共有してください",
     regenerate: "再生成",
     copy: "コピー",
     copied: "コピーしました",
@@ -75,7 +76,7 @@ const COPY = {
     email: "Email",
     role: "Role",
     tempPassword: "Temporary password",
-    passwordHint: "Share it securely. It is not shown again after creation",
+    passwordHint: "12+ characters with upper-case, lower-case and a number. Share it securely",
     regenerate: "Regenerate",
     copy: "Copy",
     copied: "Copied",
@@ -97,13 +98,6 @@ const COPY = {
 
 function copyFor(locale: string) {
   return locale === "ja" ? COPY.ja : COPY.en;
-}
-
-function temporaryPassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("");
 }
 
 export function AdminWorkspace() {
@@ -336,7 +330,7 @@ function UserSheet({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (value === "new" && !password) setPassword(temporaryPassword());
+    if (value === "new" && !password) setPassword(generateTemporaryPassword());
   }, [password, value]);
 
   const save = async () => {
@@ -371,7 +365,7 @@ function UserSheet({
             variant="primary"
             full
             onClick={() => void save()}
-            disabled={busy || !name.trim() || (value === "new" && (!email.trim() || password.length < 8))}
+            disabled={busy || !name.trim() || (value === "new" && (!email.trim() || !isAcceptablePassword(password)))}
           >
             {value === "new" ? c.create : c.save}
           </Button>
@@ -396,7 +390,7 @@ function UserSheet({
             <div className="space-y-2">
               <Input value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
               <div className="flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => setPassword(temporaryPassword())}>{c.regenerate}</Button>
+                <Button size="sm" variant="secondary" onClick={() => setPassword(generateTemporaryPassword())}>{c.regenerate}</Button>
                 <Button
                   size="sm"
                   variant="secondary"
