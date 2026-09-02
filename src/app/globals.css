@@ -29,6 +29,11 @@
 
   --c-overlay: rgba(0, 0, 0, 0.28);
   --c-header: rgba(255, 255, 255, 0.82);
+
+  --ui-hairline: color-mix(in srgb, var(--c-text) 10%, transparent);
+  --ui-hairline-strong: color-mix(in srgb, var(--c-text) 16%, transparent);
+  --ui-shadow-small: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 18px rgba(0, 0, 0, 0.035);
+  --ui-shadow-large: 0 20px 60px rgba(0, 0, 0, 0.16), 0 4px 18px rgba(0, 0, 0, 0.08);
 }
 
 .dark {
@@ -56,6 +61,9 @@
 
   --c-overlay: rgba(0, 0, 0, 0.55);
   --c-header: rgba(10, 10, 11, 0.78);
+
+  --ui-shadow-small: 0 1px 2px rgba(0, 0, 0, 0.22), 0 10px 28px rgba(0, 0, 0, 0.14);
+  --ui-shadow-large: 0 28px 80px rgba(0, 0, 0, 0.46), 0 8px 24px rgba(0, 0, 0, 0.24);
 }
 
 @theme inline {
@@ -78,7 +86,7 @@
   --color-paid: var(--c-paid);
   --color-review: var(--c-review);
 
-  /* Keep the CIJD type stack as the canonical product font treatment. */
+  /* CIJD typography is canonical. DAISHIN polish must never replace this stack. */
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica,
     "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
@@ -122,9 +130,37 @@
     font: inherit;
     letter-spacing: inherit;
   }
+
+  button,
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:not(:disabled) {
+    touch-action: manipulation;
+    transform: translateZ(0) scale(1);
+    transform-origin: center;
+    transition-property: transform, background-color, color, border-color, box-shadow, opacity;
+    transition-duration: 110ms;
+    transition-timing-function: ease-out;
+  }
+
+  button:not(:disabled):active {
+    transform: translateZ(0) scale(0.98);
+    transition-duration: 70ms;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [role="combobox"]:focus-visible {
+    outline: none;
+    border-color: color-mix(in srgb, var(--c-accent) 76%, var(--c-line));
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-accent) 12%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--c-accent) 12%, transparent);
+  }
 }
 
-/* Mirror the recent DAISHIN mobile polish without changing CIJD typography.
+/* Mirror the recent DAISHIN mobile behavior without changing CIJD typography.
    iOS Safari zooms form controls whose computed type is below 16px. */
 @media (max-width: 767px) {
   input,
@@ -165,12 +201,21 @@
   bottom: calc(env(safe-area-inset-bottom) + 16px);
 }
 
+/* DAISHIN V5-style material hierarchy, using CIJD's own color and type system. */
 .header-surface {
-  background-color: var(--c-header);
+  background: color-mix(in srgb, var(--c-header) 88%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 1px 0 var(--ui-hairline), 0 8px 26px rgba(0, 0, 0, 0.025);
 }
 
 .overlay-surface {
   background-color: var(--c-overlay);
+}
+
+[role="dialog"] {
+  border-color: var(--ui-hairline-strong) !important;
+  box-shadow: var(--ui-shadow-large) !important;
 }
 
 .no-scrollbar {
@@ -203,10 +248,12 @@
   from {
     opacity: 0;
     transform: translateY(14px) scale(0.99);
+    filter: blur(1px);
   }
   to {
     opacity: 1;
     transform: none;
+    filter: blur(0);
   }
 }
 
@@ -217,7 +264,7 @@
   animation: fade 0.18s ease-out both;
 }
 .animate-sheet {
-  animation: sheet-up 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -226,5 +273,28 @@
   *::after {
     animation-duration: 0.001ms !important;
     transition-duration: 0.001ms !important;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .header-surface,
+  [role="dialog"] {
+    background: var(--c-panel) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --c-line: rgba(0, 0, 0, 0.18);
+    --c-line-strong: rgba(0, 0, 0, 0.3);
+  }
+
+  .dark {
+    --c-line: rgba(255, 255, 255, 0.2);
+    --c-line-strong: rgba(255, 255, 255, 0.34);
   }
 }
