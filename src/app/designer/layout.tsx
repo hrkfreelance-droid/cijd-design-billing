@@ -7,11 +7,10 @@ import { isLocalDemoRuntime } from "@/lib/runtime";
 
 export const dynamic = "force-dynamic";
 
-/** Typing the URL is not a way in: the check runs on the server. */
 export default async function DesignerLayout({ children }: { children: React.ReactNode }) {
   if (!isLocalDemoRuntime) {
     const user = await currentUser();
-    if (!user) redirect("/signin");
+    if (!user) redirect("/signin?next=%2Fdesigner%2Fprojects");
     if (!can(user.role, "designer:read")) redirect(homeFor(user.role));
   }
   return (

@@ -9,6 +9,13 @@ import { Button, Field, Input } from "@/components/ui";
 import { homeFor } from "@/lib/auth/roles";
 import { supabaseBrowserClient } from "@/lib/supabase/browser";
 
+function requestedPath(): string | null {
+  if (typeof window === "undefined") return null;
+  const value = new URLSearchParams(window.location.search).get("next");
+  if (!value || !value.startsWith("/") || value.startsWith("//")) return null;
+  return value;
+}
+
 export default function SignInPage() {
   const { t } = useI18n();
   const { user, users, ready, auth, access, signIn, signOut } = useSession();
@@ -16,7 +23,7 @@ export default function SignInPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (ready && user) router.replace(homeFor(user.role));
+    if (ready && user) router.replace(requestedPath() ?? homeFor(user.role));
   }, [ready, router, user]);
 
   if (!ready) return <div className="min-h-dvh bg-bg" />;
@@ -43,7 +50,7 @@ export default function SignInPage() {
             onClick={() => {
               setBusy(true);
               void signIn(candidate.id)
-                .then(() => router.replace(homeFor(candidate.role)))
+                .then(() => router.replace(requestedPath() ?? homeFor(candidate.role)))
                 .finally(() => setBusy(false));
             }}
             className="flex w-full items-center gap-3 px-5 py-4 text-left transition-colors hover:bg-fill disabled:opacity-50"
@@ -85,14 +92,15 @@ function SupabaseSignIn({ busy, setBusy }: { busy: boolean; setBusy: (busy: bool
       setError("Email or password is incorrect.");
       return;
     }
-    window.location.assign("/");
+    window.location.assign(requestedPath() ?? "/");
   };
 
   const continueWithGoogle = async () => {
     if (busy || !client) return;
     setBusy(true);
     setError(null);
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/")}`;
+    const next = requestedPath() ?? "/";
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
     const { error: failure } = await client.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo },
@@ -151,7 +159,7 @@ function SupabaseSignIn({ busy, setBusy }: { busy: boolean; setBusy: (busy: bool
 
       <div className="my-6 flex items-center gap-3 text-[11px] text-faint">
         <span className="h-px flex-1 bg-line" />
-        <span>Admin / existing account</span>
+        <span>or</span>
         <span className="h-px flex-1 bg-line" />
       </div>
 

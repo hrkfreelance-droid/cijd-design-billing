@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function PrintingLayout({ children }: { children: React.ReactNode }) {
   if (!isLocalDemoRuntime) {
     const user = await currentUser();
-    if (!user) redirect("/signin");
+    if (!user) redirect("/signin?next=%2Fprinting");
     if (!can(user.role, "printing:read")) redirect(homeFor(user.role));
   }
   return (

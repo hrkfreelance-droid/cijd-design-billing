@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function OfficeLayout({ children }: { children: React.ReactNode }) {
   if (!isLocalDemoRuntime) {
     const user = await currentUser();
-    if (!user) redirect("/signin");
+    if (!user) redirect("/signin?next=%2Foffice");
     if (!canAny(user.role, ["billing:read", "payment:read", "progress:read"])) redirect(homeFor(user.role));
   }
   return (
