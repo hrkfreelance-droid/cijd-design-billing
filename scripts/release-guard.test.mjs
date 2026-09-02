@@ -15,6 +15,7 @@ test("manual review deploy is hard-locked to the canonical branch and preview wo
 test("Cloudflare Git deploy remains compatible while worker target stays preview-only and authenticated", async () => {
   const pkg = JSON.parse(await read("package.json"));
   const wrangler = await read("wrangler.jsonc");
+  assert.equal(pkg.scripts["build:vinext"], "node scripts/build-vinext.mjs");
   assert.equal(pkg.scripts["deploy:review"], "node scripts/deploy-review.mjs");
   assert.equal(
     pkg.scripts["deploy:vinext"],
@@ -23,6 +24,15 @@ test("Cloudflare Git deploy remains compatible while worker target stays preview
   assert.ok(wrangler.includes('"name": "cijd-design-billing-preview"'));
   assert.ok(!wrangler.includes('"name": "cijd-design-billing"'));
   assert.ok(!wrangler.includes('"CIJD_PILOT_MODE": "1"'));
+});
+
+test("Workers Builds identity is captured before compile so live verification has an immutable SHA", async () => {
+  const builder = await read("scripts/build-vinext.mjs");
+  const buildInfo = await read("src/lib/build-info.ts");
+  assert.ok(builder.includes("WORKERS_CI_COMMIT_SHA"));
+  assert.ok(builder.includes("WORKERS_CI_BRANCH"));
+  assert.ok(builder.includes('writeFile("src/lib/build-info.generated.ts"'));
+  assert.ok(buildInfo.includes("GENERATED_BUILD_INFO"));
 });
 
 test("live verifier compares canonical commit with remote and blocks false completion", async () => {
