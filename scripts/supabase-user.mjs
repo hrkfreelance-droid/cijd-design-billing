@@ -51,6 +51,16 @@ export function validateArgs(args) {
   }
 }
 
+export function passwordPolicyProblem(value) {
+  if (typeof value !== "string" || value.length < 12 || value.length > 128) {
+    return "Password must be 12-128 characters with upper-case, lower-case and a number.";
+  }
+  if (!/[A-Z]/.test(value) || !/[a-z]/.test(value) || !/[0-9]/.test(value)) {
+    return "Password must be 12-128 characters with upper-case, lower-case and a number.";
+  }
+  return null;
+}
+
 function usage() {
   return [
     "Usage:",
@@ -126,7 +136,8 @@ async function password() {
   const fromEnv = process.env.SUPABASE_USER_PASSWORD;
   const first = fromEnv || (await readHidden("Password (hidden): "));
   const second = fromEnv || (await readHidden("Password again (hidden): "));
-  if (first.length < 8) throw new Error("Password must be at least 8 characters.");
+  const policyProblem = passwordPolicyProblem(first);
+  if (policyProblem) throw new Error(policyProblem);
   if (first !== second) throw new Error("Passwords do not match.");
   return first;
 }
@@ -169,8 +180,9 @@ async function main() {
     .select("id, name, role, active")
     .single();
   if (profile.error || !profile.data) {
+    await admin.auth.admin.deleteUser(userId);
     throw new Error(
-      "Auth user was created, but public.users could not be updated. Stop and repair the profile before allowing sign-in.",
+      "Auth user was created, but public.users could not be updated. The Auth user was rolled back.",
     );
   }
 
