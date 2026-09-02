@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 import { useI18n, useSession } from "@/components/providers";
 import { CurrencyAmount } from "@/components/currency-amount";
-import { Amount, EmptyState, PageHeader, PageTotal } from "@/components/ui";
+import { Amount, EmptyState, PageHeader } from "@/components/ui";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { can } from "@/lib/auth/roles";
 import {
@@ -14,7 +14,6 @@ import {
   priceState,
   sum,
 } from "@/lib/derive";
-import { formatKhr } from "@/lib/exchange-rate";
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem, Client, Project } from "@/lib/types";
 
@@ -95,7 +94,6 @@ export default function ProgressPage() {
   );
   const pendingCount = progressItems.filter((item) => itemAmountValue(item) == null).length;
   const estimated = progressItems.some((item) => priceState(item) !== "CONFIRMED");
-  const exchangeRate = scope?.snapshot.exchangeRate;
 
   if (!scope || !user || !can(user.role, "progress:read")) return <PageSkeleton />;
 
@@ -105,23 +103,21 @@ export default function ProgressPage() {
         title={t("nav.progress")}
         subtitle={t("office.progressSubtitle")}
         action={
-          <PageTotal
-            value={knownTotal > 0 ? money(knownTotal) : "—"}
-            label={estimated ? t("projects.estimatedTotal") : undefined}
-            secondaryValue={exchangeRate && knownTotal > 0 ? formatKhr(knownTotal, exchangeRate.rate) : undefined}
-            secondaryLabel={exchangeRate && knownTotal > 0 ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
-            rate={exchangeRate?.rate}
-            rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
-            showRateActions={false}
-            meta={
-              pendingCount === 1
-                ? t("projects.pendingPricesOne", { count: pendingCount })
-                : pendingCount > 1
-                  ? t("projects.pendingPrices", { count: pendingCount })
-                  : undefined
-            }
-          />
+          <div className="shrink-0 text-right">
+            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
+              {t(estimated ? "projects.estimatedTotal" : "projects.total")}
+            </p>
+            <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">
+              {knownTotal > 0 ? money(knownTotal) : "—"}
+            </p>
+            {pendingCount > 0 && (
+              <p className="mt-0.5 text-[11px] font-medium text-review">
+                {pendingCount === 1
+                  ? t("projects.pendingPricesOne", { count: pendingCount })
+                  : t("projects.pendingPrices", { count: pendingCount })}
+              </p>
+            )}
+          </div>
         }
       />
 
