@@ -13,8 +13,6 @@
   --c-raise: #ffffff;
   --c-text: #1d1d1f;
   --c-muted: #6e6e73;
-  /* Carries most of the small meta text, so it has to clear AA on white
-     (4.59:1) rather than sit at the 3.26:1 the old #8e8e93 gave. */
   --c-faint: #757579;
   --c-line: rgba(0, 0, 0, 0.09);
   --c-line-strong: rgba(0, 0, 0, 0.16);
@@ -25,7 +23,8 @@
   --c-progress: #8e8e93;
   --c-ready: #0066cc;
   --c-awaiting: #a5670a;
-  --c-paid: #17803d;
+  /* CIJD + DAISHIN product-family rule: success/complete is pink, not green. */
+  --c-paid: #d6357f;
   --c-review: #c0392b;
 
   --c-overlay: rgba(0, 0, 0, 0.28);
@@ -52,7 +51,7 @@
   --c-progress: #8e8e93;
   --c-ready: #3b90ff;
   --c-awaiting: #d9a441;
-  --c-paid: #43b96a;
+  --c-paid: #ff8fc2;
   --c-review: #ff6f61;
 
   --c-overlay: rgba(0, 0, 0, 0.55);
@@ -85,10 +84,6 @@
 }
 
 /* ------------------------------------------------------------------ base */
-/* These belong in the base layer. Unlayered rules outrank every layered
-   utility, so `font: inherit` on a bare `button` was beating `text-[12.5px]`
-   and `font-medium`: every button in the app rendered at the inherited 16px
-   / 400 while the same label on an anchor honoured its classes. */
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -128,7 +123,6 @@
   }
 }
 
-/* Numbers must line up in columns. */
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
@@ -138,7 +132,6 @@
   border-color: var(--c-line);
 }
 
-/* Keep safe-area expressions in authored CSS instead of Tailwind arbitrary utilities. */
 .safe-bottom-sheet {
   padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
 }
@@ -155,7 +148,6 @@
   background-color: var(--c-overlay);
 }
 
-/* Hide scrollbar on the client bar without losing scrollability. */
 .no-scrollbar {
   scrollbar-width: none;
 }

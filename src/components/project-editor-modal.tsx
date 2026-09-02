@@ -27,7 +27,7 @@ import {
 } from "@/lib/derive";
 import { mediumDate, money, roundMoney } from "@/lib/format";
 import { suggestedPrintBillingTotal } from "@/lib/print-pricing";
-import { ITEM_TYPES, type BillingItem, type ItemType } from "@/lib/types";
+import { ITEM_TYPES, type BillingItem, type ItemType, type Project } from "@/lib/types";
 
 export function ProjectEditorModal({
   projectId,
@@ -79,13 +79,15 @@ export function ProjectEditorModal({
           </Button>
         }
       >
-        <div className="pb-2">
-          <div className="mb-3 flex items-end justify-between gap-4 rounded-xl bg-fill px-3.5 py-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-medium uppercase tracking-[0.07em] text-faint">
+        <div className="space-y-4 pb-2">
+          <ProjectNameEditor key={`${project.id}:${project.name}`} project={project} />
+
+          <div className="flex items-center justify-between gap-4 border-y border-line py-3">
+            <div>
+              <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
                 {estimated ? t("projects.estimatedTotal") : t("project.total")}
               </p>
-              <p className="mt-0.5 text-[12px] text-muted">
+              <p className="mt-1 text-[12px] text-muted">
                 {items.length} {items.length === 1 ? "item" : "items"}
               </p>
             </div>
@@ -99,18 +101,21 @@ export function ProjectEditorModal({
                 item={item}
                 projectId={project.id}
                 onOpen={() => setEditing(item)}
+                showActions={false}
               />
             ))}
           </div>
 
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            full
             onClick={() => setAdding(true)}
-            className="mt-1 flex min-h-11 w-full items-center gap-2 rounded-xl px-2 text-left text-[14px] font-medium text-accent transition-colors hover:bg-fill"
+            className="!h-11"
           >
             <PlusIcon className="h-4 w-4" />
             {t("project.addItem")}
-          </button>
+          </Button>
         </div>
       </Sheet>
 
@@ -125,6 +130,58 @@ export function ProjectEditorModal({
         }}
       />
     </>
+  );
+}
+
+function ProjectNameEditor({ project }: { project: Project }) {
+  const { locale } = useI18n();
+  const { run, busy } = useAction();
+  const [name, setName] = useState(project.name);
+  const trimmed = name.trim();
+  const changed = trimmed.length > 0 && trimmed !== project.name;
+
+  const save = async () => {
+    if (!changed) return;
+    await run(() =>
+      api(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        body: { name: trimmed },
+      }),
+    );
+  };
+
+  return (
+    <div className="rounded-2xl border border-line bg-fill/60 p-3.5">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-[12px] font-medium text-muted">
+          {copy(locale, "案件タイトル", "Project title")}
+        </p>
+        {changed && <span className="text-[11px] text-faint">{copy(locale, "未保存", "Unsaved")}</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <Input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void save();
+            }
+          }}
+          className="min-w-0 flex-1 bg-panel"
+        />
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          disabled={!changed || busy}
+          onClick={() => void save()}
+          className="!h-11 min-w-[78px]"
+        >
+          {copy(locale, "保存", "Save")}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -149,8 +206,6 @@ function ProjectItemSheet({
   const [custom, setCustom] = useState(item?.customAmount ?? false);
   const [printSize, setPrintSize] = useState(item?.printSize ?? "");
   const [costUnit, setCostUnit] = useState(String(item?.printCostUnitPrice || ""));
-  // Auto-priced print items keep following the suggestion. Only show a value
-  // here when somebody has already deliberately overridden the final price.
   const [finalBilling, setFinalBilling] = useState(
     item?.type === "PRINT" && item.billingPriceManual ? String(item.amount) : "",
   );
@@ -168,6 +223,7 @@ function ProjectItemSheet({
     : item?.suggestedAmount ?? 0;
   const finalBillingValue = positiveNumber(finalBilling);
   const isPrint = type === "PRINT";
+  const printNeedsReview = !!item && item.type === "PRINT" && priceState(item) !== "CONFIRMED";
 
   const save = async () => {
     if (!description.trim() || !qty) return;
@@ -297,7 +353,7 @@ function ProjectItemSheet({
             <SummaryRow label={copy(locale, "推奨請求", "Suggested billing")}><Amount value={money(item.suggestedAmount)} /></SummaryRow>
           )}
           <SummaryRow label={copy(locale, "最終請求", "Final billing")}><Amount value={money(item.amount)} strong /></SummaryRow>
-          <p className="rounded-xl bg-fill px-3.5 py-3 text-[13px] leading-relaxed text-muted">
+          <p className="rounded-2xl bg-fill px-4 py-3 text-[13px] leading-relaxed text-muted">
             {t("project.lockedNotice")}
           </p>
         </div>
@@ -346,23 +402,25 @@ function ProjectItemSheet({
                   <Input value={printCostTotal > 0 ? printCostTotal.toFixed(2) : ""} readOnly placeholder="—" className="tnum cursor-default bg-fill" />
                 </Field>
               </div>
-              <div className="grid grid-cols-2 gap-3 rounded-xl bg-fill px-3.5 py-3">
-                <div>
-                  <p className="text-[11.5px] text-faint">{copy(locale, "推奨請求", "Suggested billing")}</p>
-                  <Amount value={calculatedSuggested > 0 ? money(calculatedSuggested) : "—"} strong className="mt-1 block text-[16px]" />
-                  <p className="mt-1 text-[10.5px] leading-snug text-faint">
-                    {copy(locale, "利益を載せて5/10単位に切り上げ", "Margin applied, rounded up to 5/10")}
-                  </p>
+              <div className="rounded-2xl border border-line bg-fill/60 p-3.5">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[11.5px] text-faint">{copy(locale, "推奨請求", "Suggested billing")}</p>
+                    <Amount value={calculatedSuggested > 0 ? money(calculatedSuggested) : "—"} strong className="mt-1 block text-[17px]" />
+                    <p className="mt-1 text-[10.5px] leading-snug text-faint">
+                      {copy(locale, "原価から自動計算・5/10単位で切り上げ", "Calculated from cost, rounded up to 5/10")}
+                    </p>
+                  </div>
+                  <Field label={copy(locale, "最終請求", "Final billing")}>
+                    <Input
+                      inputMode="decimal"
+                      value={finalBilling}
+                      onChange={(event) => setFinalBilling(event.target.value)}
+                      placeholder={calculatedSuggested > 0 ? String(calculatedSuggested) : "—"}
+                      className="tnum bg-panel"
+                    />
+                  </Field>
                 </div>
-                <Field label={copy(locale, "最終請求", "Final billing")}>
-                  <Input
-                    inputMode="decimal"
-                    value={finalBilling}
-                    onChange={(event) => setFinalBilling(event.target.value)}
-                    placeholder={calculatedSuggested > 0 ? String(calculatedSuggested) : "—"}
-                    className="tnum bg-panel"
-                  />
-                </Field>
               </div>
             </>
           ) : (
@@ -397,11 +455,23 @@ function ProjectItemSheet({
 
           {item && (
             <div className="space-y-2 border-t border-line pt-4">
-              <ItemProductionAction item={item} size="md" full onDone={onClose} />
-              {item.billingStatus !== "NEEDS_REVIEW" ? (
-                <Button full onClick={() => changeStatus("NEEDS_REVIEW")} disabled={busy}>{t("item.markReview")}</Button>
+              {printNeedsReview ? (
+                <div className="rounded-2xl border border-review/25 bg-review/10 px-4 py-3">
+                  <p className="text-[13px] font-medium text-review">
+                    {copy(locale, "先に印刷原価を確認して保存してください", "Confirm and save the print cost first")}
+                  </p>
+                  <p className="mt-1 text-[12px] leading-relaxed text-muted">
+                    {copy(locale, "価格確認後に納品操作が有効になります", "Delivery becomes available after the price is confirmed")}
+                  </p>
+                </div>
               ) : (
-                <Button full onClick={() => changeStatus("NOT_READY")} disabled={busy}>{t("item.markInProgress")}</Button>
+                <ItemProductionAction item={item} size="md" full onDone={onClose} />
+              )}
+
+              {item.billingStatus !== "NEEDS_REVIEW" ? (
+                <Button variant="secondary" full onClick={() => changeStatus("NEEDS_REVIEW")} disabled={busy}>{t("item.markReview")}</Button>
+              ) : (
+                <Button variant="secondary" full onClick={() => changeStatus("NOT_READY")} disabled={busy}>{t("item.markInProgress")}</Button>
               )}
               <button type="button" onClick={() => setConfirmDelete(true)} className="block w-full py-2 text-center text-[13px] text-faint transition-colors hover:text-review">
                 {t("item.delete")}

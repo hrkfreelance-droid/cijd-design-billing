@@ -8,17 +8,7 @@ import { ProjectEditorModal } from "@/components/project-editor-modal";
 import { api, useClientFilter, useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
-import {
-  Amount,
-  Button,
-  EmptyState,
-  Field,
-  Input,
-  PageHeader,
-  PageTotal,
-  Select,
-  Sheet,
-} from "@/components/ui";
+import { Button, EmptyState, Field, Input, Select, Sheet } from "@/components/ui";
 import {
   isOperationalRecord,
   isProductionComplete,
@@ -54,7 +44,6 @@ export default function ProjectsPage() {
             items.some((item) => item.description.toLowerCase().includes(term))
           : true,
       )
-      // Operational queues are FIFO: the oldest unfinished job is always first.
       .sort(
         (a, b) =>
           a.project.date.localeCompare(b.project.date) ||
@@ -66,51 +55,48 @@ export default function ProjectsPage() {
     () => scope?.items.filter((item) => isOperationalRecord(item) && !isProductionComplete(item)) ?? [],
     [scope],
   );
-  const estimated = inProgressItems.some((item) => priceState(item) !== "CONFIRMED");
 
   if (!scope) return <PageSkeleton />;
 
-  return (
-    <div className="animate-rise">
-      <PageHeader
-        title={t("projects.title")}
-        subtitle={t("projects.count", { count: rows.length })}
-        action={
-          <PageTotal
-            value={money(sum(inProgressItems.filter((item) => item.amount > 0)))}
-            label={estimated ? t("projects.estimatedTotal") : undefined}
-            secondaryValue={
-              scope.snapshot.exchangeRate
-                ? formatKhr(
-                    sum(inProgressItems.filter((item) => item.amount > 0)),
-                    scope.snapshot.exchangeRate.rate,
-                  )
-                : undefined
-            }
-            secondaryLabel={
-              scope.snapshot.exchangeRate
-                ? t("currency.rate", { rate: scope.snapshot.exchangeRate.rate })
-                : undefined
-            }
-            rate={scope.snapshot.exchangeRate?.rate}
-            rateEffectiveDate={scope.snapshot.exchangeRate?.effectiveDate}
-            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
-          />
-        }
-      />
+  const estimated = inProgressItems.some((item) => priceState(item) !== "CONFIRMED");
+  const total = sum(inProgressItems.filter((item) => item.amount > 0));
+  const rate = scope.snapshot.exchangeRate?.rate;
 
-      <div className="-mt-1.5 flex items-center gap-2 px-5 pb-3 sm:px-8">
-        <div className="relative min-w-0 flex-1 sm:max-w-sm">
+  return (
+    <div className="animate-rise mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6 sm:py-8">
+      <header className="mb-5 flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-[26px] font-semibold tracking-tight text-text sm:text-[30px]">
+            {t("projects.title")}
+          </h1>
+          <p className="mt-1 text-[13.5px] text-muted">{t("projects.count", { count: rows.length })}</p>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
+            {estimated ? t("projects.estimatedTotal") : t("projects.total")}
+          </p>
+          <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">{money(total)}</p>
+          {rate ? (
+            <p className="tnum mt-0.5 text-[11.5px] text-muted">
+              {formatKhr(total, rate)} · NBC {rate.toLocaleString()} KHR/USD
+            </p>
+          ) : null}
+        </div>
+      </header>
+
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="relative min-w-0 flex-1 sm:max-w-md">
           <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("projects.search")}
             aria-label={t("projects.search")}
-            className="h-10 w-full rounded-xl bg-fill pl-9 pr-3 text-[14px] placeholder:text-faint focus:outline-none focus:ring-1 focus:ring-accent"
+            className="h-11 w-full rounded-2xl border border-line bg-fill pl-9 pr-3 text-[14px] text-text placeholder:text-faint focus:border-accent focus:outline-none"
           />
         </div>
-        <Button variant="primary" size="sm" onClick={() => setCreating(true)} className="h-10">
+        <Button variant="primary" onClick={() => setCreating(true)} className="!h-11 sm:min-w-[142px]">
           <PlusIcon className="h-[15px] w-[15px]" />
           {t("projects.new")}
         </Button>
@@ -121,7 +107,7 @@ export default function ProjectsPage() {
       ) : rows.length === 0 ? (
         <EmptyState title={t("projects.noMatch")} />
       ) : (
-        <div className="space-y-3 px-5 pb-8 sm:px-8">
+        <div className="space-y-3">
           {rows.map(({ project, client, items }) => (
             <article
               key={project.id}
@@ -138,26 +124,29 @@ export default function ProjectsPage() {
                 event.preventDefault();
                 setSelectedProjectId(project.id);
               }}
-              className="group cursor-pointer overflow-hidden border-y border-line bg-panel outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-accent sm:rounded-2xl sm:border sm:hover:border-line-strong"
+              className="group cursor-pointer overflow-hidden rounded-3xl border border-line bg-panel outline-none transition-colors hover:border-line-strong hover:bg-fill/30 focus-visible:ring-2 focus-visible:ring-accent"
             >
-              <div className="border-b border-line px-5 py-2 transition-colors duration-150 group-hover:bg-fill active:bg-fill sm:px-6">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <h2 className="text-[18px] font-semibold leading-tight tracking-[-0.014em] [overflow-wrap:anywhere]">
-                      {project.name}
-                    </h2>
-                    <p className="mt-1 truncate text-[12.5px] text-faint">
-                      {client?.name} · {mediumDate(project.date, locale)} · {project.createdBy}
-                    </p>
-                  </div>
-                  <ProjectTotal items={items} />
+              <div className="flex items-start justify-between gap-4 px-5 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <h2 className="truncate text-[18px] font-semibold tracking-[-0.014em] text-text">
+                    {project.name}
+                  </h2>
+                  <p className="mt-1 truncate text-[12.5px] text-muted">
+                    {client?.name} · {mediumDate(project.date, locale)} · {project.createdBy}
+                  </p>
                 </div>
+                <ProjectTotal items={items} />
               </div>
 
-              <div className="px-5 sm:px-6">
+              <div className="border-t border-line px-2 py-1 sm:px-3">
                 <div className="divide-y divide-line">
                   {items.map((item) => (
-                    <BillingItemCard key={item.id} item={item} projectId={project.id} />
+                    <BillingItemCard
+                      key={item.id}
+                      item={item}
+                      projectId={project.id}
+                      showActions={false}
+                    />
                   ))}
                 </div>
               </div>
@@ -193,12 +182,14 @@ function ProjectTotal({ items }: { items: BillingItem[] }) {
 
   return (
     <div className="shrink-0 text-right">
-      <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-faint">
+      <p className="text-[10.5px] font-medium uppercase tracking-[0.07em] text-faint">
         {t(estimated ? "projects.estimatedTotal" : "projects.total")}
       </p>
-      <Amount value={knownTotal > 0 ? money(knownTotal) : "—"} strong className="mt-0.5 block text-[18px] tracking-[-0.015em]" />
+      <p className="tnum mt-0.5 text-[18px] font-semibold tracking-[-0.015em] text-text">
+        {knownTotal > 0 ? money(knownTotal) : "—"}
+      </p>
       {pendingCount > 0 && (
-        <p className="mt-0.5 text-[11.5px] font-medium text-review">
+        <p className="mt-0.5 text-[11px] font-medium text-review">
           {t("projects.pendingPrices", { count: pendingCount })}
         </p>
       )}

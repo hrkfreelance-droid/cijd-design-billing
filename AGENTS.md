@@ -25,3 +25,16 @@ Hard rules:
 - LIVE PASS requires `npm run verify:live` to show that canonical `/api/version` commit equals current `origin/integrate-production-workspace` HEAD.
 - If live verification fails, state `DO NOT CLAIM LIVE COMPLETE` and leave Live status unresolved.
 - Supabase migrations are append-only. Never edit an already-applied migration; add a corrective migration.
+
+# CIJD UI / interaction standard
+
+CIJD and DAISHIN are one product family. Use DAISHIN Order (`hrkfreelance-droid/daishin-order-v2`, branch `review/database-auth-foundation`) as the interaction reference unless a CIJD-specific business rule requires otherwise.
+
+- Prefer the DAISHIN pattern: compact page header, one clear primary action, rounded bordered work cards, full-surface row selection, and detail/edit in a modal or sheet instead of page navigation.
+- Do not place several competing action buttons inside a dense list row. The list selects the work; the detail sheet owns editing and workflow actions.
+- Only show an action when its prerequisites are satisfied. Example: PRINT delivery is unavailable until print cost/price review is confirmed.
+- Project title, item description, quantities and prices must have an obvious edit path. Never present editable business data as a dead heading with no edit affordance.
+- Operational queues are FIFO (oldest waiting first). History is the exception and may be newest first.
+- Keep desktop and 390px mobile layouts usable without horizontal page scrolling.
+- Use the shared Apple-like visual tokens and DAISHIN control proportions. Completed/selected success treatment is pink; blue remains the primary actionable color.
+- After a mutation, refresh the authoritative snapshot and keep the operator in the same work context unless the workflow explicitly advances them.
