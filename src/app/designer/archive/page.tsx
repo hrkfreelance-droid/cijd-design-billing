@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { CompactSummaryHeader } from "@/components/compact-summary-header";
 import { ChevronRight, SearchIcon } from "@/components/icons";
 import { useI18n } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { Amount, EmptyState, PageHeader, PageTotal, Select, StatusTag } from "@/components/ui";
+import { Amount, EmptyState, Select, StatusTag } from "@/components/ui";
 import { flowStatus, sum } from "@/lib/derive";
 import { groupHistoricalItems, historicalMonth, sortHistoricalGroups } from "@/lib/historical";
 import { money, monthLabel } from "@/lib/format";
@@ -71,10 +72,11 @@ export default function ProductionArchivePage() {
 
   return (
     <div className="animate-rise">
-      <PageHeader
+      <CompactSummaryHeader
         title={t("productionArchive.title")}
         subtitle={t("productionArchive.subtitle")}
-        action={<PageTotal value={archiveTotal > 0 ? money(archiveTotal) : "—"} label={t("projects.knownTotal")} />}
+        label={t("projects.knownTotal")}
+        value={archiveTotal > 0 ? money(archiveTotal) : "—"}
       />
 
       <div className="flex flex-col gap-2.5 px-5 pb-5 sm:flex-row sm:items-center sm:px-8">
