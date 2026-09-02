@@ -132,8 +132,18 @@
   border-color: var(--c-line);
 }
 
+/* Mobile Safari already shortens the visual viewport above its bottom toolbar.
+   Adding the iPhone safe-area again created a conspicuous empty band below
+   sheet actions. Keep browser sheets tight; only standalone/PWA mode needs the
+   physical home-indicator inset. */
 .safe-bottom-sheet {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+  padding-bottom: 8px;
+}
+
+@media (display-mode: standalone) {
+  .safe-bottom-sheet {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 8px);
+  }
 }
 
 .safe-bottom-toast {
