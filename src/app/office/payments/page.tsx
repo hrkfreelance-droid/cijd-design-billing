@@ -8,10 +8,9 @@ import { InvoiceSheet } from "@/components/invoice-sheet";
 import { InvoiceListRow } from "@/components/invoice-list-row";
 import { useI18n, useSession } from "@/components/providers";
 import { PageSkeleton, useScope } from "@/components/scope";
-import { EmptyState, PageHeader, PageTotal, Segmented } from "@/components/ui";
+import { EmptyState, PageHeader, Segmented } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
 import { isHistoricalRecord } from "@/lib/derive";
-import { khrAmount } from "@/lib/exchange-rate";
 import {
   archiveInvoiceDate,
   groupHistoricalItems,
@@ -52,9 +51,6 @@ function Payments() {
 
   if (!scope || !allowed) return <PageSkeleton />;
 
-  // Historical imports are archived evidence even if an old database contains
-  // an invoice row linked to them. They must never re-enter the live Awaiting
-  // queue; the read-only historical group below remains the source of display.
   const historicalInvoiceIds = new Set(
     scope.invoices
       .filter((invoice) => {
@@ -106,13 +102,6 @@ function Payments() {
   const total =
     shown.reduce((value, invoice) => value + invoice.amount, 0) +
     shownHistorical.reduce((value, group) => value + group.amount, 0);
-  const exchangeRate = scope.snapshot.exchangeRate;
-  const hasFixedRates = shown.length > 0 && shownHistorical.length === 0 && shown.every(
-    (invoice) => invoice.exchangeRate && invoice.exchangeRate > 0,
-  );
-  const khrTotal = hasFixedRates
-    ? shown.reduce((value, invoice) => value + khrAmount(invoice.amount, invoice.exchangeRate!), 0)
-    : null;
   const emptyLabel =
     tab === "awaiting"
       ? t("billing.awaitingEmpty")
@@ -126,15 +115,14 @@ function Payments() {
         title={t("office.payments")}
         subtitle={scope.client ? scope.client.name : t("client.all")}
         action={
-          <PageTotal
-            value={money(total)}
-            label={tab === "completed" ? t("projects.knownTotal") : undefined}
-            secondaryValue={khrTotal == null ? undefined : `៛${khrTotal.toLocaleString("en-US")}`}
-            secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
-            rate={exchangeRate?.rate}
-            rateEffectiveDate={exchangeRate?.effectiveDate}
-            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
-          />
+          <div className="shrink-0 text-right">
+            <p className="text-[10.5px] font-medium uppercase tracking-[0.08em] text-faint">
+              {tab === "completed" ? t("projects.knownTotal") : t("common.total")}
+            </p>
+            <p className="tnum mt-0.5 text-[22px] font-semibold tracking-[-0.02em] text-text">
+              {money(total)}
+            </p>
+          </div>
         }
       />
 
