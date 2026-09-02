@@ -13,7 +13,7 @@ function safeNext(value: string | null): string {
   return value;
 }
 
-/** Exchanges the Google PKCE code, then lets the server choose homeFor(role). */
+/** Exchanges a Supabase PKCE code for a session, then returns to the requested safe path. */
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
