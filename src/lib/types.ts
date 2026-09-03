@@ -37,10 +37,6 @@ export type FlowStatus =
 
 export const ITEM_TYPES = ["DESIGN", "RESIZE", "PRINT", "OTHER"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
-export const BILLING_DISCOUNT_TYPES = ["NONE", "PERCENT", "AMOUNT"] as const;
-export type BillingDiscountType = (typeof BILLING_DISCOUNT_TYPES)[number];
-export const PLT_FORMATS = ["NORMAL", "IMPORT_PRODUCT", "DISTRIBUTOR"] as const;
-export type PltFormat = (typeof PLT_FORMATS)[number];
 
 export type InvoiceStatus = "ISSUED" | "PAID" | "VOID";
 export type ReceiptStatus = "NOT_REQUIRED" | "PENDING" | "RECEIVED";
@@ -72,15 +68,11 @@ export interface BillingItem {
   id: string;
   projectId: string;
   description: string;
-  /** Original/source product or work name kept separately from the display description. */
-  originalName?: string | null;
   type: ItemType;
   quantity: number;
   /** Customer-facing billing unit price. PRINT cost is stored separately. */
   unitPrice: number;
-  discountType?: BillingDiscountType;
-  discountValue?: number;
-  /** Customer-facing final billing subtotal after any discount. */
+  /** Customer-facing final billing total. */
   amount: number;
   customAmount: boolean;
   productionStatus: ProductionStatus;
@@ -130,16 +122,6 @@ export interface Invoice {
   exchangeRateSource?: string | null;
   exchangeRateEffectiveDate?: string | null;
   exchangeRateFetchedAt?: string | null;
-  poNumber?: string | null;
-  showParentCompany?: boolean;
-  parentCompanyName?: string | null;
-  pltFormat?: PltFormat;
-  /** Document flags only. No VAT percentage is invented by the app. */
-  stateChargeVat?: boolean;
-  noVat?: boolean;
-  customerNote?: string | null;
-  /** Internal only; never render this field in a customer-facing PDF. */
-  staffNote?: string | null;
   status: InvoiceStatus;
   paymentDate?: string | null;
   paymentSlip?: string | null;

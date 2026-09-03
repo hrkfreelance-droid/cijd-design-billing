@@ -1,11 +1,9 @@
 import type {
-  BillingDiscountType,
   BillingStatus,
   Client,
   BillingItem,
   Invoice,
   ItemType,
-  PltFormat,
   Project,
   ReceiptStatus,
   Snapshot,
@@ -62,15 +60,6 @@ export interface UpdateBillingItemInput {
   actor?: string;
 }
 
-export interface UpdateBillingLinePricingInput {
-  originalName?: string;
-  unitPrice: number;
-  quantity: number;
-  discountType: BillingDiscountType;
-  discountValue: number;
-  actor?: string;
-}
-
 export interface UpdatePrintSpecInput {
   description?: string;
   printSize?: string;
@@ -94,14 +83,6 @@ export interface CreateInvoiceInput {
   invoiceNumber?: string;
   invoiceDate: string;
   billingItemIds: string[];
-  poNumber?: string;
-  showParentCompany?: boolean;
-  parentCompanyName?: string;
-  pltFormat?: PltFormat;
-  stateChargeVat?: boolean;
-  noVat?: boolean;
-  customerNote?: string;
-  staffNote?: string;
   actor?: string;
 }
 
@@ -145,8 +126,6 @@ export interface Repository {
 
   createBillingItem(input: CreateBillingItemInput): Promise<BillingItem>;
   updateBillingItem(id: string, patch: UpdateBillingItemInput): Promise<BillingItem>;
-  /** Supabase invoice-stage extension; local demo routes are disabled. */
-  updateBillingLinePricing?(id: string, input: UpdateBillingLinePricingInput): Promise<BillingItem>;
   updatePrintSpec(id: string, patch: UpdatePrintSpecInput): Promise<BillingItem>;
   reviewPrintPrice(id: string, input: ReviewPrintPriceInput): Promise<BillingItem>;
   setBillingStatus(
@@ -170,4 +149,5 @@ export interface Repository {
   confirmPayment(id: string, input: ConfirmPaymentInput): Promise<Invoice>;
   revertPayment(id: string, actor?: string): Promise<Invoice>;
   setReceiptStatus(id: string, status: ReceiptStatus, actor?: string): Promise<Invoice>;
+
 }
