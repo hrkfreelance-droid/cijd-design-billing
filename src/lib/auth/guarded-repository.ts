@@ -44,22 +44,15 @@ export class GuardedRepository {
     }
 
     if (!production && !progress) {
-      // Unfinished work never leaves the designer side.
-      const delivered = snapshot.billingItems.filter(
-        isProductionComplete,
-      );
+      const delivered = snapshot.billingItems.filter(isProductionComplete);
       const projectIds = new Set(delivered.map((item) => item.projectId));
       snapshot.billingItems = delivered;
-      snapshot.projects = snapshot.projects.filter((project) =>
-        projectIds.has(project.id),
-      );
+      snapshot.projects = snapshot.projects.filter((project) => projectIds.has(project.id));
     }
     if (!billing && !payment) {
       snapshot.invoices = [];
       snapshot.invoiceItems = [];
     }
-    // Keep the public scope shape backward-compatible; the dedicated printing
-    // slice is enforced by the filtered rows above and by the route permission.
     snapshot.scope = { production, billing, payment };
     return snapshot;
   }
@@ -92,6 +85,11 @@ export class GuardedRepository {
   updateBillingItem(id: string, patch: Parameters<Repository["updateBillingItem"]>[1]) {
     this.assert("production:write");
     return this.repo.updateBillingItem(id, { ...patch, actor: this.actor(patch.actor) });
+  }
+
+  updateBillingLinePricing(id: string, input: Parameters<Repository["updateBillingLinePricing"]>[1]) {
+    this.assert("invoice:write");
+    return this.repo.updateBillingLinePricing(id, { ...input, actor: this.actor(input.actor) });
   }
 
   updatePrintSpec(id: string, patch: Parameters<Repository["updatePrintSpec"]>[1]) {
