@@ -289,7 +289,10 @@ function InvoiceSettingsSheet({
         </Field>
 
         <div className="rounded-2xl border border-line bg-fill p-4">
-          <Checkbox checked={showParentCompany} onChange={() => setShowParentCompany((value) => !value)} label="Show Parent Company in PDF" />
+          <div className="flex items-center gap-3">
+            <Checkbox checked={showParentCompany} onChange={setShowParentCompany} label="Show Parent Company in PDF" />
+            <span className="text-[13px] font-medium text-text">Show Parent Company in PDF</span>
+          </div>
           {showParentCompany && (
             <div className="mt-3">
               <Field label="Parent Company Name">
@@ -310,22 +313,28 @@ function InvoiceSettingsSheet({
         <div className="rounded-2xl border border-line bg-fill p-4">
           <p className="mb-3 text-[13px] font-medium text-text">VAT</p>
           <div className="space-y-3">
-            <Checkbox
-              checked={stateChargeVat}
-              onChange={() => {
-                setStateChargeVat((value) => !value);
-                if (!stateChargeVat) setNoVat(false);
-              }}
-              label="State Charge VAT"
-            />
-            <Checkbox
-              checked={noVat}
-              onChange={() => {
-                setNoVat((value) => !value);
-                if (!noVat) setStateChargeVat(false);
-              }}
-              label="No VAT"
-            />
+            <div className="flex items-center gap-3">
+              <Checkbox
+                checked={stateChargeVat}
+                onChange={(checked) => {
+                  setStateChargeVat(checked);
+                  if (checked) setNoVat(false);
+                }}
+                label="State Charge VAT"
+              />
+              <span className="text-[13px] text-text">State Charge VAT</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Checkbox
+                checked={noVat}
+                onChange={(checked) => {
+                  setNoVat(checked);
+                  if (checked) setStateChargeVat(false);
+                }}
+                label="No VAT"
+              />
+              <span className="text-[13px] text-text">No VAT</span>
+            </div>
           </div>
           <p className="mt-3 text-[11.5px] leading-5 text-faint">
             {copy(locale, "既存システムにVAT率計算が無いため、今回は帳票設定として保存・表示します。両方を同時には選択できません。", "The current system has no VAT-rate calculation, so these are saved as document settings only. They cannot both be enabled.")}
