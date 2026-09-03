@@ -9,9 +9,10 @@ import { PageSkeleton, useScope } from "@/components/scope";
 import { useAction } from "@/components/use-action";
 import { Amount, Button, Checkbox, EmptyState, Field, Input, Sheet } from "@/components/ui";
 import { can } from "@/lib/auth/roles";
+import { calculateBillingLine } from "@/lib/billing-pricing";
 import { isOperationalRecord, isPrintPriceConfirmed, isProductionComplete, sum } from "@/lib/derive";
-import { money, roundMoney, todayIso } from "@/lib/format";
-import type { BillingItem, Client, Invoice } from "@/lib/types";
+import { money, roundMoney } from "@/lib/format";
+import type { BillingDiscountType, BillingItem, Client, Invoice, PltFormat } from "@/lib/types";
 
 export default function OfficeBillingPage() {
   const scope = useScope();
@@ -61,9 +62,7 @@ export default function OfficeBillingPage() {
     <div className="animate-rise mx-auto w-full max-w-[1000px] px-4 py-6 sm:px-6 sm:py-8">
       <header className="mb-6 flex items-end justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-[28px] font-semibold tracking-[-0.025em] text-text sm:text-[32px]">
-            {t("billing.ready")}
-          </h1>
+          <h1 className="text-[28px] font-semibold tracking-[-0.025em] text-text sm:text-[32px]">{t("billing.ready")}</h1>
           <p className="mt-1 text-[13px] text-muted">
             {readyItems.length} {readyItems.length === 1 ? copy(locale, "件", "item") : copy(locale, "件", "items")}
           </p>
@@ -94,6 +93,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
   const [open, setOpen] = useState(true);
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [invoiceSettingsOpen, setInvoiceSettingsOpen] = useState(false);
 
   const projects = useMemo(() => {
     const grouped = new Map<string, BillingItem[]>();
@@ -127,19 +127,20 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
     });
   };
 
-  const markInvoiced = async () => {
-    if (!selectedItems.length) return;
-    await runResult<Invoice>(
-      () => api<Invoice>("/api/invoices", {
+  const createInvoice = async (settings: InvoiceSettings) => {
+    if (!selectedItems.length) return false;
+    const result = await runResult<Invoice>(
+      () => api<Invoice>("/api/invoices/options", {
         method: "POST",
         body: {
           clientId: client.id,
-          invoiceDate: todayIso(),
           billingItemIds: selectedItems.map((item) => item.id),
+          ...settings,
         },
       }),
       { key: "toast.invoiceCreated" },
     );
+    return Boolean(result);
   };
 
   return (
@@ -198,7 +199,7 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
               <p className="min-w-0 truncate text-[12.5px] text-muted">
                 {t("billing.selected", { count: selectedItems.length })} · {money(sum(selectedItems))}
               </p>
-              <Button variant="primary" onClick={markInvoiced} disabled={!selectedItems.length || busy}>
+              <Button variant="primary" onClick={() => setInvoiceSettingsOpen(true)} disabled={!selectedItems.length || busy}>
                 {t("billing.createInvoice")}
               </Button>
             </div>
@@ -206,28 +207,166 @@ function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] })
         )}
       </section>
 
-      <BillingProjectModal
-        project={editingProject}
-        open={editingProject !== null}
-        onClose={() => setEditingProjectId(null)}
+      <BillingProjectModal project={editingProject} open={editingProject !== null} onClose={() => setEditingProjectId(null)} />
+      <InvoiceSettingsSheet
+        open={invoiceSettingsOpen}
+        client={client}
+        itemCount={selectedItems.length}
+        total={sum(selectedItems)}
+        busy={busy}
+        onClose={() => setInvoiceSettingsOpen(false)}
+        onCreate={async (settings) => {
+          const ok = await createInvoice(settings);
+          if (ok) setInvoiceSettingsOpen(false);
+        }}
       />
     </>
   );
 }
 
-type BillingDraft = { unit: string; total: string };
+type InvoiceSettings = {
+  poNumber: string;
+  showParentCompany: boolean;
+  parentCompanyName: string;
+  pltFormat: PltFormat;
+  stateChargeVat: boolean;
+  noVat: boolean;
+  customerNote: string;
+  staffNote: string;
+};
 
-function draftFor(item: BillingItem): BillingDraft {
-  const total = roundMoney(item.amount);
-  const unit = item.quantity > 0 ? total / item.quantity : 0;
-  return { unit: formatUnit(unit), total: total > 0 ? total.toFixed(2) : "" };
+function InvoiceSettingsSheet({
+  open,
+  client,
+  itemCount,
+  total,
+  busy,
+  onClose,
+  onCreate,
+}: {
+  open: boolean;
+  client: Client;
+  itemCount: number;
+  total: number;
+  busy: boolean;
+  onClose: () => void;
+  onCreate: (settings: InvoiceSettings) => Promise<void>;
+}) {
+  const { locale } = useI18n();
+  const [poNumber, setPoNumber] = useState("");
+  const [showParentCompany, setShowParentCompany] = useState(false);
+  const [parentCompanyName, setParentCompanyName] = useState("");
+  const [pltFormat, setPltFormat] = useState<PltFormat>("NORMAL");
+  const [stateChargeVat, setStateChargeVat] = useState(false);
+  const [noVat, setNoVat] = useState(false);
+  const [customerNote, setCustomerNote] = useState("");
+  const [staffNote, setStaffNote] = useState("");
+  const invalid = showParentCompany && !parentCompanyName.trim();
+
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={copy(locale, "請求書設定", "Invoice settings")}
+      description={`${client.name} · ${itemCount} ${copy(locale, "項目", "items")} · ${money(total)}`}
+      footer={
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          <Button variant="secondary" full onClick={onClose}>{copy(locale, "閉じる", "Close")}</Button>
+          <Button
+            variant="primary"
+            full
+            disabled={busy || invalid}
+            onClick={() => void onCreate({ poNumber, showParentCompany, parentCompanyName, pltFormat, stateChargeVat, noVat, customerNote, staffNote })}
+          >
+            {copy(locale, "請求書を作成", "Create invoice")}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4 pb-2">
+        <Field label="PO Number" hint={copy(locale, "任意", "Optional")}>
+          <Input value={poNumber} onChange={(event) => setPoNumber(event.target.value)} />
+        </Field>
+
+        <div className="rounded-2xl border border-line bg-fill p-4">
+          <Checkbox checked={showParentCompany} onChange={() => setShowParentCompany((value) => !value)} label="Show Parent Company in PDF" />
+          {showParentCompany && (
+            <div className="mt-3">
+              <Field label="Parent Company Name">
+                <Input value={parentCompanyName} onChange={(event) => setParentCompanyName(event.target.value)} />
+              </Field>
+            </div>
+          )}
+        </div>
+
+        <Field label="PLT Format">
+          <select value={pltFormat} onChange={(event) => setPltFormat(event.target.value as PltFormat)} className={selectClass}>
+            <option value="NORMAL">Normal</option>
+            <option value="IMPORT_PRODUCT">Import Product</option>
+            <option value="DISTRIBUTOR">Distributor</option>
+          </select>
+        </Field>
+
+        <div className="rounded-2xl border border-line bg-fill p-4">
+          <p className="mb-3 text-[13px] font-medium text-text">VAT</p>
+          <div className="space-y-3">
+            <Checkbox
+              checked={stateChargeVat}
+              onChange={() => {
+                setStateChargeVat((value) => !value);
+                if (!stateChargeVat) setNoVat(false);
+              }}
+              label="State Charge VAT"
+            />
+            <Checkbox
+              checked={noVat}
+              onChange={() => {
+                setNoVat((value) => !value);
+                if (!noVat) setStateChargeVat(false);
+              }}
+              label="No VAT"
+            />
+          </div>
+          <p className="mt-3 text-[11.5px] leading-5 text-faint">
+            {copy(locale, "既存システムにVAT率計算が無いため、今回は帳票設定として保存・表示します。両方を同時には選択できません。", "The current system has no VAT-rate calculation, so these are saved as document settings only. They cannot both be enabled.")}
+          </p>
+        </div>
+
+        <Field label="Customer Note" hint={copy(locale, "PDFに表示", "Shown in customer PDF")}>
+          <textarea value={customerNote} onChange={(event) => setCustomerNote(event.target.value)} rows={3} className={textareaClass} />
+        </Field>
+        <Field label="Staff Note" hint={copy(locale, "社内のみ・PDF非表示", "Internal only · never shown in PDF")}>
+          <textarea value={staffNote} onChange={(event) => setStaffNote(event.target.value)} rows={3} className={textareaClass} />
+        </Field>
+      </div>
+    </Sheet>
+  );
 }
 
-function BillingProjectModal({
-  project,
-  open,
-  onClose,
-}: {
+type BillingDraft = {
+  originalName: string;
+  unit: string;
+  quantity: string;
+  discountType: BillingDiscountType;
+  discountValue: string;
+  total: string;
+};
+
+function draftFor(item: BillingItem): BillingDraft {
+  const discountType = item.discountType ?? "NONE";
+  const discountValue = item.discountValue ?? 0;
+  const calculated = calculateBillingLine(item.quantity, item.unitPrice, discountType, discountValue);
+  return {
+    originalName: item.originalName ?? item.description,
+    unit: formatUnit(item.unitPrice),
+    quantity: formatUnit(item.quantity),
+    discountType,
+    discountValue: discountValue > 0 ? formatUnit(discountValue) : "",
+    total: calculated.subtotal.toFixed(2),
+  };
+}
+
+function BillingProjectModal({ project, open, onClose }: {
   project: { id: string; name: string; date: string; items: BillingItem[]; total: number } | null;
   open: boolean;
   onClose: () => void;
@@ -243,43 +382,58 @@ function BillingProjectModal({
 
   if (!project) return null;
 
-  const setTotal = (item: BillingItem, value: string) => {
+  const update = (item: BillingItem, patch: Partial<BillingDraft>) => {
     setValues((current) => {
-      const parsed = parseAmount(value);
-      const unit = parsed == null || item.quantity <= 0 ? "" : formatUnit(parsed / item.quantity);
-      return { ...current, [item.id]: { total: value, unit } };
-    });
-  };
-
-  const setUnit = (item: BillingItem, value: string) => {
-    setValues((current) => {
-      const parsed = parseAmount(value);
-      const total = parsed == null ? "" : roundMoney(parsed * item.quantity).toFixed(2);
-      return { ...current, [item.id]: { unit: value, total } };
+      const next = { ...(current[item.id] ?? draftFor(item)), ...patch };
+      const unit = parseAmount(next.unit) ?? 0;
+      const quantity = parseAmount(next.quantity) ?? 0;
+      const discount = parseAmount(next.discountValue) ?? 0;
+      next.total = calculateBillingLine(quantity, unit, next.discountType, discount).subtotal.toFixed(2);
+      return { ...current, [item.id]: next };
     });
   };
 
   const invalid = project.items.some((item) => {
     const draft = values[item.id] ?? draftFor(item);
-    const total = parseAmount(draft.total);
-    return total == null || total <= 0;
+    const unit = parseAmount(draft.unit);
+    const quantity = parseAmount(draft.quantity);
+    const discount = parseAmount(draft.discountValue) ?? 0;
+    if (unit == null || unit < 0 || quantity == null || quantity <= 0 || discount < 0) return true;
+    if (draft.discountType === "PERCENT" && discount > 100) return true;
+    if (draft.discountType === "AMOUNT" && discount > roundMoney(unit * quantity)) return true;
+    return false;
   });
 
   const save = async () => {
     if (invalid) return;
-    const changes = project.items
-      .map((item) => ({ item, amount: parseAmount((values[item.id] ?? draftFor(item)).total) }))
-      .filter(({ item, amount }) => amount != null && amount > 0 && roundMoney(amount) !== roundMoney(item.amount));
+    const changes = project.items.filter((item) => {
+      const draft = values[item.id] ?? draftFor(item);
+      const unit = parseAmount(draft.unit) ?? 0;
+      const quantity = parseAmount(draft.quantity) ?? 0;
+      const discount = parseAmount(draft.discountValue) ?? 0;
+      return draft.originalName.trim() !== (item.originalName ?? item.description).trim()
+        || roundMoney(unit) !== roundMoney(item.unitPrice)
+        || quantity !== item.quantity
+        || draft.discountType !== (item.discountType ?? "NONE")
+        || roundMoney(discount) !== roundMoney(item.discountValue ?? 0);
+    });
     if (!changes.length) {
       onClose();
       return;
     }
     const ok = await run(
       async () => {
-        for (const change of changes) {
-          await api(`/api/billing-items/${change.item.id}/billing-price`, {
+        for (const item of changes) {
+          const draft = values[item.id] ?? draftFor(item);
+          await api(`/api/billing-items/${item.id}/billing-line`, {
             method: "POST",
-            body: { amount: change.amount },
+            body: {
+              originalName: draft.originalName,
+              unitPrice: parseAmount(draft.unit) ?? 0,
+              quantity: parseAmount(draft.quantity) ?? 0,
+              discountType: draft.discountType,
+              discountValue: parseAmount(draft.discountValue) ?? 0,
+            },
           });
         }
       },
@@ -293,7 +447,7 @@ function BillingProjectModal({
       open={open}
       onClose={onClose}
       title={project.name}
-      description={copy(locale, "請求合計・単価のどちらを入力しても、もう片方を自動計算します", "Enter either billing total or unit price; the other updates automatically")}
+      description={copy(locale, "請求書に出す商品名・単価・数量・値引き・小計を確認します", "Review original name, unit price, quantity, discount and subtotal for the invoice")}
       footer={
         <div className="grid min-w-0 gap-2 sm:grid-cols-2">
           <Button variant="secondary" full onClick={onClose}>{copy(locale, "閉じる", "Close")}</Button>
@@ -309,35 +463,51 @@ function BillingProjectModal({
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate text-[14.5px] font-medium text-text">{item.description}</p>
-                  <p className="mt-0.5 text-[11.5px] text-faint">×{item.quantity}</p>
+                  {item.type === "PRINT" && <p className="mt-0.5 text-[11.5px] text-faint">{copy(locale, "数量変更時は印刷価格の再確認が必要です", "Changing print quantity requires price review again")}</p>}
                 </div>
                 {item.type === "PRINT" && (
                   <p className="shrink-0 text-right text-[11.5px] text-muted">
                     {copy(locale, "原価", "Cost")} {item.printCostAmount != null ? money(item.printCostAmount) : "—"}
-                    {item.suggestedAmount != null ? ` · ${copy(locale, "推奨", "Suggested")} ${money(item.suggestedAmount)}` : ""}
                   </p>
                 )}
               </div>
 
-              <Field label={copy(locale, "請求合計", "Billing total")}>
-                <Input
-                  inputMode="decimal"
-                  value={draft.total}
-                  onChange={(event) => setTotal(item, event.target.value)}
-                  placeholder="0"
-                  className="tnum"
-                />
+              <Field label="Original Name">
+                <Input value={draft.originalName} onChange={(event) => update(item, { originalName: event.target.value })} />
               </Field>
-              <div className="mt-3">
-                <Field label={copy(locale, "単価", "Unit price")}>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Field label={copy(locale, "単価", "Unit Price")}>
+                  <Input inputMode="decimal" value={draft.unit} onChange={(event) => update(item, { unit: event.target.value })} placeholder="0" className="tnum" />
+                </Field>
+                <Field label={copy(locale, "数量", "Quantity")}>
+                  <Input inputMode="decimal" value={draft.quantity} onChange={(event) => update(item, { quantity: event.target.value })} placeholder="1" className="tnum" />
+                </Field>
+              </div>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <Field label="Discount">
+                  <select value={draft.discountType} onChange={(event) => update(item, { discountType: event.target.value as BillingDiscountType })} className={selectClass}>
+                    <option value="NONE">No discount</option>
+                    <option value="PERCENT">Percent (%)</option>
+                    <option value="AMOUNT">Amount ($)</option>
+                  </select>
+                </Field>
+                <Field label={draft.discountType === "PERCENT" ? "Discount % (0–100)" : draft.discountType === "AMOUNT" ? "Discount $" : "Discount value"}>
                   <Input
                     inputMode="decimal"
-                    value={draft.unit}
-                    onChange={(event) => setUnit(item, event.target.value)}
+                    value={draft.discountValue}
+                    disabled={draft.discountType === "NONE"}
+                    onChange={(event) => update(item, { discountValue: event.target.value })}
                     placeholder="0"
                     className="tnum"
                   />
                 </Field>
+              </div>
+
+              <div className="mt-3 flex items-center justify-between rounded-xl bg-fill px-3 py-2.5">
+                <span className="text-[12px] text-muted">Sub Total</span>
+                <Amount value={money(parseAmount(draft.total) ?? 0)} strong className="text-[15px]" />
               </div>
             </section>
           );
@@ -371,6 +541,9 @@ function PrintPriceQueue({ items }: { items: BillingItem[] }) {
   );
 }
 
+const selectClass = "h-11 w-full rounded-xl border border-line-strong bg-fill px-3 text-[14px] text-text outline-none focus:border-accent focus:bg-raise";
+const textareaClass = "min-h-[88px] w-full resize-y rounded-xl border border-line-strong bg-fill px-3 py-2.5 text-[14px] text-text outline-none placeholder:text-faint focus:border-accent focus:bg-raise";
+
 function parseAmount(value: string): number | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -379,7 +552,7 @@ function parseAmount(value: string): number | null {
 }
 
 function formatUnit(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return "";
+  if (!Number.isFinite(value) || value < 0) return "";
   const rounded = Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
   return rounded.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
 }
