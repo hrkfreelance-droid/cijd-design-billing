@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 
 import { currentUser } from "@/lib/auth/session";
 import { handle, readJson, str } from "@/lib/api";
-import { RuleError, autoInvoiceNumber } from "@/lib/data";
+import { RuleError } from "@/lib/data";
+import { autoInvoiceNumber } from "@/lib/data/repository";
 import { ensureCurrentSupabaseExchangeRate } from "@/lib/exchange-rate-server";
 import { supabaseServerClient } from "@/lib/supabase/server";
 import { toInvoice } from "@/lib/supabase/rows";
