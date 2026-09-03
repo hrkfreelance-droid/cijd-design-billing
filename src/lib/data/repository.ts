@@ -145,7 +145,8 @@ export interface Repository {
 
   createBillingItem(input: CreateBillingItemInput): Promise<BillingItem>;
   updateBillingItem(id: string, patch: UpdateBillingItemInput): Promise<BillingItem>;
-  updateBillingLinePricing(id: string, input: UpdateBillingLinePricingInput): Promise<BillingItem>;
+  /** Supabase invoice-stage extension; local demo routes are disabled. */
+  updateBillingLinePricing?(id: string, input: UpdateBillingLinePricingInput): Promise<BillingItem>;
   updatePrintSpec(id: string, patch: UpdatePrintSpecInput): Promise<BillingItem>;
   reviewPrintPrice(id: string, input: ReviewPrintPriceInput): Promise<BillingItem>;
   setBillingStatus(
