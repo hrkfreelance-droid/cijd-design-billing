@@ -87,8 +87,11 @@ export class GuardedRepository {
     return this.repo.updateBillingItem(id, { ...patch, actor: this.actor(patch.actor) });
   }
 
-  updateBillingLinePricing(id: string, input: Parameters<Repository["updateBillingLinePricing"]>[1]) {
+  updateBillingLinePricing(id: string, input: NonNullable<Parameters<NonNullable<Repository["updateBillingLinePricing"]>>[1]>) {
     this.assert("invoice:write");
+    if (!this.repo.updateBillingLinePricing) {
+      throw new RuleError("OFFLINE", "Invoice line pricing is unavailable in this runtime.", 503);
+    }
     return this.repo.updateBillingLinePricing(id, { ...input, actor: this.actor(input.actor) });
   }
 
