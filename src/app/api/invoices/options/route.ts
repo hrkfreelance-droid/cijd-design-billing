@@ -1,10 +1,13 @@
+import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 import { currentUser } from "@/lib/auth/session";
 import { handle, readJson, str } from "@/lib/api";
 import { RuleError } from "@/lib/data";
 import { autoInvoiceNumber } from "@/lib/data/repository";
+import { ExchangeRateUnavailableError } from "@/lib/exchange-rate";
 import { ensureCurrentSupabaseExchangeRate } from "@/lib/exchange-rate-server";
+import { supabaseConfig } from "@/lib/supabase/config";
 import { supabaseServerClient } from "@/lib/supabase/server";
 import { toInvoice } from "@/lib/supabase/rows";
 import type { Invoice, PltFormat } from "@/lib/types";
@@ -49,7 +52,20 @@ export async function POST(request: Request) {
 
     const client = await supabaseServerClient();
     if (!client) throw new RuleError("OFFLINE", "Database is unavailable.", 503);
-    await ensureCurrentSupabaseExchangeRate(client);
+    const config = supabaseConfig();
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+    const rateClient = config && serviceKey
+      ? createClient(config.url, serviceKey, { auth: { autoRefreshToken: false, detectSessionInUrl: false, persistSession: false } })
+      : client;
+    try {
+      await ensureCurrentSupabaseExchangeRate(rateClient);
+    } catch (error) {
+      if (error instanceof ExchangeRateUnavailableError) {
+        throw new RuleError("EXCHANGE_RATE_UNAVAILABLE", error.message, 503);
+      }
+      throw error;
+    }
+
     const result = await client.rpc("create_invoice_with_options", {
       p_client_id: clientId,
       p_invoice_number: invoiceNumber,
