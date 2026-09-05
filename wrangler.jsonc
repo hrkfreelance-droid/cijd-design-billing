@@ -23,6 +23,7 @@
   },
   "vars": {
     "CIJD_PREVIEW_MODE": "1",
+    "CIJD_PUBLIC_DEMO_MODE": "1",
     "CIJD_ACCESS_LINKS_ENABLED": "1"
   },
   "cache": {
