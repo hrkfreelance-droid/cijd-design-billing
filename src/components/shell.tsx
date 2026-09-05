@@ -17,6 +17,7 @@ import { useData, useI18n, useSession, useTheme } from "@/components/providers";
 import { Button, IconButton, Sheet } from "@/components/ui";
 import { canAny, homeFor, workspacesFor, type Permission } from "@/lib/auth/roles";
 import type { MessageKey } from "@/lib/i18n";
+import { isBrowserDemoMode } from "@/lib/runtime";
 
 export interface NavItem {
   href: string;
@@ -248,6 +249,7 @@ function UserMenu({ workspace }: { workspace: "designer" | "printing" | "office"
   const { user, signOut } = useSession();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const publicDemo = isBrowserDemoMode();
   if (!user) return null;
 
   const adminLinks = user.role === "ADMIN"
@@ -255,7 +257,7 @@ function UserMenu({ workspace }: { workspace: "designer" | "printing" | "office"
         { href: "/designer/projects", label: "Design", active: workspace === "designer" },
         { href: "/printing", label: "Printing", active: workspace === "printing" },
         { href: "/office", label: "Billing", active: workspace === "office" },
-        { href: "/admin", label: "Admin", active: false },
+        ...(!publicDemo ? [{ href: "/admin", label: "Admin", active: false }] : []),
       ]
     : [];
 
@@ -271,17 +273,19 @@ function UserMenu({ workspace }: { workspace: "designer" | "printing" | "office"
       <Sheet
         open={open}
         onClose={() => setOpen(false)}
-        title={user.name}
-        description={t(`role.${user.role}`)}
+        title={publicDemo ? "Demo" : user.name}
+        description={publicDemo ? "Browser-local sample data" : t(`role.${user.role}`)}
         footer={
           <div className="space-y-2">
             <Button variant="secondary" full onClick={() => setOpen(false)}>{t("common.close")}</Button>
-            <button
-              onClick={() => void signOut().then(() => router.push("/signin"))}
-              className="block w-full py-1.5 text-center text-[13px] text-faint transition-colors hover:text-review"
-            >
-              {t("signin.signOut")}
-            </button>
+            {!publicDemo && (
+              <button
+                onClick={() => void signOut().then(() => router.push("/signin"))}
+                className="block w-full py-1.5 text-center text-[13px] text-faint transition-colors hover:text-review"
+              >
+                {t("signin.signOut")}
+              </button>
+            )}
           </div>
         }
       >

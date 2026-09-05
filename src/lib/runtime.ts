@@ -1,42 +1,47 @@
-/** Runtime switches shared by server and client code.
- *
- * An explicit local demo is a development-only feature. In a production build
- * the flag is deliberately ignored so it can never bypass authentication or
- * make browser-local data look like the operational ledger.
- */
-/** Cloudflare Preview is also allowed to be the real Supabase application. */
+/** Runtime switches shared by server and client code. */
 const PREVIEW_HOST = "cijd-design-billing-preview.hrk-freelance.workers.dev";
-export const isPreviewRuntime =
-  process.env.CIJD_PREVIEW_MODE === "1" ||
-  (typeof window !== "undefined" && window.location.hostname === PREVIEW_HOST);
+const isPreviewHost =
+  typeof window !== "undefined" && window.location.hostname === PREVIEW_HOST;
 
-/** Demo data is only available from a local development server. */
-export const isDemoMode =
+export const isPreviewRuntime =
+  process.env.CIJD_PREVIEW_MODE === "1" || isPreviewHost;
+
+/**
+ * The fixed Cloudflare Review Worker is a public demo. On the server the
+ * explicit Worker var enables demo routing; in the browser the fixed hostname
+ * is enough to select the isolated localStorage-backed demo repository.
+ */
+export const isPublicDemoRuntime =
+  process.env.CIJD_PUBLIC_DEMO_MODE === "1" || isPreviewHost;
+
+/** Local demo remains available for development without affecting other hosts. */
+const isLocalDevelopmentDemo =
   process.env.NEXT_PUBLIC_DEMO_MODE === "1" &&
   process.env.NODE_ENV === "development" &&
   !isPreviewRuntime;
+
+export const isDemoMode = isPublicDemoRuntime || isLocalDevelopmentDemo;
 
 export const hasSupabaseBrowserConfig = Boolean(
   process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
 );
 
-/** Browser-local data is opt-in for local review, never an implicit Preview fallback. */
+/**
+ * In demo mode data lives only in the visitor's browser. Server data routes are
+ * disabled, so the public demo never reads or writes the operational Supabase
+ * repository even when Supabase environment variables exist on the Worker.
+ */
 export const isLocalDemoRuntime = isDemoMode;
 
 /**
- * Pilot access is an explicit server-side deployment switch. It intentionally
- * does not live in NEXT_PUBLIC_* and is never used to select browser-local
- * data; the server treats an unauthenticated request as ADMIN only while this
- * flag is enabled.
+ * Pilot mode is intentionally separate from public demo mode. Pilot grants a
+ * server-side ADMIN identity and must never be used to make the public demo
+ * accessible.
  */
 export function isPilotMode(): boolean {
   return process.env.CIJD_PILOT_MODE === "1";
 }
 
-/**
- * A hostname alone must never select demo data. Preview is operational whenever
- * Supabase variables are present, and otherwise stays behind the auth gate.
- */
 export function isBrowserDemoMode(): boolean {
   return isDemoMode;
 }
