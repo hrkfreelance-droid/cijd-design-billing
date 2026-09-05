@@ -1,93 +1,107 @@
-# CIJD Cloudflare Preview Operation
+# CIJD Cloudflare Review Operation
 
-This file defines the permanent Cloudflare deployment path for CIJD development updates.
+This file defines the permanent Cloudflare review/deployment path for CIJD so ChatGPT, Codex, Claude Code, and human maintainers can update the same review environment without re-solving hosting every time.
 
-## Goal
+## Permanent topology
 
-Additional UI/UX instructions must not get blocked repeatedly by ad-hoc deployment credentials.
-The normal path is Cloudflare Workers native Git integration, not a custom GitHub Actions deploy.
-
-## Canonical Cloudflare project
-
-- Worker: `cijd-design-billing-preview`
 - Repository: `hrkfreelance-droid/cijd-design-billing`
-- Production branch inside this Review Worker: `integrate-production-workspace`
-- Production business Worker: do not touch without explicit authorization
-- `main`: do not write
-- Netlify: do not touch unless explicitly requested
+- Review source branch: `integrate-production-workspace`
+- Fixed Cloudflare Review Worker: `cijd-design-billing-preview`
+- Fixed review URL: `https://cijd-design-billing-preview.hrk-freelance.workers.dev`
+- Production/main infrastructure: untouched unless explicitly authorized
+- Supabase data/schema: independent from UI review deployment and never reset for preview work
 
-## One-time Cloudflare dashboard settings
+The fixed Review Worker is the persistent AI-editable environment. Normal UI/UX and workflow updates should end up on `integrate-production-workspace` after review and then be deployed by Cloudflare Workers native Git integration.
 
-In Cloudflare Workers & Pages > `cijd-design-billing-preview` > Settings > Build:
+## Why this is the canonical path
 
-1. Git integration: GitHub
-2. Repository: `hrkfreelance-droid/cijd-design-billing`
-3. Production branch: `integrate-production-workspace`
-4. Build command: `npm run build:vinext`
-5. Production deploy command: use the normal Worker deploy command (`npx wrangler deploy` / Cloudflare default)
-6. Builds for non-production branches: **ON**
-7. Non-production branch deploy command: use Cloudflare preview version upload (`npx wrangler versions upload` / Cloudflare default)
-8. Preview URLs: **ON**
+Cloudflare Workers native Git integration owns Cloudflare authentication. Do not add a second GitHub Actions deployment path that requires `CLOUDFLARE_API_TOKEN` for routine work.
 
-Repository `wrangler.jsonc` also explicitly sets `workers_dev: true` and `preview_urls: true` so Preview URL behavior is not dependent on Wrangler defaults.
+Future assistants should be able to:
+
+1. Read this file and `docs/CANONICAL_OPERATION.md` before implementation.
+2. Start from current `origin/integrate-production-workspace`.
+3. Work on a reversible `review/*` branch when the change is significant.
+4. Run code/build checks.
+5. Merge the approved change into `integrate-production-workspace` only for the Review environment.
+6. Let Cloudflare native Git integration rebuild the same fixed Review Worker.
+7. Verify `/api/version` before claiming LIVE PASS.
+8. Preserve the previous commit SHA as the rollback target.
+
+## Cloudflare one-time account configuration
+
+Worker `cijd-design-billing-preview` must stay connected to GitHub repository `hrkfreelance-droid/cijd-design-billing` using Workers Builds.
+
+Cloudflare dashboard settings:
+
+- Settings → Build → Git repository: `hrkfreelance-droid/cijd-design-billing`
+- Production branch: `integrate-production-workspace`
+- Build command: `npm run build:vinext`
+- Production deploy command: Cloudflare default / `npx wrangler deploy`
+- Builds for non-production branches: ON when branch previews are desired
+- Non-production deploy command: Cloudflare default / `npx wrangler versions upload`
+- Settings → Domains & Routes → Preview URLs: ON
+
+`wrangler.jsonc` also keeps `workers_dev: true` and `preview_urls: true` so repository configuration agrees with the dashboard.
 
 ## Normal update flow
 
-For UI/UX fixes and additional instructions:
-
 ```text
-git fetch --all --prune
+fetch latest integrate-production-workspace
         ↓
-start from latest origin/integrate-production-workspace
+create/update reversible review branch if needed
         ↓
-work on review/<topic> branch
+typecheck / relevant lint / build / tests
         ↓
-typecheck / relevant lint / build
+merge approved review change into integrate-production-workspace
         ↓
-push review branch
+Cloudflare Workers native Git integration builds automatically
         ↓
-Cloudflare Workers Builds runs automatically
+fixed Review URL updates
         ↓
-Cloudflare creates/updates branch Preview URL
+GET /api/version
         ↓
-verify /api/version and live UI
+commit == current integrate-production-workspace HEAD
         ↓
-share the Cloudflare Preview URL
+LIVE PASS
 ```
 
-A review branch must not overwrite the fixed canonical Review Worker deployment. Cloudflare non-production branch builds should create a version/branch Preview URL under workers.dev.
-
-## Canonical Review update
-
-Only after the review branch is approved and incorporated into `integrate-production-workspace` should the fixed Review Worker URL move forward:
-
-`https://cijd-design-billing-preview.hrk-freelance.workers.dev`
-
-That fixed URL is for the canonical `integrate-production-workspace` state, not for every work-in-progress branch.
+For small follow-up fixes already inside an active reviewed change, it is acceptable to update the same review branch and merge again after checks. Do not create a new hosting project for each instruction.
 
 ## Rollback
 
-Rollback is Git-first:
+Before every Review merge/deploy, record the previous `integrate-production-workspace` HEAD.
 
-- Branch preview: previous commit/version remains available in Git and Cloudflare version history.
-- Canonical Review Worker: restore/redeploy the previously verified `integrate-production-workspace` commit.
-- Never reset or modify Supabase data as part of a UI rollback.
+If the new Review build is bad:
 
-## Credential policy
+- revert the merge/commit on `integrate-production-workspace`, or
+- restore the recorded previous commit through Git,
+- let Cloudflare native Git integration redeploy,
+- verify `/api/version` again.
 
-- Do not create a GitHub Actions workflow that requires `CLOUDFLARE_API_TOKEN` just to preview ordinary CIJD changes.
-- Do not ask Hiroki for a Cloudflare API Token if native Workers Git integration can perform the deployment.
-- Do not paste Cloudflare tokens or secrets into chat, commits, logs, or source files.
-- Manual `wrangler` deployment is fallback only, using an already-authorized local environment when available.
+Cloudflare Version history can also assist rollback, but Git remains the source of truth.
 
-## Start-of-task preflight
+Never roll back by resetting Supabase data.
 
-Before implementing a new CIJD web change, verify the deployment path first:
+## Mandatory preflight for every future web update
 
-- canonical repository and branch are reachable
-- `wrangler.jsonc` points to `cijd-design-billing-preview`
-- `preview_urls` is enabled
-- Cloudflare Git integration is expected to handle branch previews
-- rollback source is known
+Before implementation begins, confirm:
 
-If Cloudflare does not create a preview after push, diagnose the Cloudflare Build/Git integration before inventing another hosting or CI path.
+1. repository
+2. source/review branch
+3. Cloudflare Worker/project name
+4. fixed Review URL
+5. build command
+6. deploy ownership (Cloudflare native Git integration)
+7. rollback commit
+8. whether production/main is authorized
+
+Do not discover these only after implementation is complete.
+
+## PASS definitions
+
+- CODE PASS = source checks passed
+- DEPLOY PASS = Cloudflare build/deploy completed
+- LIVE PASS = fixed Review URL `/api/version` matches current `integrate-production-workspace` HEAD
+
+Never claim deployment complete from CODE PASS alone.
