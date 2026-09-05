@@ -27,6 +27,19 @@ Before implementation begins, record this deployment preflight:
 
 Do not postpone deploy-path discovery until after implementation.
 
+## Fixed Review URL is a public demo
+
+The fixed Review Worker is intentionally a no-login public demo.
+
+- `https://cijd-design-billing-preview.hrk-freelance.workers.dev` must open without signup, email, password, or login.
+- It uses the browser-local demo repository only. Each visitor gets isolated sample data in their own browser storage.
+- Public-demo actions must never read or write operational Supabase data.
+- Server data API routes stay disabled while `CIJD_PUBLIC_DEMO_MODE=1`.
+- Never use `CIJD_PILOT_MODE=1` to make the public demo accessible; Pilot mode grants a server-side ADMIN identity.
+- Do not reconnect the fixed Review URL to real Supabase/auth unless Hiroki explicitly changes this public-demo policy.
+- User-management/Admin-account controls do not belong in the public demo.
+- `?reset` may be used to restore the visitor's browser-local sample data.
+
 Hard rules:
 
 - Do not write to `main`.
@@ -37,7 +50,7 @@ Hard rules:
 - Significant work may happen on a reversible `review/*` branch, then merge into `integrate-production-workspace` after checks and approval.
 - Before every Review merge/deploy, record the previous `integrate-production-workspace` HEAD as the rollback target.
 - Keep CODE PASS, DEPLOY PASS and LIVE PASS separate. A successful build or merge is not LIVE PASS.
-- LIVE PASS requires the fixed Review URL `/api/version` to match the current `integrate-production-workspace` HEAD.
+- LIVE PASS requires the fixed Review URL `/api/version` to match the current `integrate-production-workspace` HEAD when that endpoint is available to the verifier.
 - If live verification fails, state `DO NOT CLAIM LIVE COMPLETE` and leave Live status unresolved.
 - Supabase migrations are append-only. Never edit an already-applied migration; add a corrective migration.
 - Never use Supabase reset/reseed/truncate as a UI rollback mechanism.
