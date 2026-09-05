@@ -3,6 +3,7 @@
 import { ApiError } from "@/lib/api-error";
 import { GuardedRepository } from "@/lib/auth/guarded-repository";
 import type { SessionUser } from "@/lib/auth/session";
+import { isPublicDemoRuntime } from "@/lib/runtime";
 import type { BillingStatus, ItemType, ReceiptStatus } from "@/lib/types";
 import { browserPersistence, clearDemoData } from "./browser-persistence";
 import { RuleError, type Repository } from "./repository";
@@ -31,9 +32,27 @@ function repository(): Repository {
 }
 
 async function currentDemoUser(): Promise<SessionUser | null> {
-  const id = localStorage.getItem(USER_KEY);
+  const users = await repository().rawUsers();
+  let id: string | null = null;
+  try {
+    id = localStorage.getItem(USER_KEY);
+  } catch {
+    // Storage can be unavailable in strict/private browser modes.
+  }
+
+  if (!id && isPublicDemoRuntime) {
+    const admin = users.find((candidate) => candidate.role === "ADMIN") ?? users[0];
+    if (!admin) return null;
+    id = admin.id;
+    try {
+      localStorage.setItem(USER_KEY, id);
+    } catch {
+      // The in-memory demo still works for this page load.
+    }
+  }
+
   if (!id) return null;
-  const user = (await repository().rawUsers()).find((candidate) => candidate.id === id);
+  const user = users.find((candidate) => candidate.id === id);
   return user ? { id: user.id, name: user.name, role: user.role } : null;
 }
 
