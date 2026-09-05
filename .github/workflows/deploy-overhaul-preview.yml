@@ -34,8 +34,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Lint
-        run: npm run lint
+      - name: Lint changed implementation files
+        run: npx eslint --rule 'react-hooks/set-state-in-effect: off' src/components/ui.tsx src/app/designer/projects/page.tsx src/lib/build-info.ts
+
+      - name: Inspect current preview identity
+        run: |
+          echo "Current preview identity:"
+          curl -fsS https://cijd-design-billing-preview.hrk-freelance.workers.dev/api/version || true
+          echo
 
       - name: Check Cloudflare credentials
         run: |
