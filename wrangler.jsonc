@@ -12,6 +12,7 @@
     "binding": "ASSETS"
   },
   "workers_dev": true,
+  "preview_urls": true,
   "triggers": {
     "crons": [
       "35 9 * * 1-5",
