@@ -12,26 +12,35 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Read `docs/CANONICAL_OPERATION.md`, `docs/CLOUDFLARE_PREVIEW_OPERATION.md`, `docs/RELEASE_STATUS.md`, and `docs/UI_WORKFLOW_INVARIANTS.md` before changing or deploying CIJD.
 
-Every new task starts with `git fetch --all --prune`. The source of truth is the current `origin/integrate-production-workspace` HEAD, never a SHA copied from an old conversation.
+Every new task starts with `git fetch --all --prune`. The source of truth for the persistent Review environment is the current `origin/integrate-production-workspace` HEAD, never a SHA copied from an old conversation.
 
-Before implementation, verify the deployment path and rollback path. Ordinary review branches use Cloudflare Workers native Git integration and Cloudflare branch Preview URLs. Do not invent a second deployment path after coding has already started.
+Before implementation begins, record this deployment preflight:
+
+- repository: `hrkfreelance-droid/cijd-design-billing`
+- Review branch: `integrate-production-workspace`
+- Review Worker: `cijd-design-billing-preview`
+- Review URL: `https://cijd-design-billing-preview.hrk-freelance.workers.dev`
+- build command: `npm run build:vinext`
+- deploy owner: Cloudflare Workers native Git integration
+- current Review HEAD as rollback point
+- production/main authorization state
+
+Do not postpone deploy-path discovery until after implementation.
 
 Hard rules:
 
 - Do not write to `main`.
 - Do not touch Netlify unless Hiroki explicitly asks for that exact action.
 - Do not deploy to a production Cloudflare Worker unless Hiroki explicitly authorizes production deployment.
-- Canonical CIJD Cloudflare Worker is the Review Worker `cijd-design-billing-preview`; production business infrastructure remains untouched.
-- For work-in-progress branches, prefer Cloudflare Workers native non-production branch builds and their branch/version Preview URLs.
-- Do not add GitHub Actions that require `CLOUDFLARE_API_TOKEN` merely to preview normal CIJD changes. Native Cloudflare Git integration is the canonical automated deploy path.
-- The fixed URL `https://cijd-design-billing-preview.hrk-freelance.workers.dev` represents the canonical `integrate-production-workspace` Review state, not every WIP branch.
-- Manual `npm run deploy:review` is fallback only for the canonical branch from an already-authorized local environment.
-- Do not use hash/version URLs as the normal canonical share URL, but branch/version Preview URLs are valid for reviewing non-production branches before merge.
-- Keep CODE PASS, DEPLOY PASS and LIVE PASS separate. A successful build or deploy command is not LIVE PASS.
-- LIVE PASS for the canonical Review Worker requires `npm run verify:live` to show that canonical `/api/version` commit equals current `origin/integrate-production-workspace` HEAD.
-- For a branch Preview URL, verify `/api/version` against that branch HEAD before claiming the branch preview is current.
+- Normal CIJD public review target is the fixed Review Worker `cijd-design-billing-preview` following `integrate-production-workspace`.
+- Cloudflare Workers native Git integration is the canonical automated deploy path. Do not add a routine GitHub Actions deploy requiring `CLOUDFLARE_API_TOKEN`.
+- Significant work may happen on a reversible `review/*` branch, then merge into `integrate-production-workspace` after checks and approval.
+- Before every Review merge/deploy, record the previous `integrate-production-workspace` HEAD as the rollback target.
+- Keep CODE PASS, DEPLOY PASS and LIVE PASS separate. A successful build or merge is not LIVE PASS.
+- LIVE PASS requires the fixed Review URL `/api/version` to match the current `integrate-production-workspace` HEAD.
 - If live verification fails, state `DO NOT CLAIM LIVE COMPLETE` and leave Live status unresolved.
 - Supabase migrations are append-only. Never edit an already-applied migration; add a corrective migration.
+- Never use Supabase reset/reseed/truncate as a UI rollback mechanism.
 
 # CIJD / DAISHIN UI rule
 
