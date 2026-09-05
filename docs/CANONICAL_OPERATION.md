@@ -7,119 +7,101 @@
 | Item | Value |
 | --- | --- |
 | Repository | `hrkfreelance-droid/cijd-design-billing` |
-| Canonical branch | `integrate-production-workspace` |
+| Canonical review branch | `integrate-production-workspace` |
 | Supabase Project Ref | `dldfhhcechzhkbvlnzld` |
-| Normal Cloudflare target | Review Worker only |
+| Normal Cloudflare target | Fixed Review Worker only |
 | Review Worker | `cijd-design-billing-preview` |
+| Review URL | `https://cijd-design-billing-preview.hrk-freelance.workers.dev` |
+| Automated deployment owner | Cloudflare Workers native Git integration |
 | Production | 明示許可があるまで触らない |
 | Netlify | 明示許可があるまで触らない |
 | `main` | 書き込み禁止 |
 
-毎回、作業開始時に `git fetch --all --prune` を行い、その時点の
-`origin/integrate-production-workspace` HEAD を正本とします。会話や古い資料に残るSHAを最新版として使いません。
+毎回、作業開始時に `git fetch --all --prune` を行い、その時点の `origin/integrate-production-workspace` HEAD をReview環境の正本とします。会話や古い資料に残るSHAを最新版として使いません。
 
-また、実装開始前に `docs/CLOUDFLARE_PREVIEW_OPERATION.md` を確認し、Cloudflare Preview と rollback の経路を先に確定します。
+## Permanent Review environment
 
-## Cloudflare deployment model
-
-CIJDの通常開発では **Cloudflare Workers native Git integration** を正本とします。
-GitHub ActionsからCloudflareへ独自デプロイする経路は通常使いません。
-
-### Work-in-progress branch
-
-`review/*` 等の非本番ブランチは Cloudflare の non-production branch build で処理します。
-
-```text
-latest origin/integrate-production-workspace
-        ↓
-review/<topic> branch
-        ↓
-typecheck / relevant lint / build
-        ↓
-push
-        ↓
-Cloudflare Workers Builds
-        ↓
-branch/version Preview URL
-        ↓
-/api/version と branch HEAD を照合
-        ↓
-BRANCH LIVE PASS
-```
-
-この branch Preview は固定 Review Worker の現在版を上書きしません。
-Cloudflareが出す branch/version `workers.dev` URL は、レビュー中の変更確認用途として正式に利用してよいものとします。
-
-### Canonical Review branch
-
-固定URLは次です。
+固定Review URLは次の1本です。
 
 `https://cijd-design-billing-preview.hrk-freelance.workers.dev`
 
-このURLは `integrate-production-workspace` の正本状態を表します。
-レビュー承認後に変更を `integrate-production-workspace` へ取り込んだときのみ、Cloudflare Git integration または明示的な安全な手動fallbackで固定Review Workerを更新します。
+このReview Workerを、ChatGPT / Codex / Claude Code / human maintainer が継続して更新できる恒久開発環境として扱います。
 
-## Cloudflare one-time configuration
+通常の追加修正で新しいホスティング先を毎回作りません。大きめの変更は `review/*` branch で安全に作業し、確認・承認後に `integrate-production-workspace` へ取り込みます。Cloudflare WorkersのGit連携が同じ固定Review Workerを自動更新します。
 
-Cloudflare側の恒久設定は `docs/CLOUDFLARE_PREVIEW_OPERATION.md` を正本とします。
-最低条件:
+## Deployment flow
 
-- GitHub repository: `hrkfreelance-droid/cijd-design-billing`
+```text
+git fetch --all --prune
+        ↓
+current origin/integrate-production-workspace を確認
+        ↓
+必要なら review/* branch で実装
+        ↓
+typecheck / relevant lint / build / tests
+        ↓
+反映前 integrate-production-workspace SHA を rollback point として記録
+        ↓
+approved change を integrate-production-workspace へ反映
+        ↓
+Cloudflare Workers native Git integration が自動build/deploy
+        ↓
+Review Worker cijd-design-billing-preview 更新
+        ↓
+/api/version を確認
+        ↓
+live commit == current integrate-production-workspace HEAD
+        ↓
+LIVE PASS
+```
+
+## Cloudflare configuration
+
+Worker `cijd-design-billing-preview` はGitHub repository `hrkfreelance-droid/cijd-design-billing` とWorkers Buildsで接続します。
+
 - Production branch: `integrate-production-workspace`
 - Build command: `npm run build:vinext`
-- Builds for non-production branches: ON
-- Non-production deploy: `wrangler versions upload` 相当
-- Preview URLs: ON
+- Production deploy command: Cloudflare default / `npx wrangler deploy`
+- Non-production branch builds: ON when branch previews are wanted
+- Non-production deploy: Cloudflare default / `npx wrangler versions upload`
+- `workers_dev: true`
+- `preview_urls: true`
 
-root `wrangler.jsonc` でも `workers_dev: true` と `preview_urls: true` を明示します。
-
-## Manual deployment fallback
-
-`npm run deploy:review` はローカル/手動fallback用の強制ガードです。
-
-- 現在ブランチが `integrate-production-workspace` 以外なら停止
-- local HEAD と remote HEAD が違えば停止
-- build SHA / branch / builtAt / environment を build/runtime に注入
-- generated Wrangler config の Worker 名を `cijd-design-billing-preview` に固定
-- `wrangler deploy` を使用
-- Production Worker 名では deploy できない
-
-通常のreview branch確認のためにGitHub Actionsへ `CLOUDFLARE_API_TOKEN` を追加する方式は採用しません。
+Cloudflare Git integration自身が認証を保持するため、通常運用のためにGitHub Actionsへ `CLOUDFLARE_API_TOKEN` を追加しません。Cloudflare公式Workers BuildsのGit連携を正本とします。
 
 ## Version gate
 
-`GET /api/version` は必ず `Cache-Control: no-store` で次を返します。
+`GET /api/version` は必ず `Cache-Control: no-store` で build identity を返します。
+
+固定Review URLを「最新」と案内する前に、少なくとも次を確認します。
 
 ```json
 {
   "commit": "<full sha>",
   "shortCommit": "<8 chars>",
-  "branch": "<git branch>",
+  "branch": "integrate-production-workspace",
   "builtAt": "<ISO timestamp>",
   "environment": "review"
 }
 ```
 
-HTMLにも `cijd-build-sha` metaを出します。
-
-固定Review URLでは `npm run verify:live` が `origin/integrate-production-workspace` HEAD と比較します。
-Branch Previewでは `/api/version.commit` と対象branch HEADを比較します。
-不一致・取得失敗・branch/environment違いは失敗として扱い、`DO NOT CLAIM LIVE COMPLETE` とします。
+Build成功だけで公開完了とは言いません。
 
 ## PASS definitions
 
 - **CODE PASS**: 対象コードがcommit/push済みで、必要なtypecheck/tests/buildが成功。
-- **DEPLOY PASS**: Cloudflare上で対象branch/versionのdeployが成功。
-- **BRANCH LIVE PASS**: branch Preview URLの `/api/version` が対象branch HEADと一致。
-- **LIVE PASS**: 固定Review URLの `/api/version` が最新 `origin/integrate-production-workspace` HEADと一致。
+- **DEPLOY PASS**: Cloudflare Workers build/deploy が成功。
+- **LIVE PASS**: 固定Review URL の `/api/version` が最新 `integrate-production-workspace` HEAD と一致。
 
-これらは別物です。Build成功だけで「公開完了」と言いません。
+3つは別物です。
 
 ## Rollback
 
-- Branch Preview: Git commit と Cloudflare Worker version history を利用し、固定Review Workerは触らない。
-- Canonical Review: 直前に検証済みの `integrate-production-workspace` commit を再デプロイできる状態を維持する。
-- UI rollbackのためにSupabaseの実データをreset/変更しない。
+Review更新前の `integrate-production-workspace` HEAD を必ず記録します。
+
+問題があればGitでその変更をrevert、または記録した前コミットへReview branchを復元し、Cloudflare Git integrationに再deployさせます。Cloudflare Version historyも補助に使えますが、Gitを正本にします。
+
+**UIロールバックでSupabaseデータをreset・truncate・reseedしません。**
 
 ## Supabase migration rule
 
@@ -138,3 +120,18 @@ CIJDの通常操作は「リストを見失わない」ことを優先します�
 - Headerに主要操作を詰め込みすぎない。
 - Print cost と customer billing を混同しない。
 - Invoiced / Paid / imported history は勝手に書き換えない。
+
+## Mandatory start-of-task preflight
+
+今後のWeb更新は、実装を始める前に必ず確認します。
+
+1. repository
+2. current review/source branch
+3. Cloudflare Worker name
+4. fixed Review URL
+5. build command
+6. deploy owner = Cloudflare native Git integration
+7. rollback SHA
+8. production/main authorization state
+
+デプロイ設定を実装の最後に初めて確認する進め方は禁止します。
