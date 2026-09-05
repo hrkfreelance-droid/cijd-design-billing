@@ -34,6 +34,10 @@
   --ui-hairline-strong: color-mix(in srgb, var(--c-text) 16%, transparent);
   --ui-shadow-small: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 18px rgba(0, 0, 0, 0.035);
   --ui-shadow-large: 0 20px 60px rgba(0, 0, 0, 0.16), 0 4px 18px rgba(0, 0, 0, 0.08);
+
+  /* Shared with DAISHIN's current interaction language. */
+  --apple-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --apple-ease-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 
 .dark {
@@ -142,7 +146,7 @@
     transform-origin: center;
     transition-property: transform, background-color, color, border-color, box-shadow, opacity;
     transition-duration: 110ms;
-    transition-timing-function: ease-out;
+    transition-timing-function: var(--apple-ease-soft);
   }
 
   button:not(:disabled):active {
@@ -236,35 +240,113 @@
     transform: none;
   }
 }
+
 @keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cijd-scrim-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes cijd-scrim-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes cijd-dialog-in {
   from {
     opacity: 0;
+    transform: translate3d(0, 10px, 0) scale(0.96);
   }
   to {
     opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
-@keyframes sheet-up {
+
+@keyframes cijd-dialog-out {
   from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
     opacity: 0;
-    transform: translateY(14px) scale(0.99);
-    filter: blur(1px);
+    transform: translate3d(0, 7px, 0) scale(0.985);
+  }
+}
+
+@keyframes cijd-sheet-in-mobile {
+  from {
+    opacity: 0.72;
+    transform: translate3d(0, 28px, 0) scale(0.995);
   }
   to {
     opacity: 1;
-    transform: none;
-    filter: blur(0);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes cijd-sheet-out-mobile {
+  from {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate3d(0, 22px, 0) scale(0.995);
   }
 }
 
 .animate-rise {
-  animation: rise 0.26s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation: rise 0.26s var(--apple-ease-soft) both;
 }
+
 .animate-fade {
-  animation: fade 0.18s ease-out both;
+  animation: fade 0.18s var(--apple-ease-soft) both;
 }
+
+/* Kept for older callers; shared Sheet uses the explicit state classes below. */
 .animate-sheet {
-  animation: sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: cijd-dialog-in 0.22s var(--apple-ease) both;
+}
+
+.cijd-sheet-scrim {
+  will-change: opacity;
+  animation: cijd-scrim-in 180ms var(--apple-ease) both;
+}
+
+.cijd-sheet-scrim[data-state="closing"] {
+  pointer-events: none;
+  animation: cijd-scrim-out 180ms var(--apple-ease-soft) both;
+}
+
+.cijd-sheet-panel {
+  will-change: transform, opacity;
+  animation: cijd-dialog-in 220ms var(--apple-ease) both;
+}
+
+.cijd-sheet-panel[data-state="closing"] {
+  pointer-events: none;
+  animation: cijd-dialog-out 220ms var(--apple-ease-soft) both;
+}
+
+[data-cijd-sheet-root][data-state="closing"] {
+  pointer-events: none;
+}
+
+@media (max-width: 639px) {
+  .cijd-sheet-panel {
+    animation-name: cijd-sheet-in-mobile;
+    animation-duration: 300ms;
+  }
+
+  .cijd-sheet-panel[data-state="closing"] {
+    animation-name: cijd-sheet-out-mobile;
+    animation-duration: 220ms;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
