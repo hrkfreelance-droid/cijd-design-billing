@@ -18,37 +18,64 @@
 毎回、作業開始時に `git fetch --all --prune` を行い、その時点の
 `origin/integrate-production-workspace` HEAD を正本とします。会話や古い資料に残るSHAを最新版として使いません。
 
-## Canonical Review URL
+また、実装開始前に `docs/CLOUDFLARE_PREVIEW_OPERATION.md` を確認し、Cloudflare Preview と rollback の経路を先に確定します。
 
-固定URL候補は次の1本です。
+## Cloudflare deployment model
+
+CIJDの通常開発では **Cloudflare Workers native Git integration** を正本とします。
+GitHub ActionsからCloudflareへ独自デプロイする経路は通常使いません。
+
+### Work-in-progress branch
+
+`review/*` 等の非本番ブランチは Cloudflare の non-production branch build で処理します。
+
+```text
+latest origin/integrate-production-workspace
+        ↓
+review/<topic> branch
+        ↓
+typecheck / relevant lint / build
+        ↓
+push
+        ↓
+Cloudflare Workers Builds
+        ↓
+branch/version Preview URL
+        ↓
+/api/version と branch HEAD を照合
+        ↓
+BRANCH LIVE PASS
+```
+
+この branch Preview は固定 Review Worker の現在版を上書きしません。
+Cloudflareが出す branch/version `workers.dev` URL は、レビュー中の変更確認用途として正式に利用してよいものとします。
+
+### Canonical Review branch
+
+固定URLは次です。
 
 `https://cijd-design-billing-preview.hrk-freelance.workers.dev`
 
-**現在は Live 未検証です。** Cloudflare 側で Review Worker の workers.dev 固定URLが有効になり、`/api/version` が remote HEAD と一致するまで「Canonical Live」とは扱いません。
+このURLは `integrate-production-workspace` の正本状態を表します。
+レビュー承認後に変更を `integrate-production-workspace` へ取り込んだときのみ、Cloudflare Git integration または明示的な安全な手動fallbackで固定Review Workerを更新します。
 
-Cloudflareが出す `<hash>-...workers.dev` のVersion URLは調査・履歴用であり、通常共有の入口にしません。
+## Cloudflare one-time configuration
 
-## Deployment flow
+Cloudflare側の恒久設定は `docs/CLOUDFLARE_PREVIEW_OPERATION.md` を正本とします。
+最低条件:
 
-```text
-git fetch --all --prune
-        ↓
-origin/integrate-production-workspace と local HEAD が一致
-        ↓
-typecheck / tests / build
-        ↓
-npm run deploy:review
-        ↓
-Review Worker cijd-design-billing-preview のみ更新
-        ↓
-npm run verify:live
-        ↓
-/api/version.commit == origin/integrate-production-workspace HEAD
-        ↓
-LIVE PASS
-```
+- GitHub repository: `hrkfreelance-droid/cijd-design-billing`
+- Production branch: `integrate-production-workspace`
+- Build command: `npm run build:vinext`
+- Builds for non-production branches: ON
+- Non-production deploy: `wrangler versions upload` 相当
+- Preview URLs: ON
 
-`npm run deploy:review` はローカル/手動デプロイ用の強制ガードです。
+root `wrangler.jsonc` でも `workers_dev: true` と `preview_urls: true` を明示します。
+
+## Manual deployment fallback
+
+`npm run deploy:review` はローカル/手動fallback用の強制ガードです。
 
 - 現在ブランチが `integrate-production-workspace` 以外なら停止
 - local HEAD と remote HEAD が違えば停止
@@ -57,7 +84,7 @@ LIVE PASS
 - `wrangler deploy` を使用
 - Production Worker 名では deploy できない
 
-Cloudflare Git integration は CI の detached HEAD でも動作する必要があるため、`deploy:vinext` は vinext 標準の deploy command を維持します。ただし root `wrangler.jsonc` の Worker 名は `cijd-design-billing-preview` に固定し、Git integration の対象も Review Worker のみとします。
+通常のreview branch確認のためにGitHub Actionsへ `CLOUDFLARE_API_TOKEN` を追加する方式は採用しません。
 
 ## Version gate
 
@@ -67,7 +94,7 @@ Cloudflare Git integration は CI の detached HEAD でも動作する必要が�
 {
   "commit": "<full sha>",
   "shortCommit": "<8 chars>",
-  "branch": "integrate-production-workspace",
+  "branch": "<git branch>",
   "builtAt": "<ISO timestamp>",
   "environment": "review"
 }
@@ -75,15 +102,24 @@ Cloudflare Git integration は CI の detached HEAD でも動作する必要が�
 
 HTMLにも `cijd-build-sha` metaを出します。
 
-`npm run verify:live` は remote HEAD と Canonical Review URL の `/api/version` を比較します。不一致・取得失敗・branch/environment違いは失敗し、`DO NOT CLAIM LIVE COMPLETE` を表示します。
+固定Review URLでは `npm run verify:live` が `origin/integrate-production-workspace` HEAD と比較します。
+Branch Previewでは `/api/version.commit` と対象branch HEADを比較します。
+不一致・取得失敗・branch/environment違いは失敗として扱い、`DO NOT CLAIM LIVE COMPLETE` とします。
 
 ## PASS definitions
 
 - **CODE PASS**: 対象コードがcommit/push済みで、必要なtypecheck/tests/buildが成功。
-- **DEPLOY PASS**: Review Workerへのdeployコマンドが成功。
-- **LIVE PASS**: 固定URLの `/api/version` が最新remote HEADと一致し、必要なLive確認も成功。
+- **DEPLOY PASS**: Cloudflare上で対象branch/versionのdeployが成功。
+- **BRANCH LIVE PASS**: branch Preview URLの `/api/version` が対象branch HEADと一致。
+- **LIVE PASS**: 固定Review URLの `/api/version` が最新 `origin/integrate-production-workspace` HEADと一致。
 
-3つは別物です。Build成功だけで「公開完了」と言わないこと。
+これらは別物です。Build成功だけで「公開完了」と言いません。
+
+## Rollback
+
+- Branch Preview: Git commit と Cloudflare Worker version history を利用し、固定Review Workerは触らない。
+- Canonical Review: 直前に検証済みの `integrate-production-workspace` commit を再デプロイできる状態を維持する。
+- UI rollbackのためにSupabaseの実データをreset/変更しない。
 
 ## Supabase migration rule
 
