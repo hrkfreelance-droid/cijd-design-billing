@@ -14,7 +14,7 @@ export type BuildInfo = {
  * only while building, so runtime verification reads these immutable literals.
  */
 export function getBuildInfo(): BuildInfo {
-  const commit = GENERATED_BUILD_INFO.commit || "unknown";
+  const commit = String(GENERATED_BUILD_INFO.commit || "unknown");
   return {
     commit,
     shortCommit: commit === "unknown" ? "unknown" : commit.slice(0, 8),
