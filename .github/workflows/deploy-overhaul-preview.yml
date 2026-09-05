@@ -38,16 +38,23 @@ jobs:
         run: |
           npx eslint --rule 'react-hooks/set-state-in-effect: off' src/components/ui.tsx src/app/designer/projects/page.tsx src/lib/build-info.ts
 
+      - name: Build overhaul preview artifact
+        run: |
+          CIJD_BUILD_COMMIT="$GITHUB_SHA" \
+          CIJD_BUILD_BRANCH="review/daishin-uiux-overhaul-20260905" \
+          CIJD_BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          CIJD_BUILD_ENVIRONMENT="review" \
+          npm run build:vinext
+
       - name: Inspect current preview identity
         run: |
           echo "Current preview identity:"
           curl -fsS https://cijd-design-billing-preview.hrk-freelance.workers.dev/api/version || true
           echo
 
-      - name: Check Cloudflare credentials
+      - name: Check Cloudflare credential
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
 
       - name: Deploy reversible preview
         run: node scripts/deploy-overhaul-preview.mjs
