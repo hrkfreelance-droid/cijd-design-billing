@@ -18,6 +18,8 @@ import {
 import { mediumDate, money } from "@/lib/format";
 import type { BillingItem } from "@/lib/types";
 
+const SHEET_HANDOFF_MS = 230;
+
 export default function ProjectsPage() {
   const scope = useScope();
   const { t, locale } = useI18n();
@@ -108,6 +110,7 @@ export default function ProjectsPage() {
               role="button"
               tabIndex={0}
               aria-label={project.name}
+              aria-haspopup="dialog"
               onClick={(event) => {
                 if (hasInteractiveTarget(event.target)) return;
                 setSelectedProjectId(project.id);
@@ -117,7 +120,7 @@ export default function ProjectsPage() {
                 event.preventDefault();
                 setSelectedProjectId(project.id);
               }}
-              className="group cursor-pointer overflow-hidden rounded-3xl border border-line bg-panel outline-none transition-colors hover:border-line-strong hover:bg-fill/30 focus-visible:ring-2 focus-visible:ring-accent"
+              className="group cursor-pointer overflow-hidden rounded-3xl border border-line bg-panel outline-none transition-[transform,border-color,background-color] duration-150 ease-[var(--apple-ease-soft)] hover:border-line-strong hover:bg-fill/30 active:scale-[0.995] focus-visible:ring-2 focus-visible:ring-accent"
             >
               <div className="flex items-start justify-between gap-4 px-5 py-4 sm:px-6">
                 <div className="min-w-0">
@@ -222,7 +225,7 @@ function NewProjectSheet({
     );
     if (created) {
       close();
-      onCreated(created.id);
+      window.setTimeout(() => onCreated(created.id), SHEET_HANDOFF_MS);
     }
   };
 
