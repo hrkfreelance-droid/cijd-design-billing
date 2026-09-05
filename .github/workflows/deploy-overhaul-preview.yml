@@ -35,7 +35,8 @@ jobs:
         run: npm run typecheck
 
       - name: Lint changed implementation files
-        run: npx eslint --rule 'react-hooks/set-state-in-effect: off' src/components/ui.tsx src/app/designer/projects/page.tsx src/lib/build-info.ts
+        run: |
+          npx eslint --rule 'react-hooks/set-state-in-effect: off' src/components/ui.tsx src/app/designer/projects/page.tsx src/lib/build-info.ts
 
       - name: Inspect current preview identity
         run: |
