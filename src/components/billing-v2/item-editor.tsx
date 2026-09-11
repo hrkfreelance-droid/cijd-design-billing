@@ -6,6 +6,7 @@ import { useI18n } from "@/components/providers";
 import { Button, Input, Select } from "@/components/ui";
 import { isCostPriced, serviceLabel, serviceOptions, type ServiceKey } from "@/lib/billing-v2/services";
 import { printMarginFromCost } from "@/lib/billing-v2/pricing";
+import { evaluateMoneyExpression } from "@/lib/expr";
 import { moneyExact } from "@/lib/format";
 import type { ServiceType } from "@/lib/types";
 import {
@@ -287,6 +288,11 @@ function Field({ label, className = "", children }: { label: string; className?:
   );
 }
 
+/**
+ * A money field that also accepts a `4.3*150`-style expression: it stays as
+ * typed while editing, and on Enter or blur collapses to the computed number
+ * — that number is what gets saved, never the formula.
+ */
 function MoneyInput({
   value,
   onChange,
@@ -302,6 +308,18 @@ function MoneyInput({
   disabled?: boolean;
   testId?: string;
 }) {
+  const { t } = useI18n();
+  const trimmed = value.trim();
+  const isExpression = /[+\-*/()]/.test(trimmed);
+  const result = trimmed ? evaluateMoneyExpression(trimmed) : null;
+
+  const commit = () => {
+    if (result?.ok && isExpression) {
+      const formatted = result.value.toFixed(2);
+      if (formatted !== value) onChange(formatted);
+    }
+  };
+
   return (
     <span className="relative block">
       {value !== "" && (
@@ -312,11 +330,30 @@ function MoneyInput({
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+        }}
         aria-invalid={invalid || undefined}
         className={`tnum placeholder:text-[13px] ${value !== "" ? "pl-6" : ""} ${invalid ? "!border-danger" : ""}`}
         disabled={disabled}
         data-testid={testId}
       />
+      {result?.ok && isExpression && (
+        <span className="mt-0.5 block text-[11px] leading-tight text-faint">{`= ${moneyExact(result.value)}`}</span>
+      )}
+      {result && !result.ok && (
+        <p
+          role="alert"
+          className="mt-0.5 text-[11px] leading-tight text-danger"
+          data-testid={testId ? `${testId}-error` : undefined}
+        >
+          {t("v2.invalidAmount")}
+        </p>
+      )}
     </span>
   );
 }

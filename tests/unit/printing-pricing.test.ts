@@ -44,3 +44,9 @@ test("a cost change follows the recommendation until someone sets a price", () =
   assert.equal(nextFinalPrice({ cost: 20, manual: true, currentFinal: 15 }), 15);
   assert.equal(nextFinalPrice({ cost: null, manual: false, currentFinal: 25 }), 25);
 });
+
+test("a $4.3*150 cost (=$645) recommends $925, and a manual override survives it", () => {
+  assert.equal(printSellingPriceFromCost(645), 925);
+  assert.equal(nextFinalPrice({ cost: 645, manual: false, currentFinal: 0 }), 925);
+  assert.equal(nextFinalPrice({ cost: 645, manual: true, currentFinal: 700 }), 700);
+});

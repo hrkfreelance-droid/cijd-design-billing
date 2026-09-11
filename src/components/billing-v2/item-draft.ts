@@ -1,6 +1,7 @@
 "use client";
 
 import { nextFinalPrice, printSellingPriceFromCost } from "@/lib/billing-v2/pricing";
+import { evaluateMoneyExpression } from "@/lib/expr";
 import {
   DEFAULT_SERVICE,
   isCostPriced,
@@ -72,12 +73,14 @@ export function draftService(draft: ItemDraft, serviceTypes: ServiceTypes = []):
   return serviceDefinitionForKey(draft.serviceKey, serviceTypes) ?? DEFAULT_SERVICE;
 }
 
-/** A blank field is "not entered yet", not zero. */
+/**
+ * A blank field is "not entered yet", not zero. Also accepts a `+ - * / ()`
+ * expression — `4.3*150` parses the same as a typed `645`.
+ */
 export function parseAmount(value: string): number | null {
-  const trimmed = value.trim().replace(/^\$/, "").replaceAll(",", "");
-  if (!trimmed) return null;
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : null;
+  if (!value.trim()) return null;
+  const result = evaluateMoneyExpression(value);
+  return result.ok ? result.value : null;
 }
 
 /** Entered, but not a number the ledger can hold. */

@@ -151,6 +151,59 @@ test("without an override, a saved cost change moves the price with it", async (
   await expect(row(page, "V2 Follows").getByTestId("v2-project-total")).toHaveText("$40.00");
 });
 
+test("a cost typed as an expression is calculated, priced, and saved as a number", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V2 Calculator");
+  await addItem(page, projectId, { description: "Print", type: "PRINT", serviceType: "PRINTING", printCost: 5 });
+
+  await page.goto("/office-v2");
+  let dialog = await edit(page, "V2 Calculator");
+  const cost = dialog.getByTestId("v2-item-cost-0");
+  await cost.fill("4.3*150");
+  await cost.press("Enter");
+  await expect(cost).toHaveValue("645.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("925");
+
+  await dialog.getByTestId("v2-modal-save").click();
+  await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
+
+  await page.reload();
+  dialog = await edit(page, "V2 Calculator");
+  await expect(dialog.getByTestId("v2-item-cost-0")).toHaveValue("645");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("925");
+
+  // A manual override survives a later cost recalculation.
+  await dialog.getByTestId("v2-item-final-0").fill("999");
+  await dialog.getByTestId("v2-item-final-0").press("Tab");
+  await dialog.getByTestId("v2-item-cost-0").fill("30+5");
+  await dialog.getByTestId("v2-item-cost-0").press("Enter");
+  await expect(dialog.getByTestId("v2-item-cost-0")).toHaveValue("35.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$70.00");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("999");
+});
+
+test("an unsafe or malformed expression keeps the text and shows an inline error", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V2 Bad Expression");
+  await addItem(page, projectId, { description: "Print", type: "PRINT", serviceType: "PRINTING", printCost: 5 });
+
+  await page.goto("/office-v2");
+  const dialog = await edit(page, "V2 Bad Expression");
+  const cost = dialog.getByTestId("v2-item-cost-0");
+
+  await cost.fill("10/0");
+  await cost.press("Enter");
+  await expect(cost).toHaveValue("10/0");
+  await expect(dialog.getByTestId("v2-item-cost-0-error")).toBeVisible();
+
+  await cost.fill("Math.random()");
+  await cost.press("Enter");
+  await expect(cost).toHaveValue("Math.random()");
+  await expect(dialog.getByTestId("v2-item-cost-0-error")).toBeVisible();
+});
+
 test("a missing price is 'Price pending', never $0, and holds the project back", async ({ page }) => {
   await signIn(page);
   const projectId = await newProject(page, "V2 Pending");
