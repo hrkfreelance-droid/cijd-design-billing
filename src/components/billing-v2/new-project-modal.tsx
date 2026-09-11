@@ -48,7 +48,6 @@ export function NewProjectModal({
         targetId = client.id;
         // Keep the new client selected, so a retry does not add it twice.
         setClientId(client.id);
-        await refresh();
       }
       const project = await api<Project>("/api/projects", {
         method: "POST",
@@ -62,6 +61,8 @@ export function NewProjectModal({
       console.error("[billing-v2] create project failed", failure);
       setError(describe(failure));
       setSaving(false);
+      // A client may have been added before the failure; show it in the list.
+      await refresh();
     }
   };
 

@@ -723,6 +723,10 @@ export class SupabaseRepository implements Repository {
     if (!Number.isFinite(amount) || amount < 0) {
       throw new RuleError("INVALID", "Billing price must be zero or more.", 400);
     }
+    // $0 is a real price (a free revision), but the SQL function predates that
+    // and only accepts a positive amount. A trusted server session writes it
+    // directly, with the same fields the function would set.
+    if (amount === 0 && this.accessRole) return this.writeBillingPrice(id, amount, actor);
     // The SQL function is the only path that announces the operation to the
     // billing-item triggers; a plain UPDATE from a session with no application
     // role is refused by the print guard. Try it first for every caller, and
@@ -739,30 +743,40 @@ export class SupabaseRepository implements Repository {
       viaFunction.error.code === "42501" ||
       viaFunction.error.code === "PGRST301";
     if (!refused || !this.accessRole) fail(viaFunction.error);
+    return this.writeBillingPrice(id, amount, actor);
+  }
 
-    {
-      const current = toItem(unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()));
-      if (current.billingStatus === "INVOICED" || current.billingStatus === "PAID") {
-        throw new RuleError("ITEM_LOCKED", "This item has already been invoiced and cannot be edited.");
-      }
-      const updatedAt = new Date().toISOString();
-      const result = await this.db
-        .from("billing_items")
-        .update({
-          amount: money(amount),
-          custom_amount: true,
-          billing_price_manual: current.type === "PRINT" ? true : false,
-          price_review_status: current.type === "PRINT" ? "CONFIRMED" : current.priceReviewStatus,
-          price_confirmed_by: current.type === "PRINT" ? actor : current.priceConfirmedBy,
-          price_confirmed_at: current.type === "PRINT" ? updatedAt : current.priceConfirmedAt,
-          updated_at: updatedAt,
-          updated_by: actor,
-        })
-        .eq("id", id)
-        .select()
-        .single();
-      return toItem(unwrap(result));
+  private async writeBillingPrice(id: string, amount: number, actor: string) {
+    const current = toItem(unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()));
+    if (current.billingStatus === "INVOICED" || current.billingStatus === "PAID") {
+      throw new RuleError("ITEM_LOCKED", "This item has already been invoiced and cannot be edited.");
     }
+    const updatedAt = new Date().toISOString();
+    const result = await this.db
+      .from("billing_items")
+      .update({
+        amount: money(amount),
+        custom_amount: true,
+        billing_price_manual: current.type === "PRINT",
+        price_review_status: current.type === "PRINT" ? "CONFIRMED" : current.priceReviewStatus,
+        price_confirmed_by: current.type === "PRINT" ? actor : current.priceConfirmedBy,
+        price_confirmed_at: current.type === "PRINT" ? updatedAt : current.priceConfirmedAt,
+        updated_at: updatedAt,
+        updated_by: actor,
+      })
+      .eq("id", id)
+      .select()
+      .single();
+    const updated = toItem(unwrap(result));
+    const audit = await this.db.from("audit_logs").insert({
+      actor,
+      action: "billing.price.override",
+      entity: "billing_item",
+      entity_id: id,
+      detail: String(updated.amount),
+    });
+    if (audit.error) console.error("[audit]", audit.error);
+    return updated;
   }
 
   async setBillingStatus(id: string, status: BillingStatus, actor = DEFAULT_ACTOR) {
