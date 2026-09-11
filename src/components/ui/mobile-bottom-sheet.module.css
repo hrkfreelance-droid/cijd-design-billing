@@ -1,0 +1,118 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: var(--c-overlay);
+  backdrop-filter: blur(3px);
+  opacity: calc(1 - var(--drawer-swipe-progress));
+  transition: opacity 280ms ease-out;
+}
+
+.backdrop[data-starting-style],
+.backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.backdrop[data-swiping] {
+  transition-duration: 0ms;
+}
+
+.viewport {
+  position: fixed;
+  inset: 0;
+  z-index: 121;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.popup {
+  --cijd-sheet-snap-offset: var(--drawer-snap-point-offset);
+  position: relative;
+  display: flex;
+  width: 100%;
+  max-width: 720px;
+  height: calc(100dvh - 12px);
+  max-height: calc(100dvh - 12px);
+  flex-direction: column;
+  overflow: hidden;
+  pointer-events: auto;
+  border-radius: 28px 28px 0 0;
+  transform: translateY(
+    calc(var(--drawer-snap-point-offset) + var(--drawer-swipe-movement-y))
+  );
+  transition-property: transform;
+  transition-duration: calc(var(--drawer-swipe-strength, 1) * 360ms);
+  transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: transform;
+  touch-action: none;
+}
+
+.popup[data-starting-style],
+.popup[data-ending-style] {
+  transform: translateY(100%);
+}
+
+.popup[data-swiping] {
+  transition-duration: 0ms;
+}
+
+.header {
+  flex: 0 0 auto;
+}
+
+.dragArea {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.dragArea:active {
+  cursor: grabbing;
+}
+
+.handle {
+  width: 42px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 26%, transparent);
+}
+
+.scroll {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+
+.footer {
+  position: absolute;
+  right: 0;
+  bottom: var(--cijd-sheet-snap-offset, 0px);
+  left: 0;
+  z-index: 2;
+  background: var(--c-panel);
+}
+
+@media (min-width: 1024px) {
+  .backdrop,
+  .viewport {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .popup {
+    transition-duration: 0ms;
+  }
+}

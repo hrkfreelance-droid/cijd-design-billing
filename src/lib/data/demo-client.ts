@@ -1,0 +1,267 @@
+"use client";
+
+import { ApiError } from "@/lib/api-error";
+import { GuardedRepository } from "@/lib/auth/guarded-repository";
+import type { SessionUser } from "@/lib/auth/session";
+import type { BillingStatus, ItemType, ReceiptStatus } from "@/lib/types";
+import { browserPersistence, clearDemoData } from "./browser-persistence";
+import { RuleError, type Repository } from "./repository";
+import { Store } from "./store";
+
+const USER_KEY = "cijd.demo.user";
+let store: Repository | null = null;
+
+function repository(): Repository {
+  if (!store) {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("reset")) {
+      clearDemoData();
+      localStorage.removeItem(USER_KEY);
+      params.delete("reset");
+      const query = params.toString();
+      window.history.replaceState(
+        null,
+        "",
+        window.location.pathname + (query ? `?${query}` : ""),
+      );
+    }
+    store = new Store(browserPersistence);
+  }
+  return store;
+}
+
+async function currentDemoUser(): Promise<SessionUser | null> {
+  const id = localStorage.getItem(USER_KEY);
+  if (!id) return null;
+  const user = (await repository().rawUsers()).find((candidate) => candidate.id === id);
+  return user ? { id: user.id, name: user.name, role: user.role } : null;
+}
+
+type Body = Record<string, unknown>;
+
+const str = (value: unknown) => (typeof value === "string" ? value : undefined);
+const num = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+    return Number(value);
+  }
+  return undefined;
+};
+
+/**
+ * Mirrors src/app/api/** against the in-browser store, including the role
+ * checks — the preview behaves like the real thing, minus the server.
+ */
+export async function demoRequest<T>(
+  path: string,
+  method: string,
+  input?: unknown,
+): Promise<T> {
+  const repo = repository();
+  const body = (input ?? {}) as Body;
+  const [resource, id, sub] = path.split("?")[0].replace(/^\/api\//, "").split("/");
+
+  try {
+    if (resource === "session") {
+      const users = await repo.rawUsers();
+      if (method === "GET") {
+        const user = await currentDemoUser();
+        return {
+          user,
+          users,
+          auth: "local",
+          access: user ? "active" : "signed_out",
+        } as T;
+      }
+      if (method === "POST") {
+        const wanted = users.find((user) => user.id === str(body.userId));
+        if (!wanted) throw new ApiError("Unknown user.", "NOT_FOUND");
+        localStorage.setItem(USER_KEY, wanted.id);
+        return wanted as T;
+      }
+      localStorage.removeItem(USER_KEY);
+      return null as T;
+    }
+
+    const user = await currentDemoUser();
+    if (!user) throw new ApiError("Sign in to continue.", "UNAUTHENTICATED");
+    const guarded = new GuardedRepository(repo, user);
+
+    if (resource === "state") return (await guarded.getSnapshot()) as T;
+
+    if (resource === "clients") {
+      if (method === "POST") return (await guarded.createClient({ name: str(body.name) ?? "" })) as T;
+      if (method === "PATCH" && id) {
+        return (await guarded.updateClient(id, {
+          name: str(body.name),
+          active: typeof body.active === "boolean" ? body.active : undefined,
+        })) as T;
+      }
+    }
+
+    if (resource === "service-types") {
+      if (method === "POST" && !id) {
+        return (await guarded.createServiceType({ name: str(body.name) ?? "" })) as T;
+      }
+      if (method === "PATCH" && id) {
+        return (await guarded.updateServiceType(id, {
+          name: str(body.name),
+          active: typeof body.active === "boolean" ? body.active : undefined,
+        })) as T;
+      }
+    }
+
+    if (resource === "projects") {
+      if (method === "POST" && !id) {
+        return (await guarded.createProject({
+          clientId: str(body.clientId) ?? "",
+          name: str(body.name) ?? "",
+          createdBy: str(body.createdBy),
+          date: str(body.date),
+          note: str(body.note),
+        })) as T;
+      }
+      if (id && sub === "delivery") {
+        if (method === "POST") {
+          return (await guarded.setProjectDelivery(id, true)) as T;
+        }
+        if (method === "DELETE") return (await guarded.setProjectDelivery(id, false)) as T;
+      }
+      if (id && sub === "readiness" && method === "PATCH") {
+        return (await guarded.setProjectBillingReadiness(
+          id,
+          str(body.readiness) as "READY" | "IN_PROGRESS" | "AUTO",
+        )) as T;
+      }
+      if (method === "PATCH" && id) {
+        return (await guarded.updateProject(id, {
+          name: str(body.name),
+          date: str(body.date),
+          note: str(body.note),
+          clientId: str(body.clientId),
+        })) as T;
+      }
+    }
+
+    if (resource === "billing-v2" && id === "billed" && method === "POST") {
+      const projectIds = Array.isArray(body.projectIds)
+        ? body.projectIds.filter((value): value is string => typeof value === "string")
+        : [];
+      return (await guarded.markProjectsBilled({
+        projectIds,
+        billedOn: str(body.billedOn),
+      })) as T;
+    }
+
+    if (resource === "billing-items") {
+      if (method === "POST" && !id) {
+        return (await guarded.createBillingItem({
+          projectId: str(body.projectId) ?? "",
+          description: str(body.description) ?? "",
+          type: str(body.type) as ItemType | undefined,
+          serviceType: str(body.serviceType),
+          quantity: num(body.quantity),
+          unitPrice: num(body.unitPrice),
+          amount: body.amount === null ? null : num(body.amount),
+          billingStatus: str(body.billingStatus) as BillingStatus | undefined,
+          printSize: str(body.printSize),
+          printCost: num(body.printCost ?? body.cost),
+          priceSource: str(body.priceSource),
+          priceReason: str(body.priceReason),
+          note: str(body.note),
+        })) as T;
+      }
+      if (id && sub === "delivery") {
+        if (method === "POST") {
+          return (await guarded.setItemDelivery(id, true)) as T;
+        }
+        if (method === "DELETE") return (await guarded.setItemDelivery(id, false)) as T;
+      }
+      if (id && sub === "complete") {
+        if (method === "POST") {
+          return (await guarded.setItemCompletion(id, true)) as T;
+        }
+        if (method === "DELETE") return (await guarded.setItemCompletion(id, false)) as T;
+      }
+      if (id && sub === "billing-price" && method === "PATCH") {
+        return (await guarded.overrideBillingPrice(id, num(body.amount) ?? 0)) as T;
+      }
+      if (method === "PATCH" && id) {
+        const billingStatus = str(body.billingStatus) as BillingStatus | undefined;
+        if (billingStatus) return (await guarded.setBillingStatus(id, billingStatus)) as T;
+        return (await guarded.updateBillingItem(id, {
+          description: str(body.description),
+          type: str(body.type) as ItemType | undefined,
+          serviceType: str(body.serviceType),
+          quantity: num(body.quantity),
+          unitPrice: num(body.unitPrice),
+          amount: body.amount === null ? null : num(body.amount),
+          confirmPrice: body.confirmPrice === true,
+          printSize: str(body.printSize),
+          printCost: num(body.printCost ?? body.cost),
+          note: str(body.note),
+        })) as T;
+      }
+      if (method === "DELETE" && id) return (await guarded.deleteBillingItem(id)) as T;
+    }
+
+    if (resource === "printing-items" && id) {
+      if (sub === "price" && method === "POST") {
+        return (await guarded.reviewPrintPrice(id, {
+          unitPrice: num(body.unitPrice) ?? 0,
+          amount: num(body.amount) ?? 0,
+          printCost: num(body.printCost ?? body.cost),
+          confirm: body.confirm === true,
+          priceSource: str(body.priceSource),
+          priceReason: str(body.priceReason),
+        })) as T;
+      }
+      if (sub === "spec" && method === "PATCH") {
+        return (await guarded.updatePrintSpec(id, {
+          description: str(body.description),
+          printSize: str(body.printSize),
+          quantity: num(body.quantity),
+          printCost: num(body.printCost ?? body.cost),
+          note: str(body.note),
+        })) as T;
+      }
+    }
+
+    if (resource === "invoices") {
+      if (method === "POST" && !id) {
+        const ids = Array.isArray(body.billingItemIds)
+          ? body.billingItemIds.filter((value): value is string => typeof value === "string")
+          : [];
+        return (await guarded.createInvoice({
+          clientId: str(body.clientId) ?? "",
+          invoiceNumber: str(body.invoiceNumber),
+          invoiceDate: str(body.invoiceDate) ?? "",
+          billingItemIds: ids,
+        })) as T;
+      }
+      if (id && sub === "payment") {
+        if (method === "POST") {
+          return (await guarded.confirmPayment(id, {
+            paymentDate: str(body.paymentDate) ?? "",
+            slip: str(body.slip),
+          })) as T;
+        }
+        if (method === "DELETE") return (await guarded.revertPayment(id)) as T;
+      }
+      if (id && !sub) {
+        if (method === "PATCH") {
+          return (await guarded.setReceiptStatus(
+            id,
+            (str(body.receiptStatus) as ReceiptStatus | undefined) ?? "PENDING",
+          )) as T;
+        }
+        if (method === "DELETE") return (await guarded.voidInvoice(id)) as T;
+      }
+    }
+
+    throw new ApiError(`Unsupported request: ${method} ${path}`, "NOT_FOUND");
+  } catch (error) {
+    if (error instanceof RuleError) throw new ApiError(error.message, error.code);
+    throw error;
+  }
+}

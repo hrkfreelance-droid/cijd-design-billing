@@ -1,0 +1,110 @@
+"use client";
+
+import Link from "next/link";
+
+import { CompletedMark, DeliveredMark } from "@/components/delivery";
+import { ChevronRight } from "@/components/icons";
+import { useI18n } from "@/components/providers";
+import { PageSkeleton, useScope } from "@/components/scope";
+import { Amount, EmptyState, PageHeader, PageTotal, StatusTag } from "@/components/ui";
+import { flowStatus, isDesignerReady, isOperationalRecord, sum } from "@/lib/derive";
+import { formatKhr } from "@/lib/exchange-rate";
+import { mediumDate, money } from "@/lib/format";
+import type { BillingItem } from "@/lib/types";
+
+/** Completed or delivered work that has not been invoiced yet. */
+export default function DeliveredPage() {
+  const scope = useScope();
+  const { t, locale } = useI18n();
+
+  if (!scope) return <PageSkeleton />;
+
+  const groups = Array.from(
+      scope.items
+      .filter(
+        (item) =>
+          isOperationalRecord(item) &&
+          isDesignerReady(item),
+      )
+      .reduce((map, item) => {
+        const list = map.get(item.projectId) ?? [];
+        list.push(item);
+        map.set(item.projectId, list);
+        return map;
+      }, new Map<string, BillingItem[]>()),
+    ).sort(([, a], [, b]) => (b[0]?.deliveredAt ?? "").localeCompare(a[0]?.deliveredAt ?? ""));
+  const readyItems = groups.flatMap(([, items]) => items);
+
+  return (
+    <div className="animate-rise">
+      <PageHeader
+        title={t("delivered.title")}
+        subtitle={t("delivered.subtitle")}
+        action={
+          <PageTotal
+            value={money(sum(readyItems))}
+            secondaryValue={
+              scope.snapshot.exchangeRate
+                ? formatKhr(sum(readyItems), scope.snapshot.exchangeRate.rate)
+                : undefined
+            }
+            secondaryLabel={
+              scope.snapshot.exchangeRate
+                ? t("currency.rate", { rate: scope.snapshot.exchangeRate.rate })
+                : undefined
+            }
+            rate={scope.snapshot.exchangeRate?.rate}
+            rateEffectiveDate={scope.snapshot.exchangeRate?.effectiveDate}
+            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
+          />
+        }
+      />
+
+      {groups.length === 0 ? (
+        <EmptyState title={t("delivered.empty")} />
+      ) : (
+        <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
+          {groups.map(([projectId, items]) => (
+            <Link
+              key={projectId}
+              href={`/designer/projects/${projectId}?from=ready`}
+              className="flex items-center gap-3 px-5 py-3.5 transition-colors hover:bg-fill sm:px-6"
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-medium tracking-[-0.01em]">
+                  {scope.idx.projectById.get(projectId)?.name}
+                </span>
+                {/* Billing status belongs on the same wrapping line as the
+                    rest of the meta, so it survives a narrow screen instead of
+                    being hidden at the one width where space is tightest. */}
+                <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px] text-faint">
+                  <span>{scope.clientOf(projectId)?.name}</span>
+                  {items[0]?.productionStatus === "COMPLETED" ? (
+                    <CompletedMark
+                      date={
+                        items[0]?.deliveredAt
+                          ? mediumDate(items[0].deliveredAt.slice(0, 10), locale)
+                          : undefined
+                      }
+                    />
+                  ) : (
+                    <DeliveredMark
+                      date={
+                        items[0]?.deliveredAt
+                          ? mediumDate(items[0].deliveredAt.slice(0, 10), locale)
+                          : undefined
+                      }
+                    />
+                  )}
+                  <StatusTag status={flowStatus(items[0])} />
+                </span>
+              </span>
+              <Amount value={money(sum(items))} className="text-[15px]" />
+              <ChevronRight className="h-4 w-4 shrink-0 text-faint" />
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

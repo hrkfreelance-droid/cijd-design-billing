@@ -1,0 +1,10 @@
+{
+  "date": "2026-08-30",
+  "framework": "Next.js 14 App Router (greenfield)",
+  "fontStack": "system sans / SF Pro-like stack; no external font dependency",
+  "palette": "new Cobalt-inspired cool near-white, charcoal, one cobalt signal",
+  "motion": "motion-cut with restrained state transitions",
+  "spacing": "4pt semantic spacing tokens",
+  "preserved": [],
+  "introduced": ["Workbench macrostructure", "N3 side rail", "Ft2 inline footer", "local mock data mode"]
+}

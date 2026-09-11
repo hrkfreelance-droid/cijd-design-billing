@@ -1,0 +1,420 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+
+import { ChevronDown } from "@/components/icons";
+import { CurrencyAmount } from "@/components/currency-amount";
+import { api, useI18n, useSession } from "@/components/providers";
+import { PageSkeleton, useScope } from "@/components/scope";
+import { useAction } from "@/components/use-action";
+import {
+  Button,
+  Checkbox,
+  EmptyState,
+  Field,
+  Input,
+  PageHeader,
+  PageTotal,
+  Sheet,
+  StatusPill,
+} from "@/components/ui";
+import { can } from "@/lib/auth/roles";
+import {
+  isOperationalRecord,
+  isPrintPriceConfirmed,
+  isProductionComplete,
+  sum,
+} from "@/lib/derive";
+import { formatKhr } from "@/lib/exchange-rate";
+import { mediumDate, money, todayIso } from "@/lib/format";
+import type { BillingItem, Client, Invoice } from "@/lib/types";
+
+/** Everything here has completed production. That is the whole rule for this screen. */
+export default function OfficeBillingPage() {
+  const scope = useScope();
+  const { t } = useI18n();
+  const { user } = useSession();
+  const router = useRouter();
+
+  const allowed = !!user && can(user.role, "billing:price:write");
+
+  useEffect(() => {
+    if (user && !allowed) router.replace("/office/payments");
+  }, [user, allowed, router]);
+
+  const groups = useMemo(() => {
+    if (!scope) return [];
+    const ready = scope.items.filter(
+      (item) =>
+        isOperationalRecord(item) &&
+        isProductionComplete(item) && item.billingStatus === "READY_TO_INVOICE",
+    );
+    const byClient = new Map<string, BillingItem[]>();
+    for (const item of ready) {
+      const clientId = scope.idx.projectById.get(item.projectId)?.clientId;
+      if (!clientId) continue;
+      const list = byClient.get(clientId);
+      if (list) list.push(item);
+      else byClient.set(clientId, [item]);
+    }
+    return Array.from(byClient)
+      .map(([clientId, items]) => ({ client: scope.idx.clientById.get(clientId)!, items }))
+      .filter((group) => group.client)
+      .sort((a, b) => sum(b.items) - sum(a.items));
+  }, [scope]);
+
+  const pendingPrintItems = useMemo(
+    () =>
+      scope?.items.filter(
+        (item) =>
+          isOperationalRecord(item) &&
+          item.type === "PRINT" &&
+          !isPrintPriceConfirmed(item),
+      ) ?? [],
+    [scope],
+  );
+
+  if (!scope || !allowed) return <PageSkeleton />;
+
+  const readyTotal = sum(groups.flatMap((group) => group.items));
+  const exchangeRate = scope.snapshot.exchangeRate;
+
+  return (
+    <div className="animate-rise">
+      <PageHeader
+        title={t("billing.ready")}
+        subtitle={scope.client ? scope.client.name : t("client.all")}
+        action={
+          <PageTotal
+            value={money(readyTotal)}
+            secondaryValue={exchangeRate ? formatKhr(readyTotal, exchangeRate.rate) : undefined}
+            secondaryLabel={exchangeRate ? t("currency.rate", { rate: exchangeRate.rate }) : undefined}
+            rate={exchangeRate?.rate}
+            rateEffectiveDate={exchangeRate?.effectiveDate}
+            rateFetchedAt={scope.snapshot.exchangeRateLastCheckedAt}
+          />
+        }
+      />
+
+      {groups.length === 0 ? (
+        <EmptyState title={t("billing.readyEmpty")} />
+      ) : (
+        <div className="space-y-3 px-5 pb-8 sm:px-8">
+          {groups.map((group) => (
+            <ReadyGroup key={group.client.id} client={group.client} items={group.items} />
+          ))}
+        </div>
+      )}
+
+      {pendingPrintItems.length > 0 && <PrintPriceQueue items={pendingPrintItems} />}
+    </div>
+  );
+}
+
+/** Print work is visible to Billing, but only Printing can confirm its price. */
+function PrintPriceQueue({ items }: { items: BillingItem[] }) {
+  const { t } = useI18n();
+  const scope = useScope();
+
+  return (
+    <section className="pt-6">
+      <div className="px-5 pb-1 sm:px-8">
+        <h2 className="text-[15px] font-semibold tracking-[-0.01em]">
+          {t("billing.printPricePendingTitle")}
+        </h2>
+        <p className="mt-1 text-[12.5px] leading-relaxed text-faint">
+          {t("billing.printPricePendingHint")}
+        </p>
+      </div>
+      <div className="divide-y divide-line border-y border-line bg-panel sm:mx-8 sm:rounded-2xl sm:border">
+        {items.map((item) => {
+          const project = scope?.idx.projectById.get(item.projectId);
+          const client = project ? scope?.idx.clientById.get(project.clientId) : undefined;
+          const pendingAmount = item.suggestedAmount ?? item.amount;
+          const unknownAmount = pendingAmount == null || pendingAmount <= 0;
+          return (
+            <div key={item.id} className="flex flex-col gap-2 px-5 py-2.5 sm:px-6">
+              <div className="flex items-start gap-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14.5px] font-medium">
+                    {project?.name ?? ""}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[12.5px] text-faint">
+                    {client?.name} · {printLabel(item)}
+                  </span>
+                </span>
+                <span className="shrink-0 text-right">
+                  <span className="block text-[14.5px] tnum">
+                    {unknownAmount ? t("billing.amountUnknown") : <CurrencyAmount usd={pendingAmount ?? 0} rate={scope?.snapshot.exchangeRate?.rate} className="text-[14.5px]" />}
+                  </span>
+                  <span className="mt-1 block text-[12px] text-review">
+                    {t("billing.printPricePending")}
+                  </span>
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ReadyGroup({ client, items }: { client: Client; items: BillingItem[] }) {
+  const { t, locale } = useI18n();
+  const { user } = useSession();
+  const scope = useScope();
+  const router = useRouter();
+  const { runResult, busy } = useAction();
+  const [open, setOpen] = useState(true);
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const [editingProject, setEditingProject] = useState<{
+    name: string;
+    items: BillingItem[];
+  } | null>(null);
+  const canEditPrice = !!user && can(user.role, "billing:price:write");
+  const canInvoice = !!user && can(user.role, "invoice:write");
+
+  // Work is billed per project, the way it is quoted and remembered.
+  const projects = useMemo(() => {
+    const groups = new Map<string, BillingItem[]>();
+    for (const item of items) {
+      const list = groups.get(item.projectId);
+      if (list) list.push(item);
+      else groups.set(item.projectId, [item]);
+    }
+    return Array.from(groups)
+      .map(([projectId, projectItems]) => ({
+        id: projectId,
+        name: scope?.idx.projectById.get(projectId)?.name ?? "",
+        date: scope?.idx.projectById.get(projectId)?.date ?? "",
+        deliveredAt: projectItems[0]?.deliveredAt ?? null,
+        items: projectItems,
+        total: sum(projectItems),
+      }))
+      .sort((a, b) => (a.deliveredAt ?? "").localeCompare(b.deliveredAt ?? ""));
+  }, [items, scope]);
+
+  const selectedProjects = projects.filter((project) => !skipped.has(project.id));
+  const selectedItems = selectedProjects.flatMap((project) => project.items);
+
+  const markInvoiced = async () => {
+    if (!selectedItems.length) return;
+    const created = await runResult<Invoice>(
+      () =>
+        api<Invoice>("/api/invoices", {
+          method: "POST",
+          body: {
+            clientId: client.id,
+            invoiceDate: todayIso(),
+            billingItemIds: selectedItems.map((item) => item.id),
+          },
+        }),
+      { key: "toast.invoiceCreated" },
+    );
+    if (created) router.push("/office/payments");
+  };
+
+  const toggle = (id: string) => {
+    setSkipped((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <>
+      <section className="overflow-hidden border-y border-line bg-panel sm:rounded-2xl sm:border">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 px-5 py-2.5 text-left transition-colors duration-150 hover:bg-fill sm:px-6"
+      >
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-faint transition-transform duration-200 ${
+            open ? "" : "-rotate-90"
+          }`}
+        />
+        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-[-0.01em]">
+          {client.name}
+        </span>
+        <span className="text-[12.5px] text-faint">
+          {t("billing.items", { count: items.length })}
+        </span>
+        <CurrencyAmount
+          usd={sum(items)}
+          rate={scope?.snapshot.exchangeRate?.rate}
+          strong
+          className="text-[15px]"
+        />
+      </button>
+
+      {open && (
+        <>
+          <div className="divide-y divide-line border-t border-line">
+            {projects.map((project) => {
+              const checked = !skipped.has(project.id);
+              return (
+                <div key={project.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 px-5 py-2.5 sm:px-6 sm:py-2">
+                  <Checkbox
+                    checked={checked}
+                    onChange={() => toggle(project.id)}
+                    label={project.name}
+                  />
+                  <button
+                    onClick={() => toggle(project.id)}
+                    aria-label={`${project.name} ${project.items.map((item) => item.description).join(" ")}`}
+                    className={`min-w-0 text-left transition-opacity duration-150 ${
+                      checked ? "" : "opacity-45"
+                    }`}
+                  >
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="min-w-0 truncate text-[14.5px] font-medium">{project.name}</span>
+                      <StatusPill status="READY_TO_INVOICE" />
+                    </span>
+                    <span className="mt-1 block truncate text-[12.5px] text-faint">
+                      {project.items.map((item) => item.description).join(" · ")} · {mediumDate(project.date, locale)}
+                    </span>
+                  </button>
+                  <div className={`flex items-start gap-2 transition-opacity duration-150 ${checked ? "" : "opacity-45"}`}>
+                    <CurrencyAmount
+                      usd={project.total}
+                      rate={scope?.snapshot.exchangeRate?.rate}
+                      className="text-[14.5px]"
+                    />
+                    {canEditPrice && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setEditingProject({ name: project.name, items: project.items });
+                        }}
+                        className="whitespace-nowrap text-[11.5px] font-medium text-accent hover:underline"
+                      >
+                        {t("billing.editPrice")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-line px-5 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <span className="text-[13px] text-muted">
+              {t("billing.selected", { count: selectedItems.length })} ·{" "}
+              <CurrencyAmount
+                usd={sum(selectedItems)}
+                rate={scope?.snapshot.exchangeRate?.rate}
+                className="inline-block text-[13px]"
+              />
+            </span>
+            {canInvoice && (
+              <Button
+                variant="primary"
+                onClick={markInvoiced}
+                disabled={selectedItems.length === 0 || busy}
+                className="w-full sm:w-auto"
+              >
+                {t("billing.createInvoice")}
+              </Button>
+            )}
+          </div>
+        </>
+      )}
+
+      </section>
+      {editingProject && (
+        <BillingPriceSheet project={editingProject} onClose={() => setEditingProject(null)} />
+      )}
+    </>
+  );
+}
+
+function BillingPriceSheet({
+  project,
+  onClose,
+}: {
+  project: { name: string; items: BillingItem[] };
+  onClose: () => void;
+}) {
+  const { t } = useI18n();
+  const { run, busy } = useAction();
+  const [amounts, setAmounts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(project.items.map((item) => [item.id, String(item.amount)])),
+  );
+
+  const save = async () => {
+    const entries = project.items.map((item) => ({
+      item,
+      amount: Number(amounts[item.id]),
+    }));
+    if (entries.some(({ amount }) => amount == null || !Number.isFinite(amount) || amount <= 0)) return;
+    const ok = await run(
+      async () => {
+        for (const entry of entries) {
+          await api(`/api/billing-items/${entry.item.id}/billing-price`, {
+            method: "PATCH",
+            body: { amount: entry.amount },
+          });
+        }
+      },
+      { key: "toast.itemUpdated" },
+    );
+    if (ok) onClose();
+  };
+
+  return (
+    <Sheet
+      open
+      onClose={onClose}
+      title={project.name}
+      description={t("billing.manualOverrideHint")}
+      footer={
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+          <Button variant="secondary" full onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="primary" full onClick={save} disabled={busy}>
+            {t("billing.saveOverride")}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4 pb-2">
+        {project.items.map((item) => (
+          <div key={item.id} className="border-b border-line pb-4 last:border-0 last:pb-0">
+            <div className="mb-3 min-w-0">
+              <p className="truncate text-[15px] font-medium">{item.description}</p>
+              <p className="mt-1 text-[12px] text-faint">
+                {item.printCost != null && `${t("printing.cost")} ${money(item.printCost)} · `}
+                {t("billing.suggestedPrice")} {money(item.suggestedAmount ?? item.amount)}
+              </p>
+            </div>
+            <Field label={t("billing.sellingPrice")}>
+              <Input
+                inputMode="decimal"
+                value={amounts[item.id] ?? ""}
+                onChange={(event) =>
+                  setAmounts((current) => ({ ...current, [item.id]: event.target.value }))
+                }
+                className="tnum"
+              />
+            </Field>
+          </div>
+        ))}
+      </div>
+    </Sheet>
+  );
+}
+
+function printLabel(item: BillingItem): string {
+  const description = item.description.trim();
+  if (/\bprint(?:ing)?\b\s+(?:[x×]\s*)?\d+\b/i.test(description)) return description;
+  if (/\b[x×]\s*\d+\b/i.test(description)) return description;
+  return `${description} ×${item.quantity}`;
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cijd-design-billing-preview",
+  "compatibility_date": "2026-08-31",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": "./worker/index.ts",
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "none",
+    "binding": "ASSETS"
+  },
+  "workers_dev": true,
+  "triggers": {
+    "crons": [
+      "35 9 * * 1-5",
+      "50 9 * * 1-5",
+      "5 10 * * 1-5",
+      "0 1 * * *"
+    ]
+  },
+  "vars": {
+    "CIJD_PREVIEW_MODE": "1",
+    "CIJD_ACCESS_LINKS_ENABLED": "1",
+    "CIJD_PILOT_MODE": "1",
+    "NEXT_PUBLIC_SUPABASE_URL": "https://dldfhhcechzhkbvlnzld.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsZGZoaGNlY2h6aGtidmxuemxkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgwOTM5NjMsImV4cCI6MjEwMzY2OTk2M30.XLVofowoxBweBkq9OfAovWNR5FPHYIZMO1DUxdLZ7Ok"
+  },
+  "cache": {
+    "enabled": true
+  }
+}
