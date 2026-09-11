@@ -17,20 +17,7 @@ import {
   type RestoreBilledInput,
 } from "@/lib/data/repository";
 import { todayIso } from "@/lib/format";
-import type { BillingItem } from "@/lib/types";
-import { isPending } from "./board";
-
-/** A line with no price is a question, not something to bill. */
-function assertPriced(items: BillingItem[]): void {
-  const unpriced = items.filter((item) => item.amount === null);
-  if (unpriced.length) {
-    throw new RuleError(
-      "INVALID",
-      `Set a billing price for "${unpriced[0].description}" before billing it.`,
-      400,
-    );
-  }
-}
+import { pendingProjects } from "./board";
 
 /**
  * The slice of the repository each step needs, so the guarded repository can
@@ -40,11 +27,21 @@ export type BillingRunOps = Pick<
   Repository,
   | "getSnapshot"
   | "createInvoice"
+  | "setProjectBillingReadiness"
 >;
 export type RestoreOps = Pick<Repository, "getSnapshot" | "voidInvoice">;
 export type DeleteProjectOps = RestoreOps &
   Pick<Repository, "deleteBillingItem" | "deleteProject">;
 
+/**
+ * Bills exactly what the Billing screen shows as ready — nothing more.
+ *
+ * Every selected project is checked against the same readiness rule the
+ * screen uses before anything is written, so a stale screen can never bill
+ * half a selection. A project marked ready by hand has its lines brought back
+ * in line with that decision first (a line added or re-priced after the
+ * decision is otherwise still "not ready" in the ledger).
+ */
 export async function markProjectsBilled(
   repo: BillingRunOps,
   input: MarkBilledInput,
@@ -55,46 +52,51 @@ export async function markProjectsBilled(
   }
 
   const snapshot = await repo.getSnapshot();
-  const projectById = new Map(snapshot.projects.map((project) => [project.id, project]));
+  const byId = new Map(pendingProjects(snapshot).map((project) => [project.id, project]));
   for (const id of projectIds) {
-    if (!projectById.has(id)) throw new RuleError("NOT_FOUND", "That project was not found.", 404);
+    const project = byId.get(id);
+    if (!project) {
+      const exists = snapshot.projects.some((candidate) => candidate.id === id && !candidate.deletedAt);
+      throw exists
+        ? new RuleError("NO_ITEMS", "There is nothing left to bill here.", 400)
+        : new RuleError("NOT_FOUND", "That project was not found.", 404);
+    }
+    if (project.blocker === "PRICE") {
+      throw new RuleError("PRICE_REQUIRED", `Set every price on "${project.name}" before billing it.`, 400);
+    }
+    if (project.blocker) {
+      throw new RuleError("NOT_READY", `"${project.name}" is not ready to bill yet.`, 409);
+    }
   }
 
-  const selected = snapshot.billingItems.filter(
-    (item) => projectIds.has(item.projectId) && isPending(item),
-  );
-  if (!selected.length) {
-    throw new RuleError("NO_ITEMS", "There is nothing left to bill here.", 400);
+  for (const id of projectIds) {
+    if (byId.get(id)!.billingReadiness === "READY") {
+      await repo.setProjectBillingReadiness(id, "READY", input.actor);
+    }
   }
-  assertPriced(selected);
-
-  // Readiness is a deliberate project-level billing decision. This operation
-  // only writes the ledger record; it never changes production status.
-  const ready: BillingItem[] = selected;
 
   // One ledger entry per project, so a single project can later be brought
   // back to Billing on its own without disturbing anything billed beside it.
-  const byProject = new Map<string, BillingItem[]>();
-  for (const item of ready) {
-    const list = byProject.get(item.projectId);
-    if (list) list.push(item);
-    else byProject.set(item.projectId, [item]);
-  }
-
+  // Readiness is a billing decision: this never changes production status.
   const billedOn = input.billedOn || todayIso();
-  for (const [projectId, items] of byProject) {
+  let itemCount = 0;
+  let total = 0;
+  for (const id of projectIds) {
+    const project = byId.get(id)!;
     await repo.createInvoice({
-      clientId: projectById.get(projectId)!.clientId,
+      clientId: project.clientId,
       invoiceDate: billedOn,
-      billingItemIds: items.map((item) => item.id),
+      billingItemIds: project.items.map((entry) => entry.item.id),
       actor: input.actor,
     });
+    itemCount += project.items.length;
+    total += project.total;
   }
 
   return {
-    projectCount: new Set(ready.map((item) => item.projectId)).size,
-    itemCount: ready.length,
-    total: Math.round(ready.reduce((total, item) => total + (item.amount ?? 0), 0) * 100) / 100,
+    projectCount: projectIds.size,
+    itemCount,
+    total: Math.round(total * 100) / 100,
     billedOn,
   };
 }

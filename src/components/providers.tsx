@@ -54,6 +54,25 @@ export async function api<T>(
   return payload.data as T;
 }
 
+/**
+ * The first read after a cold start occasionally fails once on the edge
+ * worker. Try again briefly before showing the "could not connect" screen.
+ */
+async function loadSnapshot(attempts = 3): Promise<Snapshot | null> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await api<Snapshot>("/api/state");
+    } catch (error) {
+      if (attempt === attempts) {
+        console.error("[state] could not load", error);
+        return null;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+    }
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------- contexts */
 
 const ThemeContext = createContext<{
@@ -204,7 +223,7 @@ export function Providers({ children }: { children: ReactNode }) {
         setLoading(false);
         return;
       }
-      const data = await api<Snapshot>("/api/state").catch(() => null);
+      const data = await loadSnapshot();
       if (!live) return;
       if (data) setSnapshot(data);
       else setError("OFFLINE");

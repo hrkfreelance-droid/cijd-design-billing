@@ -24,6 +24,7 @@ import {
   autoInvoiceNumber,
 } from "./repository";
 import { markProjectsBilled, restoreProjectsToBilling } from "@/lib/billing-v2/mark-billed";
+import { serviceKeyFromName } from "@/lib/billing-v2/services";
 import { buildSeed } from "./seed";
 import {
   isPrintPriceConfirmed,
@@ -261,10 +262,16 @@ export class Store implements Repository {
     return this.transaction((db) => {
       const trimmed = name.trim();
       if (!trimmed) throw new RuleError("INVALID", "Service name is required.", 400);
-      const key = trimmed.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
-      if (key.length < 2) throw new RuleError("INVALID", "Service name is too short.", 400);
-      if (db.serviceTypes.some((service) => service.key === key)) {
-        throw new RuleError("DUPLICATE_SERVICE", `${trimmed} already exists.`);
+      const key = serviceKeyFromName(trimmed);
+      const match = db.serviceTypes.find(
+        (service) => service.key === key || service.name.trim().toLowerCase() === trimmed.toLowerCase(),
+      );
+      if (match?.active) throw new RuleError("DUPLICATE_SERVICE", `${trimmed} already exists.`);
+      if (match) {
+        match.active = true;
+        match.name = trimmed;
+        log(db, actor, "service_type.update", "service_type", match.id, trimmed);
+        return match;
       }
       const service: ServiceType = {
         id: newId(),

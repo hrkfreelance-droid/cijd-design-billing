@@ -4,8 +4,8 @@ import { Providers } from "@/components/providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CIJD DESIGN Billing",
-  description: "Project, invoicing and payment tracking for CIJD DESIGN.",
+  title: "CIJD Billing",
+  description: "Billing for CIJD — what to bill, by client and project.",
 };
 
 export const viewport: Viewport = {

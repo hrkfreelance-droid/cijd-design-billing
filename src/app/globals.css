@@ -27,6 +27,9 @@
   --c-awaiting: #a5670a;
   --c-paid: #17803d;
   --c-review: #c0392b;
+  --c-danger: #d70015;
+  /* "Price pending": a quiet amber that reads as a question, not an error. */
+  --c-pending: #9a5b00;
 
   --c-overlay: rgba(0, 0, 0, 0.28);
   --c-header: rgba(255, 255, 255, 0.82);
@@ -54,6 +57,8 @@
   --c-awaiting: #d9a441;
   --c-paid: #43b96a;
   --c-review: #ff6f61;
+  --c-danger: #e0382e;
+  --c-pending: #e3a74a;
 
   --c-overlay: rgba(0, 0, 0, 0.55);
   --c-header: rgba(10, 10, 11, 0.78);
@@ -78,6 +83,8 @@
   --color-awaiting: var(--c-awaiting);
   --color-paid: var(--c-paid);
   --color-review: var(--c-review);
+  --color-danger: var(--c-danger);
+  --color-pending: var(--c-pending);
 
   --font-sans:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica,
@@ -161,6 +168,48 @@
 }
 .no-scrollbar::-webkit-scrollbar {
   display: none;
+}
+
+/* Confirmation card: rises from the bottom on a phone, settles in place on a desktop. */
+.confirm-backdrop {
+  transition: opacity 200ms ease-out;
+}
+.confirm-backdrop[data-starting-style],
+.confirm-backdrop[data-ending-style] {
+  opacity: 0;
+}
+.confirm-popup {
+  transition:
+    transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 200ms ease-out;
+}
+.confirm-popup[data-starting-style],
+.confirm-popup[data-ending-style] {
+  opacity: 0;
+  transform: translateY(24px);
+}
+@media (min-width: 1024px) {
+  .confirm-popup[data-starting-style],
+  .confirm-popup[data-ending-style] {
+    transform: scale(0.97);
+  }
+}
+
+.account-popup {
+  transform-origin: var(--transform-origin);
+  transition:
+    transform 180ms cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 150ms ease-out;
+}
+.account-popup[data-starting-style],
+.account-popup[data-ending-style] {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+/* Selection bar rides above the page on the bottom edge. */
+.safe-bottom-bar {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
 }
 
 /* --------------------------------------------------------------- motion */

@@ -73,13 +73,33 @@ export function serviceDefinitionForKey(
     : DEFAULT_SERVICE;
 }
 
+/**
+ * What the service picker offers: the built-in services that are on, then any
+ * service someone added. Adding "Visa" from the picker switches the planned
+ * built-in Visa on (it keeps its translated label) rather than being hidden
+ * behind it.
+ */
 export function serviceOptions(
   serviceTypes: readonly { key: string; name: string; active: boolean }[] = [],
 ): ServiceDefinition[] {
+  const active = new Set(serviceTypes.filter((service) => service.active).map((service) => service.key));
+  const builtIn = SERVICES.filter((service) => service.offered || active.has(service.key));
   const custom = serviceTypes
     .filter((service) => service.active && !BY_KEY.has(service.key as ServiceKey))
+    .sort((a, b) => a.name.localeCompare(b.name))
     .map((service) => serviceDefinitionForKey(service.key, serviceTypes));
-  return [...OFFERED_SERVICES, ...custom];
+  return [...builtIn, ...custom];
+}
+
+/**
+ * The stored key for a typed service name. Latin names keep a readable key
+ * ("Visa" → VISA, so it lines up with the built-in); a name with no Latin
+ * letters (翻訳, បកប្រែ) gets a stable generated key instead of being refused.
+ */
+export function serviceKeyFromName(name: string, now: number = Date.now()): string {
+  const readable = name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
+  if (/^[A-Z][A-Z0-9_]{1,63}$/.test(readable)) return readable;
+  return `SERVICE_${now.toString(36).toUpperCase()}`;
 }
 
 /** Rows written before `service_type` existed are read back from their type. */

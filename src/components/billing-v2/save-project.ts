@@ -5,6 +5,7 @@ import { printSellingPriceFromCost } from "@/lib/billing-v2/pricing";
 import { isCostPriced } from "@/lib/billing-v2/services";
 import type { BillingItem, ServiceType } from "@/lib/types";
 import {
+  draftChanged,
   draftCost,
   draftFinal,
   draftService,
@@ -19,6 +20,10 @@ import {
  * spec endpoint owns cost, the billing-price endpoint owns the final price,
  * and the general item endpoint owns the rest. Keeping them apart is what lets
  * the database go on knowing which prices a person chose for themselves.
+ *
+ * Lines are written one at a time and each finished line is reported back, so
+ * if the connection drops half way a retry picks up where it stopped instead
+ * of creating a line twice.
  */
 export interface ProjectSaveInput {
   projectId: string;
@@ -28,6 +33,12 @@ export interface ProjectSaveInput {
   originalNote: string;
   drafts: ItemDraft[];
   serviceTypes?: ServiceType[];
+  /**
+   * The project was ready to bill when editing began. Editing it keeps it
+   * there, as long as every line still has a price.
+   */
+  keepReady: boolean;
+  onLineSaved?: (key: string, item: BillingItem | null) => void;
 }
 
 export async function saveProject(input: ProjectSaveInput): Promise<void> {
@@ -40,15 +51,33 @@ export async function saveProject(input: ProjectSaveInput): Promise<void> {
 
   for (const draft of input.drafts) {
     if (draft.removed) {
-      if (draft.id) await api(`/api/billing-items/${draft.id}`, { method: "DELETE" });
+      if (draft.id) {
+        await api(`/api/billing-items/${draft.id}`, { method: "DELETE" });
+        input.onLineSaved?.(draft.key, null);
+      }
       continue;
     }
-    if (draft.id) await updateItem(draft, input.serviceTypes);
-    else await createItem(input.projectId, draft, input.serviceTypes);
+    if (!draft.id) {
+      input.onLineSaved?.(draft.key, await createItem(input.projectId, draft, input.serviceTypes));
+    } else if (draftChanged(draft)) {
+      await updateItem(draft, input.serviceTypes);
+    }
+  }
+
+  const live = input.drafts.filter((draft) => !draft.removed);
+  if (input.keepReady && live.length > 0 && live.every((draft) => draftFinal(draft) !== null)) {
+    await api(`/api/projects/${input.projectId}/readiness`, {
+      method: "PATCH",
+      body: { readiness: "READY" },
+    });
   }
 }
 
-async function createItem(projectId: string, draft: ItemDraft, serviceTypes: ServiceType[] = []): Promise<void> {
+async function createItem(
+  projectId: string,
+  draft: ItemDraft,
+  serviceTypes: ServiceType[] = [],
+): Promise<BillingItem> {
   const service = draftService(draft, serviceTypes);
   const cost = draftCost(draft, serviceTypes);
   const final = draftFinal(draft);
@@ -58,7 +87,7 @@ async function createItem(projectId: string, draft: ItemDraft, serviceTypes: Ser
   const followsRecommendation =
     isCostPriced(service) && cost != null && final === printSellingPriceFromCost(cost);
 
-  await api("/api/billing-items", {
+  const created = await api<BillingItem>("/api/billing-items", {
     method: "POST",
     body: {
       projectId,
@@ -70,6 +99,13 @@ async function createItem(projectId: string, draft: ItemDraft, serviceTypes: Ser
       amount: followsRecommendation ? undefined : (final ?? undefined),
     },
   });
+
+  // The ledger prices a costed line from its cost on the way in; an emptied
+  // price field means "pending", so say so explicitly.
+  if (final === null && created.amount !== null) {
+    return api<BillingItem>(`/api/billing-items/${created.id}`, { method: "PATCH", body: { amount: null } });
+  }
+  return created;
 }
 
 async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): Promise<void> {
@@ -98,7 +134,7 @@ async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): P
     });
   }
 
-  if (costPriced && (detailsChanged || !before || before.item.printCost !== cost)) {
+  if (costPriced && (serviceChanged || detailsChanged || before?.item.printCost !== cost)) {
     latest = await api<BillingItem>(`/api/printing-items/${id}/spec`, {
       method: "PATCH",
       body: { description, quantity, printCost: cost ?? undefined },
@@ -107,7 +143,7 @@ async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): P
 
   // The price goes last, once everything else has settled, so the number the
   // person typed is the number that survives.
-  const settled = latest?.amount ?? before?.amount ?? null;
+  const settled = latest ? latest.amount : (before?.amount ?? null);
   if (final !== settled) {
     if (final === null) {
       await api(`/api/billing-items/${id}`, { method: "PATCH", body: { amount: null } });

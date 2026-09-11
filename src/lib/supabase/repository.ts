@@ -31,6 +31,7 @@ import {
   toUser,
 } from "./rows";
 import { markProjectsBilled, restoreProjectsToBilling } from "@/lib/billing-v2/mark-billed";
+import { serviceKeyFromName } from "@/lib/billing-v2/services";
 import { isProductionComplete, isPrintPriceConfirmed } from "@/lib/derive";
 import { roundMoney } from "@/lib/format";
 import { printSellingPriceFromCost } from "@/lib/printing-pricing";
@@ -237,9 +238,17 @@ export class SupabaseRepository implements Repository {
   async createServiceType({ name }: { name: string; actor?: string }) {
     const trimmed = name.trim();
     if (!trimmed) throw new RuleError("INVALID", "Service name is required.", 400);
-    const key = trimmed.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "");
-    if (key.length < 2) throw new RuleError("INVALID", "Service name is too short.", 400);
-    const result = await this.db.from("service_types").insert({ key, name: trimmed }).select().single();
+    const existing = await this.db.from("service_types").select("*");
+    if (existing.error) fail(existing.error);
+    const key = serviceKeyFromName(trimmed);
+    const match = (existing.data ?? []).find(
+      (row) => row.key === key || String(row.name).trim().toLowerCase() === trimmed.toLowerCase(),
+    );
+    if (match?.active) throw new RuleError("DUPLICATE_SERVICE", `${trimmed} already exists.`);
+    // A service switched off earlier comes back instead of colliding with itself.
+    const result = match
+      ? await this.db.from("service_types").update({ active: true, name: trimmed }).eq("id", match.id).select().single()
+      : await this.db.from("service_types").insert({ key, name: trimmed }).select().single();
     if (result.error?.code === "23505") throw new RuleError("DUPLICATE_SERVICE", `${trimmed} already exists.`);
     return toServiceType(unwrap(result));
   }

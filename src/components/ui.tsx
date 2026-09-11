@@ -21,7 +21,7 @@ import type { FlowStatus } from "@/lib/types";
 
 /* --------------------------------------------------------------- button */
 
-type Variant = "primary" | "secondary" | "ghost" | "quiet";
+type Variant = "primary" | "secondary" | "ghost" | "quiet" | "destructive";
 
 // A disabled primary fades to an inert grey rather than a translucent blue:
 // dropping the whole button to 40% left white text on pale blue, which was the
@@ -33,6 +33,8 @@ const VARIANTS: Record<Variant, string> = {
     "border border-line-strong bg-panel text-text hover:bg-fill active:bg-fill-strong disabled:text-faint disabled:hover:bg-panel",
   ghost: "text-accent hover:bg-fill active:bg-fill-strong disabled:text-faint disabled:hover:bg-transparent",
   quiet: "text-muted hover:bg-fill hover:text-text active:bg-fill-strong disabled:text-faint",
+  destructive:
+    "bg-danger text-white hover:opacity-90 active:opacity-80 disabled:bg-fill-strong disabled:text-faint",
 };
 
 export function Button({
@@ -432,8 +434,9 @@ export function Field({
   );
 }
 
+// 16px on phones: iOS zooms the page into any field smaller than that.
 const CONTROL =
-  "w-full rounded-xl border border-line-strong bg-panel px-3 text-[15px] text-text placeholder:text-faint transition-colors duration-150 focus:border-accent focus:outline-none";
+  "w-full rounded-xl border border-line-strong bg-panel px-3 text-[16px] text-text placeholder:text-faint transition-colors duration-150 focus:border-accent focus:outline-none sm:text-[15px]";
 
 export function Input({ className = "", ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${CONTROL} h-11 ${className}`} />;

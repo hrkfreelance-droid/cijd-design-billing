@@ -1,13 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 const PORT = 3101;
 
-// Compiling into the repository is minutes slower when the checkout lives on
-// an external volume, which is enough to time the suite out before it starts.
-// The build directory is disposable, so it goes on local disk.
-const DIST_DIR = join(tmpdir(), "cijd-next-test");
+// Next resolves distDir inside the project, so an absolute temp path ends up
+// as a `var/…` tree in the repository (and Tailwind then scans it). Use the
+// git-ignored `.next-test` directory instead.
+const DIST_DIR = ".next-test";
 
 /**
  * Runs against a throwaway data file so the demo store is never touched, and
@@ -24,7 +22,14 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     locale: "en-US",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // PW_CHANNEL=chrome runs on the installed Google Chrome instead of a
+  // downloaded Playwright browser.
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"], ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}) },
+    },
+  ],
   webServer: {
     // The Supabase vars are blanked explicitly: once real credentials exist in
     // .env.local the app boots in Supabase mode, where the development

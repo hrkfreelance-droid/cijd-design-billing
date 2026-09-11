@@ -69,3 +69,7 @@ next-env.d.ts
 * 2/
 * 2.*
 /docs/billing-v2/snapshot-live-*.json
+/.next-review/
+/.claude/
+/var/
+/.next-review/

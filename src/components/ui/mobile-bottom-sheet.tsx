@@ -36,7 +36,7 @@ type MobileBottomSheetProps = {
   closeLabel: string;
   title: string;
   kicker?: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   disabled?: boolean;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -98,13 +98,13 @@ export function MobileBottomSheet({
                   <div className={styles.handle} />
                 </div>
 
-                <header className="flex items-center justify-between gap-4 border-b border-line px-5 pb-4 pt-1">
-                  <div className="min-w-0">
-                    {kicker ? <p className="text-[11.5px] font-semibold tracking-[0.04em] text-accent">{kicker}</p> : null}
-                    <Drawer.Title className="mt-1 truncate text-[22px] font-semibold leading-tight tracking-[-0.021em] text-text">
+                <header className="flex items-start justify-between gap-4 border-b border-line px-5 pb-3.5 pt-0.5">
+                  <div className="min-w-0 pt-0.5">
+                    {kicker ? <p className="truncate text-[12px] font-medium text-muted">{kicker}</p> : null}
+                    <Drawer.Title className="mt-0.5 line-clamp-2 text-[20px] font-semibold leading-[1.2] tracking-[-0.02em] text-text">
                       {title}
                     </Drawer.Title>
-                    {subtitle ? <p className="mt-1 truncate text-[13px] text-muted">{subtitle}</p> : null}
+                    {subtitle ? <div className="mt-1 text-[13px] text-muted">{subtitle}</div> : null}
                   </div>
                   <Drawer.Close
                     className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-fill text-text transition active:scale-95"
@@ -119,18 +119,18 @@ export function MobileBottomSheet({
               <Drawer.Content
                 data-daishin-sheet-scroll="true"
                 className={`${styles.scroll} ${contentClassName ?? ""}`.trim()}
-                style={footer ? { paddingBottom: "calc(env(safe-area-inset-bottom) + 112px)" } : undefined}
               >
                 {children}
-                {footer ? (
-                  <div
-                    data-base-ui-swipe-ignore
-                    className={`${styles.footer} safe-bottom-sheet border-t border-line px-5 pt-4`}
-                  >
-                    {footer}
-                  </div>
-                ) : null}
               </Drawer.Content>
+
+              {/* The footer is a sibling of the scroll area, not inside it, so it
+                  stays on the sheet's visible bottom edge while the body scrolls
+                  and moves 1:1 with the sheet while it is dragged. */}
+              {footer ? (
+                <div data-base-ui-swipe-ignore className={`${styles.footer} border-t border-line bg-panel px-5 pt-3`}>
+                  {footer}
+                </div>
+              ) : null}
             </Drawer.Popup>
           </Drawer.Viewport>
         </Drawer.Portal>

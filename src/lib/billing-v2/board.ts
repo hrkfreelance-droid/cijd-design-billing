@@ -5,24 +5,31 @@
  *   Archive  — work that has been billed, kept to look at
  *
  * Everything on both screens is Client → Project → Line item. These functions
- * turn a snapshot into exactly that, so no component does its own grouping.
+ * turn a snapshot into exactly that, so no component does its own grouping,
+ * summing or readiness decision. The server uses the same functions to check
+ * that what a person selected is what the screen showed them.
  */
 import { isHistoricalRecord, isProductionComplete } from "@/lib/derive";
 import type { BillingItem, Client, Project, Snapshot } from "@/lib/types";
-import { printSellingPriceFromCost } from "./pricing";
-import { isCostPriced, serviceForItem, SERVICES, type ServiceDefinition } from "./services";
+import { printMarginFromCost, printSellingPriceFromCost, roundCents } from "./pricing";
+import { isCostPriced, serviceForItem, type ServiceDefinition } from "./services";
 
 export interface BoardItem {
   item: BillingItem;
   service: ServiceDefinition;
+  /** Cost of bought-in work; null when the service is not cost-priced or no cost is known. */
+  cost: number | null;
   /** The price the cost rule suggests; null when the service is not cost-priced. */
   recommended: number | null;
-  /** The final price was chosen by a person, so a cost edit must not move it. */
+  /** The margin band behind `recommended`, as a fraction (0.5 = 50%). */
+  margin: number | null;
+  /** The final price differs from the recommendation because a person chose it. */
   manual: boolean;
+  /** Final billing. Null is "price pending" — never the same thing as $0. */
   amount: number | null;
 }
 
-/** Why a line cannot be billed yet. Null means it can. */
+/** Why a project cannot be billed yet. Null means it can. */
 export type Blocker = "PRICE" | "PRODUCTION" | "PRINT_PRICE" | "REVIEW" | "NO_ITEMS" | "STATUS";
 
 export interface BoardProject {
@@ -32,21 +39,25 @@ export interface BoardProject {
   date: string;
   clientId: string;
   items: BoardItem[];
+  /** Sum of the lines that have a price. Only a real total when `pricePendingCount` is 0. */
   total: number;
+  /** Sum of the printing cost on the lines. */
+  costTotal: number;
   /** The first thing standing between this project and a bill. */
   blocker: Blocker | null;
   /** The line that blocker came from, so the reason can name its service. */
   blockedBy: BoardItem | null;
   billingReadiness: Project["billingReadiness"];
   pricePendingCount: number;
-  serviceBreakdown: { service: ServiceDefinition; total: number; costTotal: number | null }[];
 }
 
-export interface BoardGroup {
+export interface BoardGroup<T extends BoardProject = BoardProject> {
   client: Client;
-  projects: BoardProject[];
+  projects: T[];
+  /** Sum of the projects' priced lines. */
   total: number;
-  itemCount: number;
+  /** Some line in this group has no price yet, so `total` is incomplete. */
+  pending: boolean;
 }
 
 /**
@@ -59,17 +70,15 @@ export interface BoardSections {
   inProgress: BoardGroup[];
   /** Only billable work counts towards the figure at the top of the screen. */
   readyTotal: number;
+  readyCount: number;
+  inProgressCount: number;
+  /** Printing cost on everything not billed yet — what the print shop is owed for. */
+  printCostOutstanding: number;
 }
 
 export interface ArchiveProject extends BoardProject {
   /** When this work was billed. */
   billedAt: string | null;
-}
-
-export interface ArchiveGroup {
-  client: Client;
-  projects: ArchiveProject[];
-  total: number;
 }
 
 export function isBilled(item: BillingItem): boolean {
@@ -97,15 +106,32 @@ export function isArchived(item: BillingItem): boolean {
   return isCurrentWork(item) && isBilled(item);
 }
 
-export function toBoardItem(item: BillingItem, snapshot?: Snapshot): BoardItem {
+/** DAISHIN is billed from its own system; it never appears on these screens. */
+const EXCLUDED_CLIENTS = new Set(["DAISHIN"]);
+
+function isVisibleClient(client: Client | undefined): client is Client {
+  return !!client && !EXCLUDED_CLIENTS.has(client.name);
+}
+
+/** Only clients a new project may be started for. */
+export function selectableClients(clients: Client[]): Client[] {
+  return clients
+    .filter((client) => client.active && isVisibleClient(client))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function toBoardItem(item: BillingItem, snapshot?: Pick<Snapshot, "serviceTypes">): BoardItem {
   const service = serviceForItem(item, snapshot?.serviceTypes ?? []);
   const costPriced = isCostPriced(service);
+  const cost = costPriced ? (item.printCost ?? null) : null;
+  const recommended = cost == null ? null : printSellingPriceFromCost(cost);
   return {
     item,
     service,
-    recommended:
-      costPriced && item.printCost != null ? printSellingPriceFromCost(item.printCost) : null,
-    manual: costPriced ? item.customAmount : false,
+    cost,
+    recommended,
+    margin: cost == null ? null : printMarginFromCost(cost),
+    manual: costPriced && item.amount != null && recommended != null && item.amount !== recommended,
     amount: item.amount,
   };
 }
@@ -135,18 +161,64 @@ export function projectBlocker(items: BoardItem[]): { blocker: Blocker | null; b
   return { blocker: null, blockedBy: null };
 }
 
-export function sumItems(items: BoardItem[]): number {
-  return Math.round(items.reduce((total, entry) => total + (entry.amount ?? 0), 0) * 100) / 100;
+/**
+ * Where a project sits, in the order a person would reason about it:
+ *
+ *   no lines          → In progress ("No items yet")
+ *   a price pending   → In progress ("Price pending") — always, whatever else
+ *   moved by hand     → where it was put
+ *   otherwise (AUTO)  → ready once every line is finished and confirmed
+ */
+export function readinessOf(
+  readiness: Project["billingReadiness"],
+  items: BoardItem[],
+): { blocker: Blocker | null; blockedBy: BoardItem | null } {
+  if (items.length === 0) return { blocker: "NO_ITEMS", blockedBy: null };
+  const unpriced = items.find((entry) => entry.amount === null);
+  if (unpriced) return { blocker: "PRICE", blockedBy: unpriced };
+  if (readiness === "IN_PROGRESS") return { blocker: "STATUS", blockedBy: null };
+  if (readiness === "READY") return { blocker: null, blockedBy: null };
+  return projectBlocker(items);
 }
 
-function groupByProject(
-  snapshot: Snapshot,
+export function sumItems(items: BoardItem[]): number {
+  return roundCents(items.reduce((total, entry) => total + (entry.amount ?? 0), 0));
+}
+
+function sumCost(items: BoardItem[]): number {
+  return roundCents(items.reduce((total, entry) => total + (entry.cost ?? 0), 0));
+}
+
+export function toBoardProject(
+  project: Project,
   items: BillingItem[],
-): Map<string, BillingItem[]> {
-  const known = new Set(snapshot.projects.map((project) => project.id));
+  snapshot: Pick<Snapshot, "serviceTypes">,
+): BoardProject {
+  const boardItems = items
+    .slice()
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .map((item) => toBoardItem(item, snapshot));
+  const readiness = project.billingReadiness ?? "AUTO";
+  const { blocker, blockedBy } = readinessOf(readiness, boardItems);
+  return {
+    id: project.id,
+    name: project.name,
+    note: project.note ?? "",
+    date: project.date,
+    clientId: project.clientId,
+    items: boardItems,
+    total: sumItems(boardItems),
+    costTotal: sumCost(boardItems),
+    blocker,
+    blockedBy,
+    billingReadiness: readiness,
+    pricePendingCount: boardItems.filter((entry) => entry.amount === null).length,
+  };
+}
+
+function itemsByProject(items: BillingItem[]): Map<string, BillingItem[]> {
   const byProject = new Map<string, BillingItem[]>();
   for (const item of items) {
-    if (!known.has(item.projectId)) continue;
     const list = byProject.get(item.projectId);
     if (list) list.push(item);
     else byProject.set(item.projectId, [item]);
@@ -154,90 +226,7 @@ function groupByProject(
   return byProject;
 }
 
-function buildProjects(
-  snapshot: Snapshot,
-  byProject: Map<string, BillingItem[]>,
-  includeEmpty = false,
-): BoardProject[] {
-  const projectById = new Map(snapshot.projects.map((project) => [project.id, project]));
-  const projectIds = includeEmpty ? snapshot.projects.map((project) => project.id) : Array.from(byProject.keys());
-  return projectIds.flatMap((projectId) => {
-    const project = projectById.get(projectId)!;
-    if (!project) return [];
-    const items = byProject.get(projectId) ?? [];
-    const boardItems = items
-      .slice()
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-      .map((item) => toBoardItem(item, snapshot));
-    const serviceTotals = new Map<
-      string,
-      { service: ServiceDefinition; total: number; costTotal: number | null }
-    >();
-    for (const entry of boardItems) {
-      const itemCost = isCostPriced(entry.service) ? (entry.item.printCost ?? null) : null;
-      const current = serviceTotals.get(entry.service.key);
-      if (current) {
-        current.total += entry.amount ?? 0;
-        if (isCostPriced(entry.service)) {
-          current.costTotal = current.costTotal === null || itemCost === null
-            ? null
-            : current.costTotal + itemCost;
-        }
-      } else {
-        serviceTotals.set(entry.service.key, {
-          service: entry.service,
-          total: entry.amount ?? 0,
-          costTotal: itemCost,
-        });
-      }
-    }
-    const readiness = project.billingReadiness ?? "AUTO";
-    const blocker = boardItems.length === 0
-      ? "NO_ITEMS" as const
-      : readiness === "IN_PROGRESS"
-        ? "STATUS" as const
-        : readiness === "READY"
-          ? boardItems.find((entry) => entry.item.amount === null)
-            ? "PRICE" as const
-            : null
-          : projectBlocker(boardItems).blocker;
-    const blockedBy = blocker === "PRICE"
-      ? boardItems.find((entry) => entry.item.amount === null) ?? null
-      : blocker && blocker !== "NO_ITEMS" && blocker !== "STATUS"
-        ? projectBlocker(boardItems).blockedBy
-        : null;
-    return [{
-      id: project.id,
-      name: project.name,
-      note: project.note ?? "",
-      date: project.date,
-      clientId: project.clientId,
-      items: boardItems,
-      total: sumItems(boardItems),
-      blocker,
-      blockedBy,
-      billingReadiness: readiness,
-      pricePendingCount: boardItems.filter((entry) => entry.item.amount === null).length,
-      serviceBreakdown: Array.from(serviceTotals.values())
-        .sort((a, b) => {
-          const aOrder = SERVICES.findIndex((service) => service.key === a.service.key);
-          const bOrder = SERVICES.findIndex((service) => service.key === b.service.key);
-          return (aOrder === -1 ? Number.MAX_SAFE_INTEGER : aOrder) -
-            (bOrder === -1 ? Number.MAX_SAFE_INTEGER : bOrder);
-        })
-        .map((entry) => ({
-          ...entry,
-          total: Math.round(entry.total * 100) / 100,
-          costTotal: entry.costTotal === null ? null : Math.round(entry.costTotal * 100) / 100,
-        })),
-    }];
-  });
-}
-
-function groupByClient<T extends BoardProject>(
-  snapshot: Snapshot,
-  projects: T[],
-): { client: Client; projects: T[] }[] {
+function toGroups<T extends BoardProject>(snapshot: Snapshot, projects: T[]): BoardGroup<T>[] {
   const clientById = new Map(snapshot.clients.map((client) => [client.id, client]));
   const byClient = new Map<string, T[]>();
   for (const project of projects) {
@@ -245,49 +234,45 @@ function groupByClient<T extends BoardProject>(
     if (list) list.push(project);
     else byClient.set(project.clientId, [project]);
   }
-  return Array.from(byClient, ([clientId, list]) => ({
-    client: clientById.get(clientId)!,
-    projects: list,
-  })).filter((group) => group.client);
-}
-
-function toGroups(snapshot: Snapshot, projects: BoardProject[]): BoardGroup[] {
-  return groupByClient(snapshot, projects)
-    .map(({ client, projects: list }) => ({
+  return Array.from(byClient, ([clientId, list]) => ({ client: clientById.get(clientId), list }))
+    .filter((entry): entry is { client: Client; list: T[] } => isVisibleClient(entry.client))
+    .map(({ client, list }) => ({
       client,
       projects: list,
-      total: list.reduce((total, project) => total + project.total, 0),
-      itemCount: list.reduce((count, project) => count + project.items.length, 0),
+      total: roundCents(list.reduce((total, project) => total + project.total, 0)),
+      pending: list.some((project) => project.pricePendingCount > 0),
     }))
-    .sort((a, b) => b.total - a.total || a.client.name.localeCompare(b.client.name));
+    .sort((a, b) => a.client.name.localeCompare(b.client.name));
+}
+
+/** Every current project waiting to be billed, one entry each. */
+export function pendingProjects(snapshot: Snapshot): BoardProject[] {
+  const clientById = new Map(snapshot.clients.map((client) => [client.id, client]));
+  const pending = itemsByProject(snapshot.billingItems.filter(isPending));
+  const current = itemsByProject(snapshot.billingItems.filter(isCurrentWork));
+  return snapshot.projects
+    .filter((project) => !project.deletedAt)
+    .filter((project) => isVisibleClient(clientById.get(project.clientId)))
+    .filter((project) => project.createdBy.trim().toLowerCase() !== "import")
+    // A project is waiting when it has unbilled work, or when it has no work
+    // at all yet (just created). Fully billed projects live in Archive.
+    .filter((project) => pending.has(project.id) || !current.has(project.id))
+    .map((project) => toBoardProject(project, pending.get(project.id) ?? [], snapshot))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }
 
 /** Everything waiting to be billed, split by whether it can be billed yet. */
-export function billingBoard(snapshot: Snapshot, clientId: string | null): BoardSections {
-  const pending = snapshot.billingItems.filter(isPending);
-  const pendingByProject = groupByProject(snapshot, pending);
-  const activeByProject = new Map<string, number>();
-  for (const item of snapshot.billingItems.filter(isCurrentWork)) {
-    activeByProject.set(item.projectId, (activeByProject.get(item.projectId) ?? 0) + 1);
-  }
-  const candidateProjects = snapshot.projects.filter((project) => {
-    const client = snapshot.clients.find((candidate) => candidate.id === project.clientId);
-    return client?.name !== "DAISHIN" && project.createdBy.trim().toLowerCase() !== "import" &&
-      (pendingByProject.has(project.id) || !activeByProject.has(project.id));
-  });
-  const projects = buildProjects(
-    { ...snapshot, projects: candidateProjects },
-    pendingByProject,
-    true,
-  )
-    .filter((project) => !clientId || project.clientId === clientId)
-    .sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
-
+export function billingBoard(snapshot: Snapshot): BoardSections {
+  const projects = pendingProjects(snapshot);
   const ready = projects.filter((project) => project.blocker === null);
+  const inProgress = projects.filter((project) => project.blocker !== null);
   return {
     ready: toGroups(snapshot, ready),
-    inProgress: toGroups(snapshot, projects.filter((project) => project.blocker !== null)),
-    readyTotal: Math.round(ready.reduce((total, project) => total + project.total, 0) * 100) / 100,
+    inProgress: toGroups(snapshot, inProgress),
+    readyTotal: roundCents(ready.reduce((total, project) => total + project.total, 0)),
+    readyCount: ready.length,
+    inProgressCount: inProgress.length,
+    printCostOutstanding: roundCents(projects.reduce((total, project) => total + project.costTotal, 0)),
   };
 }
 
@@ -298,28 +283,17 @@ export function billingBoard(snapshot: Snapshot, clientId: string | null): Board
  * archive stays where it is rather than being pulled into a screen whose job
  * is to show what this system did.
  */
-export function archiveBoard(snapshot: Snapshot, clientId: string | null): ArchiveGroup[] {
-  const billed = snapshot.billingItems.filter(isArchived);
+export function archiveBoard(snapshot: Snapshot): BoardGroup<ArchiveProject>[] {
+  const billed = itemsByProject(snapshot.billingItems.filter(isArchived));
   const invoiceById = new Map(snapshot.invoices.map((invoice) => [invoice.id, invoice]));
 
-  const projects: ArchiveProject[] = buildProjects(snapshot, groupByProject(snapshot, billed))
-    .filter((project) => project.items.length > 0)
-    .filter((project) => snapshot.clients.find((client) => client.id === project.clientId)?.name !== "DAISHIN")
-    .filter((project) => project.items.every((entry) => entry.item.createdBy.trim().toLowerCase() !== "import"))
-    .filter((project) => !clientId || project.clientId === clientId)
-    .map((project) => ({
-      ...project,
-      billedAt: billedDate(project.items, invoiceById),
-    }))
+  const projects: ArchiveProject[] = snapshot.projects
+    .filter((project) => !project.deletedAt && billed.has(project.id))
+    .map((project) => toBoardProject(project, billed.get(project.id)!, snapshot))
+    .map((project) => ({ ...project, blocker: null, blockedBy: null, billedAt: billedDate(project.items, invoiceById) }))
     .sort((a, b) => (b.billedAt ?? "").localeCompare(a.billedAt ?? "") || a.name.localeCompare(b.name));
 
-  return groupByClient(snapshot, projects)
-    .map(({ client, projects: list }) => ({
-      client,
-      projects: list,
-      total: list.reduce((total, project) => total + project.total, 0),
-    }))
-    .sort((a, b) => a.client.name.localeCompare(b.client.name));
+  return toGroups(snapshot, projects);
 }
 
 /** The billing date comes from the ledger entry the work was billed on. */
@@ -327,14 +301,15 @@ function billedDate(
   items: BoardItem[],
   invoiceById: Map<string, { invoiceDate: string | null; createdAt: string }>,
 ): string | null {
+  let latest: string | null = null;
   for (const { item } of items) {
     const invoice = item.invoiceId ? invoiceById.get(item.invoiceId) : undefined;
-    const date = invoice?.invoiceDate ?? invoice?.createdAt.slice(0, 10);
-    if (date) return date;
+    const date = invoice?.invoiceDate ?? invoice?.createdAt.slice(0, 10) ?? null;
+    if (date && (!latest || date > latest)) latest = date;
   }
-  return null;
+  return latest;
 }
 
 export function boardTotal(groups: { total: number }[]): number {
-  return Math.round(groups.reduce((total, group) => total + group.total, 0) * 100) / 100;
+  return roundCents(groups.reduce((total, group) => total + group.total, 0));
 }
