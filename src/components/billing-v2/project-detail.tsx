@@ -2,6 +2,7 @@
 
 import { useI18n } from "@/components/providers";
 import type { BoardItem, BoardProject } from "@/lib/billing-v2/board";
+import { formatUnitCost } from "@/lib/billing-v2/pricing";
 import { isCostPriced, serviceLabel } from "@/lib/billing-v2/services";
 import { moneyExact } from "@/lib/format";
 import type { MessageKey } from "@/lib/i18n";
@@ -82,7 +83,7 @@ export function ProjectDetail({ project }: { project: BoardProject }) {
             <span role="columnheader">{t("v2.service")}</span>
             <span role="columnheader">{t("v2.description")}</span>
             <span role="columnheader" className="text-right">{t("v2.quantity")}</span>
-            <span role="columnheader" className="text-right">{hasCost ? t("v2.cost") : ""}</span>
+            <span role="columnheader" className="text-right">{hasCost ? t("v2.totalCost") : ""}</span>
             <span role="columnheader" className="text-right">{hasCost ? t("v2.recommended") : ""}</span>
             <span role="columnheader" className="text-right">{t("v2.finalPrice")}</span>
           </div>
@@ -154,7 +155,16 @@ function DetailRow({ entry }: { entry: BoardItem }) {
           {entry.item.quantity}
         </span>
         <span role="cell" className="hidden text-right text-[13.5px] text-muted sm:block">
-          {costPriced ? <Price value={entry.cost} testId={`v2-view-cost-${entry.item.id}`} /> : null}
+          {costPriced ? (
+            <>
+              <Price value={entry.cost} testId={`v2-view-cost-${entry.item.id}`} />
+              {entry.unitCost != null && (
+                <span className="block text-[11.5px] text-faint" data-testid={`v2-view-unit-cost-${entry.item.id}`}>
+                  {t("v2.unitCost")} ${formatUnitCost(entry.unitCost)}
+                </span>
+              )}
+            </>
+          ) : null}
         </span>
         <span role="cell" className="hidden text-right text-[13.5px] text-muted sm:block">
           {costPriced && entry.recommended != null ? (
@@ -173,8 +183,14 @@ function DetailRow({ entry }: { entry: BoardItem }) {
         {t("v2.quantity")} {entry.item.quantity}
         {costPriced && (
           <>
+            {entry.unitCost != null && (
+              <>
+                {" · "}
+                {t("v2.unitCost")} ${formatUnitCost(entry.unitCost)}
+              </>
+            )}
             {" · "}
-            {t("v2.cost")} <Price value={entry.cost} />
+            {t("v2.totalCost")} <Price value={entry.cost} />
             {entry.recommended != null && (
               <>
                 {" · "}

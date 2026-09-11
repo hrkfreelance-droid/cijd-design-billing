@@ -6,7 +6,7 @@ import { isCostPriced } from "@/lib/billing-v2/services";
 import type { BillingItem, ServiceType } from "@/lib/types";
 import {
   draftChanged,
-  draftCost,
+  draftTotalCost,
   draftFinal,
   draftService,
   parseAmount,
@@ -79,7 +79,7 @@ async function createItem(
   serviceTypes: ServiceType[] = [],
 ): Promise<BillingItem> {
   const service = draftService(draft, serviceTypes);
-  const cost = draftCost(draft, serviceTypes);
+  const cost = draftTotalCost(draft, serviceTypes);
   const final = draftFinal(draft);
 
   // A cost-priced line left at its recommendation is saved without an explicit
@@ -115,7 +115,7 @@ async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): P
   const costPriced = isCostPriced(service);
   const quantity = parseAmount(draft.quantity) ?? 1;
   const description = draft.description.trim();
-  const cost = draftCost(draft, serviceTypes);
+  const cost = draftTotalCost(draft, serviceTypes);
   const final = draftFinal(draft);
 
   const serviceChanged = !before || before.service.key !== service.key;

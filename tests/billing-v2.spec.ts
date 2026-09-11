@@ -102,7 +102,7 @@ test("a cost recommends a price on the $5 step, and the price follows it", async
     ["60", "100"],
     ["101", "145"],
   ] as const) {
-    await dialog.getByTestId("v2-item-cost-0").fill(cost);
+    await dialog.getByTestId("v2-item-total-cost-0").fill(cost);
     await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText(`$${expected}.00`);
     await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue(expected);
   }
@@ -124,7 +124,7 @@ test("a price set by hand survives a reload and a later cost change", async ({ p
   await page.reload();
   dialog = await edit(page, "V2 Override");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("15");
-  await dialog.getByTestId("v2-item-cost-0").fill("20");
+  await dialog.getByTestId("v2-item-total-cost-0").fill("20");
   await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$40.00");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("15");
   await dialog.getByTestId("v2-modal-save").click();
@@ -143,7 +143,7 @@ test("without an override, a saved cost change moves the price with it", async (
 
   await page.goto("/office-v2");
   const dialog = await edit(page, "V2 Follows");
-  await dialog.getByTestId("v2-item-cost-0").fill("20");
+  await dialog.getByTestId("v2-item-total-cost-0").fill("20");
   await dialog.getByTestId("v2-modal-save").click();
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
 
@@ -158,7 +158,7 @@ test("a cost typed as an expression is calculated, priced, and saved as a number
 
   await page.goto("/office-v2");
   let dialog = await edit(page, "V2 Calculator");
-  const cost = dialog.getByTestId("v2-item-cost-0");
+  const cost = dialog.getByTestId("v2-item-total-cost-0");
   await cost.fill("4.3*150");
   await cost.press("Enter");
   await expect(cost).toHaveValue("645.00");
@@ -170,16 +170,16 @@ test("a cost typed as an expression is calculated, priced, and saved as a number
 
   await page.reload();
   dialog = await edit(page, "V2 Calculator");
-  await expect(dialog.getByTestId("v2-item-cost-0")).toHaveValue("645");
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("645");
   await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("925");
 
   // A manual override survives a later cost recalculation.
   await dialog.getByTestId("v2-item-final-0").fill("999");
   await dialog.getByTestId("v2-item-final-0").press("Tab");
-  await dialog.getByTestId("v2-item-cost-0").fill("30+5");
-  await dialog.getByTestId("v2-item-cost-0").press("Enter");
-  await expect(dialog.getByTestId("v2-item-cost-0")).toHaveValue("35.00");
+  await dialog.getByTestId("v2-item-total-cost-0").fill("30+5");
+  await dialog.getByTestId("v2-item-total-cost-0").press("Enter");
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("35.00");
   await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$70.00");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("999");
 });
@@ -191,17 +191,119 @@ test("an unsafe or malformed expression keeps the text and shows an inline error
 
   await page.goto("/office-v2");
   const dialog = await edit(page, "V2 Bad Expression");
-  const cost = dialog.getByTestId("v2-item-cost-0");
+  const cost = dialog.getByTestId("v2-item-total-cost-0");
 
   await cost.fill("10/0");
   await cost.press("Enter");
   await expect(cost).toHaveValue("10/0");
-  await expect(dialog.getByTestId("v2-item-cost-0-error")).toBeVisible();
+  await expect(dialog.getByTestId("v2-item-total-cost-0-error")).toBeVisible();
 
   await cost.fill("Math.random()");
   await cost.press("Enter");
   await expect(cost).toHaveValue("Math.random()");
-  await expect(dialog.getByTestId("v2-item-cost-0-error")).toBeVisible();
+  await expect(dialog.getByTestId("v2-item-total-cost-0-error")).toBeVisible();
+});
+
+test("typing a Unit Cost computes Total Cost and prices from it", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V2 Unit Cost");
+  await addItem(page, projectId, { description: "Print", type: "PRINT", serviceType: "PRINTING", quantity: 150 });
+
+  await page.goto("/office-v2");
+  const dialog = await edit(page, "V2 Unit Cost");
+  await dialog.getByTestId("v2-item-unit-cost-0").fill("4.30");
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("645");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("925");
+});
+
+test("typing a Total Cost derives Unit Cost and prices from the total", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V2 Total Cost");
+  await addItem(page, projectId, { description: "Print", type: "PRINT", serviceType: "PRINTING", quantity: 900 });
+
+  await page.goto("/office-v2");
+  const dialog = await edit(page, "V2 Total Cost");
+  await dialog.getByTestId("v2-item-total-cost-0").fill("30");
+  await expect(dialog.getByTestId("v2-item-unit-cost-0")).toHaveValue("0.0333");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$60.00");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("60");
+});
+
+test("changing quantity in Unit Cost mode recomputes Total Cost", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V2 Qty Unit");
+  await addItem(page, projectId, { description: "Print", type: "PRINT", serviceType: "PRINTING", quantity: 100 });
+
+  await page.goto("/office-v2");
+  const dialog = await edit(page, "V2 Qty Unit");
+  await dialog.getByTestId("v2-item-unit-cost-0").fill("2");
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("200");
+
+  await dialog.getByTestId("v2-item-quantity-0").fill("150");
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("300");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$430.00");
+});
+
+test("changing quantity in Total Cost mode keeps Total Cost and recomputes Unit Cost", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V2 Qty Total");
+  await addItem(page, projectId, {
+    description: "Print",
+    type: "PRINT",
+    serviceType: "PRINTING",
+    quantity: 100,
+    printCost: 200,
+  });
+
+  await page.goto("/office-v2");
+  const dialog = await edit(page, "V2 Qty Total");
+  // Existing data always opens in Total Cost mode.
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("200");
+  await expect(dialog.getByTestId("v2-item-unit-cost-0")).toHaveValue("2.00");
+
+  await dialog.getByTestId("v2-item-quantity-0").fill("200");
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("200");
+  await expect(dialog.getByTestId("v2-item-unit-cost-0")).toHaveValue("1.00");
+});
+
+test("a manual override survives a Unit Cost and quantity change", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V2 Unit Override");
+  await addItem(page, projectId, { description: "Print", type: "PRINT", serviceType: "PRINTING", quantity: 150 });
+
+  await page.goto("/office-v2");
+  const dialog = await edit(page, "V2 Unit Override");
+  await dialog.getByTestId("v2-item-unit-cost-0").fill("4.30");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
+
+  await dialog.getByTestId("v2-item-final-0").fill("950");
+  await dialog.getByTestId("v2-item-final-0").press("Tab");
+
+  await dialog.getByTestId("v2-item-quantity-0").fill("200");
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("860");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$1,230.00");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("950");
+});
+
+test("legacy printCost is read as Total Cost, never as Unit Cost", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V2 Legacy Cost");
+  await addItem(page, projectId, {
+    description: "Print x900",
+    type: "PRINT",
+    serviceType: "PRINTING",
+    quantity: 900,
+    printCost: 30,
+    amount: 60,
+  });
+
+  await page.goto("/office-v2");
+  const dialog = await edit(page, "V2 Legacy Cost");
+  await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("30");
+  await expect(dialog.getByTestId("v2-item-unit-cost-0")).toHaveValue("0.0333");
+  // Opening a line for edit must never itself change what was already saved.
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("60");
 });
 
 test("a missing price is 'Price pending', never $0, and holds the project back", async ({ page }) => {
@@ -278,7 +380,7 @@ test("editing a ready project keeps it ready, and it bills, archives and comes b
   await dialog.getByTestId("v2-add-item").click();
   await dialog.getByTestId("v2-item-service-1").selectOption("PRINTING");
   await dialog.getByTestId("v2-item-description-1").fill("Print run");
-  await dialog.getByTestId("v2-item-cost-1").fill("50");
+  await dialog.getByTestId("v2-item-unit-cost-1").fill("50");
   await expect(dialog.getByTestId("v2-modal-total")).toHaveText("$125.00");
   await dialog.getByTestId("v2-modal-save").click();
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();

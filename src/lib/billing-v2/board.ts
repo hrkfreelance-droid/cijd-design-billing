@@ -17,9 +17,11 @@ import { isCostPriced, serviceForItem, type ServiceDefinition } from "./services
 export interface BoardItem {
   item: BillingItem;
   service: ServiceDefinition;
-  /** Cost of bought-in work; null when the service is not cost-priced or no cost is known. */
+  /** Total cost of bought-in work; null when the service is not cost-priced or no cost is known. */
   cost: number | null;
-  /** The price the cost rule suggests; null when the service is not cost-priced. */
+  /** `cost` ÷ quantity — always derived, never stored; null under the same conditions as `cost`. */
+  unitCost: number | null;
+  /** The price the cost rule suggests, from the *total* cost; null when the service is not cost-priced. */
   recommended: number | null;
   /** The margin band behind `recommended`, as a fraction (0.5 = 50%). */
   margin: number | null;
@@ -124,11 +126,13 @@ export function toBoardItem(item: BillingItem, snapshot?: Pick<Snapshot, "servic
   const service = serviceForItem(item, snapshot?.serviceTypes ?? []);
   const costPriced = isCostPriced(service);
   const cost = costPriced ? (item.printCost ?? null) : null;
+  const unitCost = cost == null || item.quantity <= 0 ? null : cost / item.quantity;
   const recommended = cost == null ? null : printSellingPriceFromCost(cost);
   return {
     item,
     service,
     cost,
+    unitCost,
     recommended,
     margin: cost == null ? null : printMarginFromCost(cost),
     manual: costPriced && item.amount != null && recommended != null && item.amount !== recommended,

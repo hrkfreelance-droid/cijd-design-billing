@@ -1,6 +1,6 @@
 "use client";
 
-import { nextFinalPrice, printSellingPriceFromCost } from "@/lib/billing-v2/pricing";
+import { formatUnitCost, nextFinalPrice, printSellingPriceFromCost, roundCents } from "@/lib/billing-v2/pricing";
 import { evaluateMoneyExpression } from "@/lib/expr";
 import {
   DEFAULT_SERVICE,
@@ -13,6 +13,9 @@ import type { BoardItem } from "@/lib/billing-v2/board";
 
 type ServiceTypes = readonly { key: string; name: string; active: boolean }[];
 
+/** Which cost field a person is actually typing into right now. */
+export type CostInputMode = "UNIT" | "TOTAL";
+
 /**
  * One editable line in the project modal.
  *
@@ -20,6 +23,12 @@ type ServiceTypes = readonly { key: string; name: string; active: boolean }[];
  * `priceTouched` is what makes a price the person's own — once it is set, a
  * cost edit refreshes the recommendation beside the price but leaves the price
  * where they put it.
+ *
+ * A printing line carries its cost two ways at once — Unit Cost and Total
+ * Cost — because both are real quotes a print shop gives ("$4.30 each" or
+ * "$30 for the lot"). `costMode` says which one is the source right now: it is
+ * kept in sync from the other (Total = Qty × Unit), and a Quantity edit only
+ * ever recomputes the field that *isn't* the source.
  */
 export interface ItemDraft {
   /** Stable across re-renders, including for lines that have no id yet. */
@@ -28,7 +37,9 @@ export interface ItemDraft {
   serviceKey: ServiceKey;
   description: string;
   quantity: string;
-  cost: string;
+  costMode: CostInputMode;
+  unitCost: string;
+  totalCost: string;
   finalPrice: string;
   priceTouched: boolean;
   removed: boolean;
@@ -38,13 +49,20 @@ export interface ItemDraft {
 let sequence = 0;
 
 export function draftFromItem(entry: BoardItem): ItemDraft {
+  const quantity = entry.item.quantity;
+  const totalCost = entry.item.printCost;
   return {
     key: entry.item.id,
     id: entry.item.id,
     serviceKey: entry.service.key,
     description: entry.item.description,
-    quantity: String(entry.item.quantity),
-    cost: entry.item.printCost == null ? "" : String(entry.item.printCost),
+    quantity: String(quantity),
+    // Every printCost on record was always a total, never a per-unit price —
+    // keep reading it that way. Unit Cost starts as a derived display only;
+    // it becomes the source the moment someone types into it.
+    costMode: "TOTAL",
+    totalCost: totalCost == null ? "" : String(totalCost),
+    unitCost: totalCost == null || !quantity ? "" : formatUnitCost(totalCost / quantity),
     finalPrice: entry.amount == null ? "" : String(entry.amount),
     // A price that still equals its recommendation keeps following the cost.
     priceTouched: entry.manual,
@@ -61,7 +79,9 @@ export function blankDraft(serviceKey: ServiceKey = DEFAULT_SERVICE.key): ItemDr
     serviceKey,
     description: "",
     quantity: "1",
-    cost: "",
+    costMode: "UNIT",
+    unitCost: "",
+    totalCost: "",
     finalPrice: "",
     priceTouched: false,
     removed: false,
@@ -88,30 +108,91 @@ function isInvalidAmount(value: string): boolean {
   return value.trim() !== "" && parseAmount(value) === null;
 }
 
-export function draftCost(draft: ItemDraft, serviceTypes: ServiceTypes = []): number | null {
-  return isCostPriced(draftService(draft, serviceTypes)) ? parseAmount(draft.cost) : null;
+export function draftQuantity(draft: ItemDraft): number | null {
+  return parseAmount(draft.quantity);
 }
 
+/** Total cost, computed the same way no matter which field is the source. */
+function rawTotalCost(draft: ItemDraft): number | null {
+  if (draft.costMode === "TOTAL") return parseAmount(draft.totalCost);
+  const unit = parseAmount(draft.unitCost);
+  const qty = draftQuantity(draft);
+  return unit == null || qty == null || qty <= 0 ? null : roundCents(unit * qty);
+}
+
+/** Unit cost, computed the same way no matter which field is the source. */
+function rawUnitCost(draft: ItemDraft): number | null {
+  if (draft.costMode === "UNIT") return parseAmount(draft.unitCost);
+  const total = parseAmount(draft.totalCost);
+  const qty = draftQuantity(draft);
+  return total == null || qty == null || qty <= 0 ? null : total / qty;
+}
+
+export function draftTotalCost(draft: ItemDraft, serviceTypes: ServiceTypes = []): number | null {
+  return isCostPriced(draftService(draft, serviceTypes)) ? rawTotalCost(draft) : null;
+}
+
+export function draftUnitCost(draft: ItemDraft, serviceTypes: ServiceTypes = []): number | null {
+  return isCostPriced(draftService(draft, serviceTypes)) ? rawUnitCost(draft) : null;
+}
+
+/** The pricing rule always reads Total Cost, never Unit Cost. */
 export function draftRecommended(draft: ItemDraft, serviceTypes: ServiceTypes = []): number | null {
-  const cost = draftCost(draft, serviceTypes);
-  return cost == null ? null : printSellingPriceFromCost(cost);
+  const total = draftTotalCost(draft, serviceTypes);
+  return total == null ? null : printSellingPriceFromCost(total);
 }
 
 export function draftFinal(draft: ItemDraft): number | null {
   return parseAmount(draft.finalPrice);
 }
 
-/** The cost changed: move the price with it unless a person set the price. */
-export function withCost(draft: ItemDraft, cost: string, serviceTypes: ServiceTypes = []): ItemDraft {
-  const next: ItemDraft = { ...draft, cost };
-  const nextCost = draftCost(next, serviceTypes);
-  if (nextCost == null) return next;
+/**
+ * Refreshes whichever cost field is not the source, and moves Final Billing
+ * with the new Total Cost unless a person set the price by hand.
+ */
+function recomputeCost(draft: ItemDraft, serviceTypes: ServiceTypes): ItemDraft {
+  let next = draft;
+  if (isCostPriced(draftService(draft, serviceTypes))) {
+    const qty = draftQuantity(draft);
+    if (draft.costMode === "UNIT") {
+      const unit = parseAmount(draft.unitCost);
+      if (unit != null && qty != null && qty > 0) {
+        next = { ...draft, totalCost: String(roundCents(unit * qty)) };
+      }
+    } else {
+      const total = parseAmount(draft.totalCost);
+      if (total != null && qty != null && qty > 0) {
+        next = { ...draft, unitCost: formatUnitCost(total / qty) };
+      }
+    }
+  }
+  const totalCost = rawTotalCost(next);
+  if (totalCost == null) return next;
   const final = nextFinalPrice({
-    cost: nextCost,
+    cost: totalCost,
     manual: draft.priceTouched,
     currentFinal: draftFinal(draft) ?? 0,
   });
   return draft.priceTouched ? next : { ...next, finalPrice: String(final) };
+}
+
+/**
+ * A Quantity edit recomputes only the field that isn't the source: in UNIT
+ * mode Total Cost follows Qty × Unit; in TOTAL mode Total Cost holds still
+ * and Unit Cost is what moves.
+ */
+export function withQuantity(draft: ItemDraft, quantity: string, serviceTypes: ServiceTypes = []): ItemDraft {
+  return recomputeCost({ ...draft, quantity }, serviceTypes);
+}
+
+/** Unit Cost changed by hand: it becomes the source, Total Cost follows it. */
+export function withUnitCost(draft: ItemDraft, unitCost: string, serviceTypes: ServiceTypes = []): ItemDraft {
+  return recomputeCost({ ...draft, costMode: "UNIT", unitCost }, serviceTypes);
+}
+
+/** Total Cost changed by hand: it becomes the source, Unit Cost follows it. */
+export function withTotalCost(draft: ItemDraft, totalCost: string, serviceTypes: ServiceTypes = []): ItemDraft {
+  return recomputeCost({ ...draft, costMode: "TOTAL", totalCost }, serviceTypes);
 }
 
 export function draftTotal(drafts: ItemDraft[]): number {
@@ -133,7 +214,8 @@ export function draftErrors(draft: ItemDraft): Set<DraftField> {
   if (draft.removed) return errors;
   const quantity = parseAmount(draft.quantity);
   if (quantity == null || quantity <= 0) errors.add("quantity");
-  if (isInvalidAmount(draft.cost)) errors.add("cost");
+  const costText = draft.costMode === "UNIT" ? draft.unitCost : draft.totalCost;
+  if (isInvalidAmount(costText)) errors.add("cost");
   if (isInvalidAmount(draft.finalPrice)) errors.add("finalPrice");
   return errors;
 }
@@ -154,8 +236,8 @@ export function draftChanged(draft: ItemDraft): boolean {
   return (
     draft.serviceKey !== before.service.key ||
     draft.description.trim() !== before.item.description ||
-    parseAmount(draft.quantity) !== before.item.quantity ||
+    draftQuantity(draft) !== before.item.quantity ||
     draftFinal(draft) !== before.amount ||
-    (isCostPriced(before.service) && parseAmount(draft.cost) !== (before.item.printCost ?? null))
+    (isCostPriced(before.service) && rawTotalCost(draft) !== (before.item.printCost ?? null))
   );
 }

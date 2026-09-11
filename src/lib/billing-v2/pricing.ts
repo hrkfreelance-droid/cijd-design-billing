@@ -29,6 +29,21 @@ export function roundCents(amount: number): number {
   return Math.round((amount + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Unit cost for display when it is derived from Total Cost ÷ Quantity: a
+ * $30-for-900 job is $0.0333, not $0.03, so this keeps the fraction that
+ * matters while still collapsing a whole-dollar unit cost to plain cents.
+ */
+export function formatUnitCost(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  const rounded = Math.round((value + Number.EPSILON) * 1e6) / 1e6;
+  let text = rounded.toFixed(4);
+  while (text[text.length - 1] === "0" && text.split(".")[1].length > 2) {
+    text = text.slice(0, -1);
+  }
+  return text;
+}
+
 export function printMarginFromCost(cost: number): number {
   if (!Number.isFinite(cost) || cost < 0) return 0;
   return PRINT_MARGIN_BANDS.find((band) => cost <= band.upTo)?.margin ?? 0.3;

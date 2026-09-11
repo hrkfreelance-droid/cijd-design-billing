@@ -10,12 +10,14 @@ import { evaluateMoneyExpression } from "@/lib/expr";
 import { moneyExact } from "@/lib/format";
 import type { ServiceType } from "@/lib/types";
 import {
-  draftCost,
   draftErrors,
   draftFinal,
   draftRecommended,
   draftService,
-  withCost,
+  draftTotalCost,
+  withQuantity,
+  withTotalCost,
+  withUnitCost,
   type ItemDraft,
 } from "./item-draft";
 
@@ -23,7 +25,7 @@ const NEW_SERVICE = "__new__";
 
 /** Desktop column rhythm shared by the header row and every line. */
 export const EDIT_GRID =
-  "sm:grid sm:grid-cols-[8.5rem_minmax(0,1fr)_4.25rem_6.5rem_7rem_2.25rem] sm:items-start sm:gap-x-3";
+  "sm:grid sm:grid-cols-[7rem_minmax(0,1fr)_3.5rem_5.5rem_5.75rem_6.5rem_2.25rem] sm:items-start sm:gap-x-2.5";
 
 /** Column headings for the edit list; phones label each field instead. */
 export function ItemEditorHeader({ showCost }: { showCost: boolean }) {
@@ -33,7 +35,8 @@ export function ItemEditorHeader({ showCost }: { showCost: boolean }) {
       <span>{t("v2.service")}</span>
       <span>{t("v2.description")}</span>
       <span>{t("v2.quantity")}</span>
-      <span>{showCost ? t("v2.cost") : ""}</span>
+      <span>{showCost ? t("v2.unitCost") : ""}</span>
+      <span>{showCost ? t("v2.totalCost") : ""}</span>
       <span>{t("v2.finalPrice")}</span>
       <span />
     </div>
@@ -75,7 +78,7 @@ export function ItemEditor({
   const service = draftService(draft, serviceTypes);
   const costPriced = isCostPriced(service);
   const recommended = draftRecommended(draft, serviceTypes);
-  const cost = draftCost(draft, serviceTypes);
+  const totalCost = draftTotalCost(draft, serviceTypes);
   const final = draftFinal(draft);
   const errors = draftErrors(draft);
   const overridden = costPriced && recommended != null && final != null && final !== recommended;
@@ -112,7 +115,10 @@ export function ItemEditor({
       return;
     }
     const next: ItemDraft = { ...draft, serviceKey: key as ServiceKey };
-    if (!isCostPriced(draftService(next, serviceTypes))) next.cost = "";
+    if (!isCostPriced(draftService(next, serviceTypes))) {
+      next.unitCost = "";
+      next.totalCost = "";
+    }
     onChange(next);
   };
 
@@ -125,7 +131,7 @@ export function ItemEditor({
     if (key) {
       setAddingService(false);
       setServiceName("");
-      onChange({ ...draft, serviceKey: key, cost: "" });
+      onChange({ ...draft, serviceKey: key, unitCost: "", totalCost: "" });
     }
   };
 
@@ -167,7 +173,7 @@ export function ItemEditor({
             <Input
               inputMode="numeric"
               value={draft.quantity}
-              onChange={(event) => patch({ quantity: event.target.value })}
+              onChange={(event) => onChange(withQuantity(draft, event.target.value, serviceTypes))}
               aria-invalid={errors.has("quantity") || undefined}
               className={`tnum ${errors.has("quantity") ? "!border-danger" : ""}`}
               disabled={disabled}
@@ -176,42 +182,54 @@ export function ItemEditor({
           </Field>
         </div>
 
-        <div className="col-span-2 grid grid-cols-2 gap-2 sm:contents">
-          {costPriced ? (
-            <Field label={t("v2.cost")}>
+        {costPriced ? (
+          <div className="col-span-2 grid grid-cols-2 gap-2 sm:contents">
+            <Field label={t("v2.unitCost")}>
               <MoneyInput
-                value={draft.cost}
-                onChange={(value) => onChange(withCost(draft, value, serviceTypes))}
-                invalid={errors.has("cost")}
+                value={draft.unitCost}
+                onChange={(value) => onChange(withUnitCost(draft, value, serviceTypes))}
+                invalid={errors.has("cost") && draft.costMode === "UNIT"}
                 disabled={disabled}
-                testId={`v2-item-cost-${index}`}
+                testId={`v2-item-unit-cost-${index}`}
               />
             </Field>
-          ) : (
+            <Field label={t("v2.totalCost")}>
+              <MoneyInput
+                value={draft.totalCost}
+                onChange={(value) => onChange(withTotalCost(draft, value, serviceTypes))}
+                invalid={errors.has("cost") && draft.costMode === "TOTAL"}
+                disabled={disabled}
+                testId={`v2-item-total-cost-${index}`}
+              />
+            </Field>
+          </div>
+        ) : (
+          <>
             <span className="hidden sm:block" aria-hidden />
-          )}
-          <Field label={t("v2.finalPrice")} className={costPriced ? "" : "col-span-2 sm:col-span-1"}>
-            <MoneyInput
-              value={draft.finalPrice}
-              placeholder={t("v2.price.pending")}
-              onChange={(value) => patch({ finalPrice: value, priceTouched: true })}
-              invalid={errors.has("finalPrice")}
-              disabled={disabled}
-              testId={`v2-item-final-${index}`}
-            />
-          </Field>
-        </div>
+            <span className="hidden sm:block" aria-hidden />
+          </>
+        )}
+        <Field label={t("v2.finalPrice")} className="col-span-2 sm:col-span-1">
+          <MoneyInput
+            value={draft.finalPrice}
+            placeholder={t("v2.price.pending")}
+            onChange={(value) => patch({ finalPrice: value, priceTouched: true })}
+            invalid={errors.has("finalPrice")}
+            disabled={disabled}
+            testId={`v2-item-final-${index}`}
+          />
+        </Field>
 
         {/* One button, placed beside the service on a phone and at the row end on a desktop. */}
         <RemoveButton
           onClick={onRemove}
           index={index}
-          className="col-start-2 row-start-1 flex self-end sm:col-start-6 sm:self-start"
+          className="col-start-2 row-start-1 flex self-end sm:col-start-7 sm:self-start"
         />
       </div>
 
       {addingService && (
-        <div className="mt-2.5 flex flex-wrap items-center gap-2 sm:ml-[calc(8.5rem+0.75rem)]" data-testid="v2-new-service">
+        <div className="mt-2.5 flex flex-wrap items-center gap-2 sm:ml-[calc(7rem+0.625rem)]" data-testid="v2-new-service">
           <Input
             autoFocus
             value={serviceName}
@@ -247,16 +265,16 @@ export function ItemEditor({
       )}
 
       {costPriced && (
-        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted sm:ml-[calc(8.5rem+0.75rem)]">
+        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-muted sm:ml-[calc(7rem+0.625rem)]">
           <span>
             {t("v2.recommended")}{" "}
             <span className="tnum text-text" data-testid={`v2-item-recommended-${index}`}>
               {recommended == null ? "—" : moneyExact(recommended)}
             </span>
-            {cost != null && (
+            {totalCost != null && (
               <span className="text-faint">
                 {" · "}
-                {t("v2.margin", { percent: Math.round(printMarginFromCost(cost) * 100) })}
+                {t("v2.margin", { percent: Math.round(printMarginFromCost(totalCost) * 100) })}
               </span>
             )}
           </span>
