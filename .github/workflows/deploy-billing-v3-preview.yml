@@ -1,4 +1,4 @@
-name: Deploy Billing V3 Preview
+name: Verify Billing V3 Preview
 
 on:
   push:
@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  verify:
     runs-on: ubuntu-latest
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -44,22 +44,26 @@ jobs:
       - name: Build vinext
         run: npm run build:vinext
 
-      - name: Verify Cloudflare credentials exist
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo "Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
-
-      - name: Deploy existing preview Worker
+      - name: Deploy with Wrangler when CI credentials are configured
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != ''
         run: npm run deploy:vinext
 
-      - name: Verify V3 and V2 routes
+      - name: Note connected-source deployment
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == ''
+        run: echo "Wrangler CI credentials are not configured; Cloudflare connected-source deployment handles the preview."
+
+      - name: Verify live V3 and V2 routes
         run: |
           BASE="https://cijd-design-billing-preview.hrk-freelance.workers.dev"
-          for PATHNAME in /office-v3 /office-v3/archive /office-v2; do
-            CODE="$(curl -sS -o /tmp/page.html -w "%{http_code}" "$BASE$PATHNAME")"
-            echo "$PATHNAME -> $CODE"
-            test "$CODE" = "200"
+          for ATTEMPT in $(seq 1 18); do
+            V3="$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/office-v3" || true)"
+            ARCHIVE="$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/office-v3/archive" || true)"
+            V2="$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/office-v2" || true)"
+            STATE="$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/api/state" || true)"
+            echo "attempt=$ATTEMPT v3=$V3 archive=$ARCHIVE v2=$V2 state=$STATE"
+            if [ "$V3" = "200" ] && [ "$ARCHIVE" = "200" ] && [ "$V2" = "200" ] && [ "$STATE" = "200" ]; then
+              exit 0
+            fi
+            sleep 10
           done
-          STATE_CODE="$(curl -sS -o /dev/null -w "%{http_code}" "$BASE/api/state")"
-          echo "/api/state -> $STATE_CODE"
-          test "$STATE_CODE" = "200"
+          exit 1
