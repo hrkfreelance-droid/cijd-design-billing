@@ -121,7 +121,10 @@ export function BillingV3Board({ snapshot }: { snapshot: Snapshot }) {
   const empty = board.ready.length === 0 && board.inProgress.length === 0;
 
   return (
-    <div className={chosen.length ? "pb-36" : "pb-16"}>
+    <div
+      className={chosen.length ? "pb-36" : "pb-16"}
+      data-v3-pricing-mode="qty-unit-derived-total"
+    >
       <header className="px-5 pb-2 pt-6 sm:px-8 sm:pt-8">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
