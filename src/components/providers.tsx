@@ -54,30 +54,20 @@ export async function api<T>(
   return payload.data as T;
 }
 
-const SNAPSHOT_RETRY_DELAYS = [0, 300, 700, 1200, 2000, 3000] as const;
-
-function stateErrorIsRetryable(error: unknown): boolean {
-  if (!(error instanceof ApiError)) return true;
-  return !["UNAUTHENTICATED", "FORBIDDEN"].includes(error.code);
-}
-
 /**
- * Cloudflare cold starts and short Supabase edge hiccups can make the first
- * state read fail even though the session is valid. Retry automatically with
- * bounded backoff so a normal page open does not require a manual reload.
+ * The first read after a cold start occasionally fails once on the edge
+ * worker. Try again briefly before showing the "could not connect" screen.
  */
-async function loadSnapshot(attempts = SNAPSHOT_RETRY_DELAYS.length): Promise<Snapshot | null> {
-  const limit = Math.max(1, Math.min(attempts, SNAPSHOT_RETRY_DELAYS.length));
-  for (let attempt = 0; attempt < limit; attempt += 1) {
-    const delay = SNAPSHOT_RETRY_DELAYS[attempt] ?? 0;
-    if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+async function loadSnapshot(attempts = 3): Promise<Snapshot | null> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       return await api<Snapshot>("/api/state");
     } catch (error) {
-      if (!stateErrorIsRetryable(error) || attempt === limit - 1) {
+      if (attempt === attempts) {
         console.error("[state] could not load", error);
         return null;
       }
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
     }
   }
   return null;
@@ -183,11 +173,8 @@ export function Providers({ children }: { children: ReactNode }) {
       access: SessionAccess;
     }>("/api/session");
     setSession({ user: who.user ?? user, users: who.users, auth: who.auth, access: who.access });
-    const data = await loadSnapshot(3);
-    if (data) {
-      setSnapshot(data);
-      setError(null);
-    }
+    const data = await api<Snapshot>("/api/state").catch(() => null);
+    if (data) setSnapshot(data);
   }, []);
 
   const signOut = useCallback(async () => {
@@ -201,15 +188,15 @@ export function Providers({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
-    const data = await loadSnapshot();
-    if (data) {
+    try {
+      const data = await api<Snapshot>("/api/state");
       setSnapshot(data);
       setError(null);
-    } else {
-      setError("OFFLINE");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ERROR");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -238,29 +225,9 @@ export function Providers({ children }: { children: ReactNode }) {
       }
       const data = await loadSnapshot();
       if (!live) return;
-      if (data) {
-        setSnapshot(data);
-        setError(null);
-        setLoading(false);
-        return;
-      }
-
-      setError("OFFLINE");
+      if (data) setSnapshot(data);
+      else setError("OFFLINE");
       setLoading(false);
-
-      // Keep recovering in the background. If the edge/backend wakes up after
-      // the visible retry window, the screen repairs itself without a reload.
-      for (const delay of [2000, 4000, 8000]) {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        if (!live) return;
-        const recovered = await loadSnapshot(2);
-        if (!live) return;
-        if (recovered) {
-          setSnapshot(recovered);
-          setError(null);
-          return;
-        }
-      }
     })();
     return () => {
       live = false;
@@ -293,14 +260,10 @@ export function Providers({ children }: { children: ReactNode }) {
             setLoading(false);
             return;
           }
-          const data = await loadSnapshot(3);
+          const data = await api<Snapshot>("/api/state").catch(() => null);
           if (!live) return;
-          if (data) {
-            setSnapshot(data);
-            setError(null);
-          } else {
-            setError("OFFLINE");
-          }
+          if (data) setSnapshot(data);
+          else setError("OFFLINE");
           setLoading(false);
         })
         .catch(() => {
