@@ -71,3 +71,16 @@ test("V3 manual Final Billing survives Qty and Unit Cost changes", () => {
   assert.equal(draftRecommended(changed), 575);
   assert.equal(draftFinal(changed), 515);
 });
+
+test("V3 Qty 180 -> 181 with Unit Cost 4.30 makes Total Cost 778.30", () => {
+  const draft = {
+    ...draftFromItem(boardItem()),
+    quantity: "180",
+    unitCost: "4.30",
+    totalCost: "774",
+  } satisfies ItemDraft;
+  const changed = withQuantity(draft, "181");
+  assert.equal(draftUnitCost(changed), 4.3);
+  assert.equal(draftTotalCost(changed), 778.3);
+  assert.equal(changed.totalCost, "778.3");
+});
