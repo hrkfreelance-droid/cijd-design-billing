@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { BillingV2Shell } from "@/components/billing-v2/v2-shell";
+import { BillingV3Shell } from "@/components/billing-v3/v3-shell";
 import { canAny, homeFor } from "@/lib/auth/roles";
 import { currentUser } from "@/lib/auth/session";
 import { isLocalDemoRuntime } from "@/lib/runtime";
@@ -13,5 +13,5 @@ export default async function BillingV3Layout({ children }: { children: React.Re
     if (!user) redirect("/signin");
     if (!canAny(user.role, ["billing:read", "billing:price:write"])) redirect(homeFor(user.role));
   }
-  return <BillingV2Shell basePath="/office-v3">{children}</BillingV2Shell>;
+  return <BillingV3Shell>{children}</BillingV3Shell>;
 }
