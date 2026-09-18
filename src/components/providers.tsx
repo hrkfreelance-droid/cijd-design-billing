@@ -66,7 +66,7 @@ function stateErrorIsRetryable(error: unknown): boolean {
  * state read fail even though the session is valid. Retry automatically with
  * bounded backoff so a normal page open does not require a manual reload.
  */
-async function loadSnapshot(attempts = SNAPSHOT_RETRY_DELAYS.length): Promise<Snapshot | null> {
+async function loadSnapshot(attempts: number = SNAPSHOT_RETRY_DELAYS.length): Promise<Snapshot | null> {
   const limit = Math.max(1, Math.min(attempts, SNAPSHOT_RETRY_DELAYS.length));
   for (let attempt = 0; attempt < limit; attempt += 1) {
     const delay = SNAPSHOT_RETRY_DELAYS[attempt] ?? 0;
