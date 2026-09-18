@@ -19,12 +19,22 @@ import { canAny, homeFor } from "@/lib/auth/roles";
  * a desktop — name, the two places, then language, theme and account — and
  * splits the two places onto their own line on a phone.
  */
-const TABS = [
-  { href: "/office-v2", key: "v2.nav.billing" },
-  { href: "/office-v2/archive", key: "v2.nav.archive" },
-] as const;
+type BillingBasePath = "/office-v2" | "/office-v3";
 
-export function BillingV2Shell({ children }: { children: ReactNode }) {
+function tabsFor(basePath: BillingBasePath) {
+  return [
+    { href: basePath, key: "v2.nav.billing" },
+    { href: `${basePath}/archive`, key: "v2.nav.archive" },
+  ] as const;
+}
+
+export function BillingV2Shell({
+  children,
+  basePath = "/office-v2",
+}: {
+  children: ReactNode;
+  basePath?: BillingBasePath;
+}) {
   const { user, ready } = useSession();
   const router = useRouter();
   const allowed = !!user && canAny(user.role, ["billing:read", "billing:price:write"]);
@@ -37,7 +47,7 @@ export function BillingV2Shell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-bg">
-      <Header />
+      <Header basePath={basePath} />
       <main className="mx-auto max-w-[960px]">
         {ready && allowed ? <Content>{children}</Content> : <BoardSkeleton />}
       </main>
@@ -45,13 +55,14 @@ export function BillingV2Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function Header() {
+function Header({ basePath }: { basePath: BillingBasePath }) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const tabItems = tabsFor(basePath);
 
   const tabs = (
     <>
-      {TABS.map(({ href, key }) => {
+      {tabItems.map(({ href, key }) => {
         const active = pathname === href;
         return (
           <Link
@@ -73,7 +84,7 @@ function Header() {
     <header className="header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
       <div className="mx-auto flex h-[52px] max-w-[960px] items-stretch gap-7 px-5 sm:px-8">
         <Link
-          href="/office-v2"
+          href={basePath}
           className="flex shrink-0 items-center text-[15px] font-semibold tracking-[-0.015em]"
           data-testid="v2-brand"
         >
