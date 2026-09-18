@@ -57,11 +57,10 @@ export function draftFromItem(entry: BoardItem): ItemDraft {
     serviceKey: entry.service.key,
     description: entry.item.description,
     quantity: String(quantity),
-    // V2 behavior: quantity changes must never rewrite the unit cost.
-    // Existing records only store total print cost, so derive the current unit
-    // cost once when editing opens, then treat Unit Cost as the source.
-    // From there: Total Cost = Qty × Unit Cost.
-    costMode: "UNIT",
+    // Every printCost on record was always a total, never a per-unit price —
+    // keep reading it that way. Unit Cost starts as a derived display only;
+    // it becomes the source the moment someone types into it.
+    costMode: "TOTAL",
     totalCost: totalCost == null ? "" : String(totalCost),
     unitCost: totalCost == null || !quantity ? "" : formatUnitCost(totalCost / quantity),
     finalPrice: entry.amount == null ? "" : String(entry.amount),
