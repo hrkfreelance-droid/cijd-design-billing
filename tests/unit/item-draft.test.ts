@@ -103,11 +103,16 @@ test("a manual override survives a later Unit Cost and quantity change", () => {
   assert.equal(draftFinal(requantified), 950);
 });
 
-test("legacy printCost is read as Total Cost, never as Unit Cost", () => {
-  const fromLegacyData = draftFromItem(boardItem({}));
-  assert.equal(fromLegacyData.costMode, "TOTAL");
-  assert.equal(draftTotalCost(fromLegacyData), 30);
-  assert.equal(draftUnitCost(fromLegacyData), 30 / 900);
+test("existing printing rows keep Unit Cost fixed when Qty changes", () => {
+  const fromStoredData = draftFromItem(boardItem({}));
+  assert.equal(fromStoredData.costMode, "UNIT");
+  assert.equal(draftTotalCost(fromStoredData), 30);
+  assert.equal(draftUnitCost(fromStoredData), 30 / 900);
   // Opening a line for edit must never itself change what was already saved.
-  assert.equal(draftFinal(fromLegacyData), 60);
+  assert.equal(draftFinal(fromStoredData), 60);
+
+  const requantified = withQuantity(fromStoredData, "1800");
+  assert.equal(draftUnitCost(requantified), 30 / 900);
+  assert.equal(draftTotalCost(requantified), 60);
+  assert.equal(draftRecommended(requantified), 100);
 });
