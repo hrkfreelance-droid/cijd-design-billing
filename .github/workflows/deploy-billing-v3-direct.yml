@@ -1,0 +1,156 @@
+name: Direct Deploy Billing V3
+
+on:
+  push:
+    branches:
+      - feature/billing-v3
+    paths:
+      - ".github/workflows/deploy-billing-v3-direct.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cijd-billing-v3-direct
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN_1: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TOKEN_2: ${{ secrets.CF_API_TOKEN }}
+      TOKEN_3: ${{ secrets.CLOUDFLARE_TOKEN }}
+      TOKEN_4: ${{ secrets.WORKERS_API_TOKEN }}
+      TOKEN_5: ${{ secrets.CLOUDFLARE_WORKERS_API_TOKEN }}
+      TOKEN_6: ${{ secrets.CLOUDFLARE_WORKERS_TOKEN }}
+      TOKEN_7: ${{ secrets.CLOUDFLARE_DEPLOY_TOKEN }}
+      TOKEN_8: ${{ secrets.CF_WORKERS_TOKEN }}
+      ACCOUNT_1: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      ACCOUNT_2: ${{ secrets.CF_ACCOUNT_ID }}
+      ACCOUNT_3: ${{ secrets.CLOUDFLARE_ACCOUNT }}
+      WORKER_NAME: cijd-design-billing-preview
+      BASE_URL: https://cijd-design-billing-preview.hrk-freelance.workers.dev
+
+    steps:
+      - name: Checkout exact V3 branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: feature/billing-v3
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Verify V2 is untouched
+        run: |
+          git fetch origin feature/billing-v2-money-calculator
+          git diff --exit-code origin/feature/billing-v2-money-calculator --             src/components/billing-v2             src/components/providers.tsx             src/app/office-v2
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build vinext
+        run: npm run build:vinext
+
+      - name: Resolve Cloudflare credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN=""
+          for CANDIDATE in "$TOKEN_1" "$TOKEN_2" "$TOKEN_3" "$TOKEN_4" "$TOKEN_5" "$TOKEN_6" "$TOKEN_7" "$TOKEN_8"; do
+            if [ -n "$CANDIDATE" ]; then
+              TOKEN="$CANDIDATE"
+              break
+            fi
+          done
+          if [ -z "$TOKEN" ]; then
+            echo "::error::No Cloudflare API token is configured in the repository secrets."
+            exit 2
+          fi
+          echo "::add-mask::$TOKEN"
+          echo "CLOUDFLARE_API_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+
+          ACCOUNT=""
+          for CANDIDATE in "$ACCOUNT_1" "$ACCOUNT_2" "$ACCOUNT_3"; do
+            if [ -n "$CANDIDATE" ]; then
+              ACCOUNT="$CANDIDATE"
+              break
+            fi
+          done
+
+          if [ -z "$ACCOUNT" ]; then
+            ACCOUNTS_JSON="$(curl -fsS -H "Authorization: Bearer $TOKEN" https://api.cloudflare.com/client/v4/accounts)"
+            ACCOUNT="$(printf '%s' "$ACCOUNTS_JSON" | jq -r '.result[]?.id' | head -n 1)"
+          fi
+
+          if [ -z "$ACCOUNT" ] || [ "$ACCOUNT" = "null" ]; then
+            echo "::error::Cloudflare account ID could not be resolved."
+            exit 3
+          fi
+
+          echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT" >> "$GITHUB_ENV"
+
+      - name: Confirm target Worker exists and snapshot bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCRIPT_JSON="$(curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts")"
+          if ! printf '%s' "$SCRIPT_JSON" | jq -e --arg N "$WORKER_NAME" '.result[]? | select(.id == $N)' >/dev/null; then
+            echo "::error::Target Worker $WORKER_NAME was not found. Refusing to create a new Worker."
+            exit 4
+          fi
+
+          curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/settings"             > /tmp/worker-settings-before.json
+
+          jq -S '[.result.bindings[]? | {name,type}]' /tmp/worker-settings-before.json > /tmp/bindings-before.json
+          echo "Existing bindings:"
+          cat /tmp/bindings-before.json
+
+      - name: Force generated config to existing preview Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/server/wrangler.json
+          jq --arg NAME "$WORKER_NAME" '.name = $NAME' dist/server/wrangler.json > /tmp/wrangler.json
+          mv /tmp/wrangler.json dist/server/wrangler.json
+          jq '{name, main, compatibility_date, compatibility_flags, assets, vars, d1_databases, kv_namespaces, r2_buckets}' dist/server/wrangler.json
+
+      - name: Deploy exact V3 build
+        run: npx wrangler deploy --config dist/server/wrangler.json --keep-vars
+
+      - name: Verify live routes and exact V3 marker
+        shell: bash
+        run: |
+          set -euo pipefail
+          for ATTEMPT in $(seq 1 18); do
+            V3="$(curl -sS -o /tmp/v3.html -w "%{http_code}" "$BASE_URL/office-v3")"
+            V2="$(curl -sS -o /dev/null -w "%{http_code}" "$BASE_URL/office-v2")"
+            STATE="$(curl -sS -o /dev/null -w "%{http_code}" "$BASE_URL/api/state")"
+            if [ "$V3" = "200" ] && [ "$V2" = "200" ] && [ "$STATE" = "200" ] && grep -q 'data-cijd-v3-build="qty-unit-derived-total"' /tmp/v3.html; then
+              echo "Live V3 marker verified."
+              exit 0
+            fi
+            echo "attempt=$ATTEMPT v3=$V3 v2=$V2 state=$STATE marker=$(grep -c 'data-cijd-v3-build' /tmp/v3.html || true)"
+            sleep 10
+          done
+          echo "::error::Live verification failed."
+          exit 5
+
+      - name: Verify bindings were preserved
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/settings"             > /tmp/worker-settings-after.json
+          jq -S '[.result.bindings[]? | {name,type}]' /tmp/worker-settings-after.json > /tmp/bindings-after.json
+          diff -u /tmp/bindings-before.json /tmp/bindings-after.json
