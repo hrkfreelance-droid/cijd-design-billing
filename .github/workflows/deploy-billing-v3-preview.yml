@@ -11,7 +11,7 @@ permissions:
 
 concurrency:
   group: cijd-billing-v3-preview
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   verify:
