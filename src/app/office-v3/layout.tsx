@@ -13,5 +13,10 @@ export default async function BillingV3Layout({ children }: { children: React.Re
     if (!user) redirect("/signin");
     if (!canAny(user.role, ["billing:read", "billing:price:write"])) redirect(homeFor(user.role));
   }
-  return <BillingV3Shell>{children}</BillingV3Shell>;
+  return (
+    <>
+      <span hidden data-cijd-v3-build="qty-unit-derived-total" />
+      <BillingV3Shell>{children}</BillingV3Shell>
+    </>
+  );
 }
