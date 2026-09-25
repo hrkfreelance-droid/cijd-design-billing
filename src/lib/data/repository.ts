@@ -161,6 +161,8 @@ export interface Repository {
     readiness: "READY" | "IN_PROGRESS" | "AUTO",
     actor?: string,
   ): Promise<Project>;
+  /** Money received before billing; null clears it. Locked once the project is billed. */
+  setProjectDeposit(id: string, amount: number | null, actor?: string): Promise<Project>;
 
   createBillingItem(input: CreateBillingItemInput): Promise<BillingItem>;
   updateBillingItem(id: string, patch: UpdateBillingItemInput): Promise<BillingItem>;
@@ -168,6 +170,17 @@ export interface Repository {
   reviewPrintPrice(id: string, input: ReviewPrintPriceInput): Promise<BillingItem>;
   /** Billing-only manual selling-price override; no specs or delivery state. */
   overrideBillingPrice(id: string, amount: number, actor?: string): Promise<BillingItem>;
+  /**
+   * The same override, carrying the final unit price with it. Either the total
+   * is the unit price × quantity, or the unit price is the typed total ÷
+   * quantity; both are rounded to cents.
+   */
+  overrideBillingUnitPrice(id: string, unitPrice: number, amount: number, actor?: string): Promise<BillingItem>;
+  /**
+   * A line's manual markup, in percent; null returns it to the 50 / 40 / 30
+   * band. Moves the recommendation only — never the final price.
+   */
+  setBillingItemMarkup(id: string, markupPercent: number | null, actor?: string): Promise<BillingItem>;
   setBillingStatus(
     id: string,
     status: BillingStatus,

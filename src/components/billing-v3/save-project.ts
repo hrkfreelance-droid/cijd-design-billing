@@ -1,13 +1,16 @@
 "use client";
 
 import { api } from "@/components/providers";
-import { printSellingPriceFromCost } from "@/lib/billing-v2/pricing";
+import { storedFinalUnitPrice } from "@/lib/billing-v2/board";
+import { printSellingPriceFromCost, roundCents } from "@/lib/billing-v2/pricing";
 import { isCostPriced } from "@/lib/billing-v2/services";
-import type { BillingItem, ServiceType } from "@/lib/types";
+import type { BillingItem, Project, ServiceType } from "@/lib/types";
 import {
   draftChanged,
   draftTotalCost,
   draftFinal,
+  draftFinalUnit,
+  draftMarkupOverride,
   draftService,
   parseAmount,
   type ItemDraft,
@@ -33,6 +36,9 @@ export interface ProjectSaveInput {
   originalNote: string;
   drafts: ItemDraft[];
   serviceTypes?: ServiceType[];
+  /** The deposit to store; undefined leaves it untouched. */
+  deposit?: number | null;
+  originalDeposit?: number | null;
   /**
    * The project was ready to bill when editing began. Editing it keeps it
    * there, as long as every line still has a price.
@@ -64,6 +70,13 @@ export async function saveProject(input: ProjectSaveInput): Promise<void> {
     }
   }
 
+  if (input.deposit !== undefined && (input.deposit ?? null) !== (input.originalDeposit ?? null)) {
+    await api<Project>(`/api/projects/${input.projectId}/deposit`, {
+      method: "PATCH",
+      body: { amount: input.deposit },
+    });
+  }
+
   const live = input.drafts.filter((draft) => !draft.removed);
   if (input.keepReady && live.length > 0 && live.every((draft) => draftFinal(draft) !== null)) {
     await api(`/api/projects/${input.projectId}/readiness`, {
@@ -82,10 +95,14 @@ async function createItem(
   const cost = draftTotalCost(draft, serviceTypes);
   const final = draftFinal(draft);
 
-  // A cost-priced line left at its recommendation is saved without an explicit
-  // price, so a later cost change is still free to move it.
+  // A cost-priced line left at its default recommendation is saved without an
+  // explicit price, so a later cost change is still free to move it.
   const followsRecommendation =
-    isCostPriced(service) && cost != null && final === printSellingPriceFromCost(cost);
+    isCostPriced(service) &&
+    draft.finalMode === "AUTO" &&
+    !draft.markupTouched &&
+    cost != null &&
+    final === printSellingPriceFromCost(cost);
 
   const created = await api<BillingItem>("/api/billing-items", {
     method: "POST",
@@ -100,12 +117,42 @@ async function createItem(
     },
   });
 
+  const markup = draftMarkupOverride(draft, serviceTypes);
+  if (markup !== null) await writeMarkup(created.id, markup);
+
   // The ledger prices a costed line from its cost on the way in; an emptied
   // price field means "pending", so say so explicitly.
   if (final === null && created.amount !== null) {
     return api<BillingItem>(`/api/billing-items/${created.id}`, { method: "PATCH", body: { amount: null } });
   }
-  return created;
+  // Whatever the ledger settled on, the number on screen is the one saved.
+  return (await writeFinal(created, draft)) ?? created;
+}
+
+/** A line's own markup (percent), or null to return it to the default band. */
+function writeMarkup(id: string, markupPercent: number | null): Promise<BillingItem> {
+  return api<BillingItem>(`/api/billing-items/${id}/markup`, {
+    method: "PATCH",
+    body: { markupPercent },
+  });
+}
+
+/**
+ * Writes the final price when the stored one differs from the draft: the
+ * total, and for a manual price the unit price that goes with it.
+ */
+async function writeFinal(stored: BillingItem, draft: ItemDraft): Promise<BillingItem | null> {
+  const final = draftFinal(draft);
+  if (final === null) return null;
+  const unit = draftFinalUnit(draft);
+  const manual = draft.finalMode !== "AUTO";
+  const amountDiffers = stored.amount === null || roundCents(stored.amount) !== final;
+  const unitDiffers = manual && unit !== null && storedFinalUnitPrice(stored) !== unit;
+  if (!amountDiffers && !unitDiffers) return null;
+  return api<BillingItem>(`/api/billing-items/${stored.id}/billing-price`, {
+    method: "PATCH",
+    body: unit === null ? { amount: final } : { amount: final, unitPrice: unit },
+  });
 }
 
 async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): Promise<void> {
@@ -134,6 +181,12 @@ async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): P
     });
   }
 
+  // The markup goes before the cost, so a recalculated recommendation uses it.
+  const markup = draftMarkupOverride(draft, serviceTypes);
+  if (costPriced && markup !== (before?.item.markupOverride ?? null)) {
+    latest = await writeMarkup(id, markup);
+  }
+
   if (costPriced && (serviceChanged || detailsChanged || before?.item.printCost !== cost)) {
     latest = await api<BillingItem>(`/api/printing-items/${id}/spec`, {
       method: "PATCH",
@@ -143,15 +196,11 @@ async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): P
 
   // The price goes last, once everything else has settled, so the number the
   // person typed is the number that survives.
-  const settled = latest ? latest.amount : (before?.amount ?? null);
-  if (final !== settled) {
-    if (final === null) {
-      await api(`/api/billing-items/${id}`, { method: "PATCH", body: { amount: null } });
-    } else {
-      await api(`/api/billing-items/${id}/billing-price`, {
-        method: "PATCH",
-        body: { amount: final },
-      });
-    }
+  if (final === null) {
+    const settled = latest ? latest.amount : (before?.amount ?? null);
+    if (settled !== null) await api(`/api/billing-items/${id}`, { method: "PATCH", body: { amount: null } });
+    return;
   }
+  const stored = latest ?? before?.item ?? null;
+  if (stored) await writeFinal(stored, draft);
 }

@@ -107,24 +107,25 @@ test("totals, print cost and the recommendation come from one place", () => {
     serviceType: "PRINTING",
     quantity: 900,
     printCost: 30,
-    amount: 60,
+    amount: 45,
   });
   const board = billingBoard(
     snapshot([project("p1", { billingReadiness: "READY" })], [item("i1", "p1", { amount: 10 }), print]),
   );
   const ready = board.ready[0].projects[0];
-  assert.equal(ready.total, 70);
+  assert.equal(ready.total, 55);
   assert.equal(ready.costTotal, 30);
   assert.equal(board.printCostOutstanding, 30);
   const line = ready.items.find((entry) => entry.item.id === "i2")!;
-  assert.equal(line.recommended, 60);
+  // $30 cost, +50% markup.
+  assert.equal(line.recommended, 45);
   assert.equal(line.margin, 0.5);
   assert.equal(line.manual, false);
 });
 
 test("a final price that differs from the recommendation is marked as set by hand", () => {
   const entry = toBoardItem(item("i1", "p1", { type: "PRINT", serviceType: "PRINTING", printCost: 60, amount: 90 }));
-  assert.equal(entry.recommended, 100);
+  assert.equal(entry.recommended, 84);
   assert.equal(entry.manual, true);
 });
 

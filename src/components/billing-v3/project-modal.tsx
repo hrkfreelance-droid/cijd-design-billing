@@ -6,11 +6,13 @@ import { api, useData, useI18n, useToast } from "@/components/providers";
 import { useAction } from "@/components/use-action";
 import { Button, Input } from "@/components/ui";
 import type { BoardProject } from "@/lib/billing-v2/board";
-import { isCostPriced, serviceLabel } from "@/lib/billing-v2/services";
+import { serviceLabel } from "@/lib/billing-v2/services";
+import { projectBalance, roundCents } from "@/lib/billing-v2/pricing";
 import { moneyExact } from "@/lib/format";
 import type { ServiceType } from "@/lib/types";
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
-import { ItemEditor, ItemEditorHeader } from "./item-editor";
+import { ItemEditor } from "./item-editor";
+import { ProjectBalanceSummary } from "./project-balance";
 import {
   blankDraft,
   draftChanged,
@@ -19,6 +21,7 @@ import {
   draftPendingCount,
   draftService,
   draftTotal,
+  parseAmount,
   type ItemDraft,
 } from "./item-draft";
 import { Modal } from "@/components/billing-v2/modal";
@@ -39,11 +42,14 @@ export function ProjectModal({
   project,
   clientName,
   serviceTypes = [],
+  depositLocked = false,
   onClose,
 }: {
   project: BoardProject;
   clientName: string;
   serviceTypes?: ServiceType[];
+  /** The project already has billed work, so its deposit is read-only. */
+  depositLocked?: boolean;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -54,6 +60,7 @@ export function ProjectModal({
   const [name, setName] = useState(project.name);
   const [note, setNote] = useState(project.note);
   const [drafts, setDrafts] = useState<ItemDraft[]>([]);
+  const [deposit, setDeposit] = useState("");
   const [wasReady, setWasReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -66,6 +73,7 @@ export function ProjectModal({
     setName(project.name);
     setNote(project.note);
     setDrafts(project.items.length ? project.items.map(draftFromItem) : [blankDraft()]);
+    setDeposit(project.balance.deposit > 0 ? project.balance.deposit.toFixed(2) : "");
     setWasReady(ready);
     setSaveError(null);
     setMode("edit");
@@ -76,13 +84,20 @@ export function ProjectModal({
     setMode("view");
   };
 
-  const live = drafts.filter((draft) => !draft.removed);
   const total = draftTotal(drafts);
   const pending = draftPendingCount(drafts);
-  const complete = name.trim() !== "" && drafts.every(draftIsComplete);
+  // An empty deposit is "none"; anything typed must be an amount of zero or more.
+  const typedDeposit = parseAmount(deposit);
+  const depositValue = typedDeposit === null ? null : roundCents(typedDeposit);
+  const depositInvalid = deposit.trim() !== "" && (depositValue === null || depositValue < 0);
+  const depositChanged = !depositLocked && !depositInvalid && (depositValue ?? 0) !== project.balance.deposit;
+  const balance = projectBalance(total, depositInvalid ? project.balance.deposit : depositValue);
+  const complete =
+    name.trim() !== "" && drafts.every((draft) => draftIsComplete(draft, serviceTypes)) && !depositInvalid;
   const dirty =
     name.trim() !== project.name ||
     note.trim() !== project.note ||
+    depositChanged ||
     drafts.some((draft) => (draft.id ? draftChanged(draft) : true));
 
   const update = (key: string, next: ItemDraft) =>
@@ -111,6 +126,8 @@ export function ProjectModal({
           description: draft.description.trim() || serviceLabel(draftService(draft, serviceTypes), t),
         })),
         serviceTypes,
+        deposit: depositChanged ? (depositValue && depositValue > 0 ? depositValue : null) : undefined,
+        originalDeposit: project.balance.deposit > 0 ? project.balance.deposit : null,
         keepReady: wasReady,
         // Record each finished line, so a retry after a dropped connection
         // neither creates a line twice nor deletes one twice.
@@ -257,7 +274,19 @@ export function ProjectModal({
       testId="v2-project-modal"
     >
       {mode === "view" ? (
-        <ProjectDetail project={project} />
+        <>
+          <ProjectDetail project={project} />
+          {/* Without a deposit, Remaining is the project total already shown. */}
+          {project.items.length > 0 && project.balance.deposit > 0 && (
+            <div className="mt-4 flex">
+              <ProjectBalanceSummary
+                balance={project.balance}
+                pending={project.pricePendingCount > 0}
+                showFinal={false}
+              />
+            </div>
+          )}
+        </>
       ) : (
         <div data-testid="v2-edit-mode">
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -284,10 +313,7 @@ export function ProjectModal({
             </label>
           </div>
 
-          <h3 className="mb-2 mt-7 text-[13px] font-semibold">{t("v2.lineItems")}</h3>
-          <ItemEditorHeader
-            showCost={live.some((draft) => isCostPriced(draftService(draft, serviceTypes)))}
-          />
+          <h3 className="mb-1 mt-7 text-[13px] font-semibold">{t("v2.lineItems")}</h3>
           <div className="border-t border-line">
             {drafts.length === 0 ? (
               <p className="border-b border-line py-5 text-[13.5px] text-muted">{t("v2.noItemsEdit")}</p>
@@ -317,6 +343,23 @@ export function ProjectModal({
             <span aria-hidden className="text-[17px] leading-none">+</span>
             {t("v2.addService")}
           </button>
+
+          <div className="mt-6 flex" data-testid="v3-edit-balance">
+            <ProjectBalanceSummary
+              balance={balance}
+              pending={pending > 0}
+              testId="v3-edit-balance"
+              depositField={
+                <DepositInput
+                  value={deposit}
+                  onChange={setDeposit}
+                  invalid={depositInvalid}
+                  locked={depositLocked}
+                  disabled={saving}
+                />
+              }
+            />
+          </div>
 
           <div className="mt-10 border-t border-line pt-4">
             <button
@@ -362,3 +405,53 @@ export function ProjectModal({
   );
 }
 
+
+/**
+ * The deposit accepts the same `+ - * /` expressions as the price fields and
+ * collapses to the number on blur. After billing it is shown, not edited.
+ */
+function DepositInput({
+  value,
+  onChange,
+  invalid,
+  locked,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  invalid: boolean;
+  locked: boolean;
+  disabled: boolean;
+}) {
+  const { t } = useI18n();
+  const commit = () => {
+    const parsed = parseAmount(value);
+    if (parsed !== null && parsed >= 0 && /[+\-*/()]/.test(value.trim())) onChange(parsed.toFixed(2));
+  };
+  return (
+    <span className="relative block">
+      {value !== "" && (
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[15px] text-faint">$</span>
+      )}
+      <Input
+        inputMode="decimal"
+        value={value}
+        placeholder="0.00"
+        aria-label={t("v3.deposit")}
+        title={locked ? t("v3.depositLocked") : undefined}
+        onChange={(event) => onChange(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            commit();
+          }
+        }}
+        aria-invalid={invalid || undefined}
+        className={`tnum text-right ${value !== "" ? "pl-6" : ""} ${invalid ? "!border-danger" : ""}`}
+        disabled={disabled || locked}
+        data-testid="v3-deposit-input"
+      />
+    </span>
+  );
+}

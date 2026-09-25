@@ -1,5 +1,10 @@
 # CIJD DESIGN Billing
 
+> **Production (Cloudflare + Supabase), database source of truth, pricing rules and release procedure:**
+> see [`docs/CIJD_BILLING_PRODUCTION.md`](docs/CIJD_BILLING_PRODUCTION.md). The live Supabase schema is
+> authoritative; this repository's migration history is behind production.
+
+
 CIJD DESIGN の案件・請求・経理管理 Web アプリ。
 制作 → 印刷 → 請求 → 経理を、納品を境界に一本道で管理します。請求書PDFは請求発行時に生成され、後から再表示・保存できます。
 

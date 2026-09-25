@@ -49,6 +49,7 @@ export const toProject = (row: Row): Project => ({
   updatedBy: str(row.updated_by),
   deletedAt: (row.deleted_at as string) ?? null,
   billingReadiness: ((row.billing_readiness as string) ?? "AUTO") as Project["billingReadiness"],
+  depositAmount: row.deposit_amount == null ? null : numeric(row.deposit_amount),
 });
 
 export const toServiceType = (row: Row): ServiceType => ({
@@ -85,6 +86,7 @@ export const toItem = (row: Row): BillingItem => ({
       : row.print_cost_amount == null
         ? null
         : numeric(row.print_cost_amount),
+  markupOverride: row.markup_override == null ? null : numeric(row.markup_override),
   priceReviewStatus: (row.price_review_status as BillingItem["priceReviewStatus"]) ?? null,
   suggestedUnitPrice: row.suggested_unit_price == null ? null : numeric(row.suggested_unit_price),
   suggestedAmount: row.suggested_amount == null ? null : numeric(row.suggested_amount),

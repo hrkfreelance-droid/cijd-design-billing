@@ -685,7 +685,7 @@ test("printing cost persists as Billing price and keeps the handoff gates", asyn
   await card.getByRole("button", { name: "Set price" }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByTestId("printing-cost").fill("20");
-  await expect(dialog.getByTestId("printing-total")).toHaveValue("40.00");
+  await expect(dialog.getByTestId("printing-total")).toHaveValue("30.00");
   const priceResponse = page.waitForResponse(
     (response) =>
       response.url().includes(`/api/printing-items/${print.data.id}/price`) &&
@@ -696,7 +696,7 @@ test("printing cost persists as Billing price and keeps the handoff gates", asyn
   await priceResponse;
 
   await expect(card.getByTestId("printing-item-financials")).toContainText("Cost $20");
-  await expect(card.getByTestId("printing-item-financials")).toContainText("Billing $40");
+  await expect(card.getByTestId("printing-item-financials")).toContainText("Billing $30");
   await expect(card).toContainText("Price Confirmed: Confirmed");
   await expect(card).toContainText("Delivery: Waiting for delivery");
   await expect(card).toContainText("Billing handoff: Waiting for delivery");
@@ -705,8 +705,8 @@ test("printing cost persists as Billing price and keeps the handoff gates", asyn
   expect(state.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
     expect.objectContaining({
       printCost: 20,
-      suggestedAmount: 40,
-      amount: 40,
+      suggestedAmount: 30,
+      amount: 30,
       priceReviewStatus: "CONFIRMED",
       productionStatus: "IN_PROGRESS",
       billingStatus: "NOT_READY",
@@ -716,7 +716,7 @@ test("printing cost persists as Billing price and keeps the handoff gates", asyn
   await page.reload();
   const refreshedCard = page.getByTestId("printing-item-card").filter({ hasText: "Cost Billing Handoff Check" });
   await expect(refreshedCard.getByTestId("printing-item-financials")).toContainText("Cost $20");
-  await expect(refreshedCard.getByTestId("printing-item-financials")).toContainText("Billing $40");
+  await expect(refreshedCard.getByTestId("printing-item-financials")).toContainText("Billing $30");
 
   // Delivery alone is not enough for another print item.
   const deliveryOnly = await (
@@ -757,7 +757,7 @@ test("printing cost persists as Billing price and keeps the handoff gates", asyn
   await signIn(page, "u_billing");
   await page.goto("/office");
   await expect(page.getByRole("button", { name: "Cost Billing Handoff Check" })).toBeVisible();
-  await expect(page.getByText("$40.00", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("$30.00", { exact: true }).first()).toBeVisible();
 
   const projectRow = page.getByRole("button", { name: "Cost Billing Handoff Check" }).locator("..");
   await projectRow.getByRole("button", { name: "Edit price" }).click();
@@ -773,7 +773,7 @@ test("printing cost persists as Billing price and keeps the handoff gates", asyn
   await overrideResponse;
   state = await (await page.request.get("/api/state")).json();
   expect(state.data.billingItems.find((item: { id: string }) => item.id === print.data.id)).toEqual(
-    expect.objectContaining({ amount: 55, suggestedAmount: 40, customAmount: true }),
+    expect.objectContaining({ amount: 55, suggestedAmount: 30, customAmount: true }),
   );
 
   await page.getByRole("button", { name: "Mark as Invoiced" }).click();

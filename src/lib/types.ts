@@ -66,6 +66,12 @@ export interface Project {
   deletedAt?: string | null;
   /** Optional override used by Billing V2 without changing production status. */
   billingReadiness?: BillingReadiness;
+  /**
+   * Money already received for this project before it is billed. Null (and
+   * a row written before the column existed) means no deposit. Payment
+   * information only: it never changes a cost or a price.
+   */
+  depositAmount?: number | null;
 }
 
 export interface ServiceType {
@@ -106,6 +112,11 @@ export interface BillingItem {
   printSize?: string | null;
   /** Total printing cost, kept separate from the Billing selling price. */
   printCost?: number | null;
+  /**
+   * A markup chosen by hand for this line, in percent (35 = +35%). Null (and
+   * a row written before the column existed) uses the 50 / 40 / 30 band.
+   */
+  markupOverride?: number | null;
   priceReviewStatus?: PriceReviewStatus | null;
   suggestedUnitPrice?: number | null;
   suggestedAmount?: number | null;

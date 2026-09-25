@@ -127,6 +127,11 @@ export async function demoRequest<T>(
         }
         if (method === "DELETE") return (await guarded.setProjectDelivery(id, false)) as T;
       }
+      if (id && sub === "deposit" && method === "PATCH") {
+        const amount = body.amount === null ? null : num(body.amount);
+        if (amount === undefined) throw new RuleError("INVALID", "Deposit must be a number.", 400);
+        return (await guarded.setProjectDeposit(id, amount)) as T;
+      }
       if (id && sub === "readiness" && method === "PATCH") {
         return (await guarded.setProjectBillingReadiness(
           id,
@@ -183,8 +188,16 @@ export async function demoRequest<T>(
         }
         if (method === "DELETE") return (await guarded.setItemCompletion(id, false)) as T;
       }
+      if (id && sub === "markup" && method === "PATCH") {
+        const markupPercent = body.markupPercent === null ? null : num(body.markupPercent);
+        if (markupPercent === undefined) throw new RuleError("INVALID", "Markup must be a number.", 400);
+        return (await guarded.setBillingItemMarkup(id, markupPercent)) as T;
+      }
       if (id && sub === "billing-price" && method === "PATCH") {
-        return (await guarded.overrideBillingPrice(id, num(body.amount) ?? 0)) as T;
+        const unitPrice = num(body.unitPrice);
+        return (unitPrice === undefined
+          ? await guarded.overrideBillingPrice(id, num(body.amount) ?? 0)
+          : await guarded.overrideBillingUnitPrice(id, unitPrice, num(body.amount) ?? 0)) as T;
       }
       if (method === "PATCH" && id) {
         const billingStatus = str(body.billingStatus) as BillingStatus | undefined;
