@@ -49,9 +49,16 @@ apply() {  # apply a SQL file to cijd; any error stops the harness
     echo "FAILED applying $(basename "$1"):"; grep -v NOTICE "$WORK/apply.log"; exit 1
   fi
 }
+record() {  # record a migration file in supabase_migrations.schema_migrations, as Supabase does
+  local f; f="$(basename "$1" .sql)"
+  $Q -c "insert into supabase_migrations.schema_migrations (version, name) values ('${f%%_*}', '${f#*_}') on conflict do nothing" >/dev/null
+}
+state() {  # production-state.sql, forced read-only
+  PGOPTIONS='-c default_transaction_read_only=on' $Q -f "$WORK/production-state.sql" > "$1"
+}
 $P -c "create database cijd"
 $P -d cijd -f "$WORK/supabase-stubs.sql"
-for f in $(ls "$WORK/chain" | grep -v -e "^$A" -e "^$B" | sort); do apply "$WORK/chain/$f"; done
+for f in $(ls "$WORK/chain" | grep -v -e "^$A" -e "^$B" | sort); do apply "$WORK/chain/$f"; [[ "$f" == 2026* || "$f" == 0* ]] && record "$f"; done
 echo "ok baseline: $BASE"
 apply "$WORK/seed-prodlike.sql"
 
@@ -60,12 +67,13 @@ rows() {
     $Q -c "select '$t ' || (to_jsonb(r) - 'deposit_amount' - 'markup_override')::text from $t r order by 1"
   done
 }
+state "$WORK/state-0.txt"
 rows > "$WORK/rows-0.txt"
 $Q -f "$WORK/schema-fingerprint.sql" > "$WORK/schema-0.txt"
 $Q -f "$WORK/live-snapshot.sql" > "$WORK/live-0.txt"
 
 # ---- A --------------------------------------------------------------------
-apply "$WORK/chain/$A"
+apply "$WORK/chain/$A"; record "$A"
 rows > "$WORK/rows-A.txt"
 $Q -f "$WORK/schema-fingerprint.sql" > "$WORK/schema-A.txt"
 diff "$WORK/rows-0.txt" "$WORK/rows-A.txt"
@@ -130,7 +138,7 @@ echo "ok B preflight: an unexpected live body aborts B with nothing changed"
 # ---- B --------------------------------------------------------------------
 $Q -f "$WORK/schema-fingerprint-all.sql" > "$WORK/schemaall-A.txt"
 $Q -c "create schema harness; create table harness.src_before as select p.oid::regprocedure::text as sig, p.prosrc from pg_proc p where p.oid in (to_regprocedure('public.update_print_spec(uuid,text,text,numeric,numeric,text,text)'), to_regprocedure('public.review_print_price(uuid,numeric,numeric,numeric,boolean,text,text,text)'))"
-apply "$BH"
+apply "$BH"; record "$B"
 # The two live-derived bodies are exactly the old ones with the intended replacements.
 [ "$($Q <<'SQL'
 select count(*) from harness.src_before b join pg_proc p on p.oid = to_regprocedure(b.sig)
@@ -173,6 +181,19 @@ echo "ok B: schema diff is exactly the 7 declared functions; every other object 
 $Q -f "$WORK/live-snapshot.sql" > "$WORK/live-B.txt"
 diff "$WORK/live-0.txt" "$WORK/live-B.txt"
 echo "ok live-snapshot.sql: identical before A / after B"
+
+# ---- production-state.sql: read-only, no row contents -------------------------
+state "$WORK/state-B.txt"
+grep -q "^5 functions|ensure_print_price_review()|definer | a92956468b75b1bb2e87652dfe28eaf8 | expected a92956468b75b1bb2e87652dfe28eaf8 → MATCH" "$WORK/state-0.txt"
+grep -q "^1 migrations|20260925100000|" "$WORK/state-B.txt"
+grep -q "^7 non-null|billing_items.print_cost_amount|4$" "$WORK/state-B.txt"
+grep -q "^7 non-null|billing_items.markup_override|0$" "$WORK/state-0.txt"
+grep -q "^7 non-null|projects.deposit_amount|0$" "$WORK/state-B.txt"
+[ "$(grep '^9 fingerprint' "$WORK/state-0.txt")" = "$(grep '^9 fingerprint' "$WORK/state-B.txt")" ]
+if grep -i -E "Admin A|Billing B|Printing C|Designer D|Accounting E|Hiroki|Ringer|Flyers|Posters|Banners|slip-1|INV-001|@" "$WORK/state-0.txt" "$WORK/state-B.txt"; then
+  echo "production-state.sql leaked row content"; exit 1
+fi
+echo "ok production-state.sql: runs read-only before and after, $(wc -l < "$WORK/state-B.txt") facts, no row contents, data fingerprints identical"
 
 # ---- re-runs are refused and change nothing ------------------------------
 for M in "$WORK/chain/$A" "$BH"; do

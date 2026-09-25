@@ -1,5 +1,9 @@
 # Billing V3 Pricing — Handoff
 
+> **Production source of truth: [`docs/CIJD_BILLING_PRODUCTION.md`](CIJD_BILLING_PRODUCTION.md)** —
+> architecture, live schema vs repository, migration lineage, function map,
+> verified hashes and the release procedure. This file is task-specific.
+
 ## Goal
 
 Markup-based recommendation, editable markup, Final Unit Price / Final Total

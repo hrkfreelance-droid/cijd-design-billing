@@ -14,3 +14,8 @@ create function auth.jwt() returns jsonb language sql stable as $$ select '{}'::
 grant usage on schema auth to anon, authenticated, service_role;
 grant execute on all functions in schema auth to anon, authenticated, service_role;
 create extension if not exists pgcrypto;
+-- Supabase's migration history (read by production-state.sql).
+create schema if not exists supabase_migrations;
+create table if not exists supabase_migrations.schema_migrations (
+  version text primary key, statements text[], name text
+);
