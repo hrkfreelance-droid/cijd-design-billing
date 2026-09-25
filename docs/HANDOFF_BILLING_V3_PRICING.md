@@ -20,17 +20,19 @@ A line's manual markup (markup_override, percent) replaces the band.
 App side (done): `src/lib/billing-v2/pricing.ts` — shared by V2, V3, the
 Printing screen and both repositories.
 
-SQL side (NOT done — follow-up): the live recommendation functions still use
-the old rule. Live has newer objects than this repository (Sep 12:
-add_print_margin_override, print_margin_rpc, print_cost_basis_rpc — two
-overloads each of `update_print_spec` / `review_print_price`,
-`round_print_billing_price`, `*_with_margin`, `margin_override`,
-print-cost-basis columns). Their bodies are not in any repository, so they
-must be exported (`supabase/tests/billing-v3-pricing/live-schema-export.sql`)
-and changed formula-only in a separate migration. Until then the Printing
-screen's cost-based "Set price" (TS new rule vs SQL old rule) disagrees.
-The app calls only the 7-arg `update_print_spec` and 8-arg
-`review_print_price` (named `p_print_cost`).
+SQL side: `20260925100000` aligns the ACTIVE paths — the BEFORE INSERT
+trigger `ensure_print_price_review`, the 7-arg `update_print_spec` and the
+8-arg `review_print_price` (the overloads the app calls, named `p_print_cost`)
+— formula only, via `print_markup_recommended_amount(cost, markup_override)`.
+The 8-arg review also gets the enum cast that made it fail at runtime (the
+fix 20260902100000 gave the 7-arg overload).
+
+Left untouched as compatibility (own established semantics): the Sep 2
+`update_print_spec` (6 args) / `review_print_price` (7 args) /
+`set_billing_price` / `round_print_billing_price`, and the Sep 12
+`update_print_spec_with_margin`, `review_print_price_with_margin` (gross
+margin via `margin_override`) and `update_print_spec_with_costs`
+(print-cost basis). `margin_override` stays a separate gross-margin field.
 
 Stored prices are never recalculated. A line priced under the old rule opens
 in V3 as a manual price (Final unchanged, Recommended shows the new rule).
@@ -75,42 +77,59 @@ One source per line — `finalMode`:
   `>= 0` check), written only by `set_project_deposit` (API: `PATCH
   /api/projects/:id/deposit`). Locked once the project has invoiced/paid work.
 
-## Migration design
+## Migrations
 
-`20260925090000` is additive only: two nullable columns, four NEW functions,
-no CREATE OR REPLACE of anything existing, no row writes, one transaction,
-and a preflight that refuses to run if an expected object is missing or a new
-name already exists (a second run is refused and changes nothing).
+1. `20260925090000` — additive: `projects.deposit_amount`,
+   `billing_items.markup_override`, four NEW functions. No CREATE OR REPLACE,
+   no row writes, one transaction; preflight refuses if anything it creates
+   already exists.
+2. `20260925100000` — alignment: replaces 7 functions (the 3 active
+   recommendation paths, both guards, the 2 RPCs from step 1). Its preflight
+   compares `md5(prosrc)` of every function it replaces with the exact live
+   body it was written against (Sep 9 bodies, which the live
+   `maintain_print_price_review` behaviour confirms are the ones in force);
+   any difference aborts the whole migration with nothing changed.
 
-## Before merge / deploy (in this order)
+Guards after `20260925100000`:
+- `markup_override` changes only through `set_billing_item_markup`
+  (announces `cijd.billing_markup`) — for BILLING, ACCOUNTING and PRINTING.
+- A direct BILLING update may change `billing_status`, `billing_override`
+  and `updated_*` only; every other column (print-cost basis,
+  `billing_price_manual`, `service_type`, `margin_override`,
+  `markup_override`, …) is refused.
+- Inside a billing-price override, `unit_price` may change only when
+  `override_billing_unit_price` announces `cijd.billing_unit_price` — so
+  BILLING and ACCOUNTING can now store the Final Unit Price too.
+- Imported-history and invoiced/paid locks unchanged.
 
-1. Read-only export: run `live-schema-export.sql`; save result 1 as
-   `supabase/tests/billing-v3-pricing/live-schema/functions.sql`.
-2. Write the follow-up migration that aligns the live recommendation
-   functions (formula only) and re-run `run.sh` against the real definitions.
-3. Read-only snapshot: `live-snapshot.sql` (data) and `schema-fingerprint.sql`
-   (definitions); keep both outputs.
-4. Apply `20260925090000` (then the follow-up).
-5. Re-run both snapshots: data must match; schema must differ only by the
-   follow-up's intended functions.
-6. Confirm the Cloudflare production branch (Workers & Pages →
-   cijd-design-billing-preview → Settings → Build → Branch control).
-7. Merge into `feature/billing-v3`; verify the live `/office-v3`.
+## Release order
+
+1. Read-only: `live-snapshot.sql` (data) and `schema-fingerprint-all.sql`.
+2. Apply `20260925090000`, then `20260925100000`.
+3. Re-run both: data identical; schema differs only by the new objects of
+   step 1 and the 7 functions of step 2.
+4. Merge into `feature/billing-v3` (Cloudflare production branch — confirmed);
+   verify the live `/office-v3`.
 
 ## Verification
 
 - `npm run typecheck`, `npm run test:unit`, `npx eslint`, `npm run build:vinext`
 - `tests/billing-v3-pricing.spec.ts` (Playwright, throwaway local store)
 - `supabase/tests/billing-v3-pricing/run.sh` — local Postgres 16 with the
-  repository chain + the live Sep 12 columns and function names: no row and
-  no schema object changes, a second run is refused, the new functions behave
-  per role, and the print-cost basis is never written.
+  live history in version order (repository chain + the real 20260902* SQL +
+  a 20260912* reconstruction with the exact live signatures): A changes no
+  row or existing object; B changes no row and exactly its 7 functions; an
+  unexpected live body aborts B; re-runs are refused; behaviour per role; the
+  print-cost basis and margin_override are never written.
 
 ## Known, pre-existing (not changed here)
 
-- `review_print_price` raises an enum-cast error on `price_review_status`
-  (same on a DB without this migration).
 - `current_role_name()` is SECURITY INVOKER while the `users_read` policy
   calls it — recursion for signed-in roles on plain Postgres; live runs in
   pilot mode through the service key.
 - `tests/billing-flow.spec.ts` 306 / 385 / 664 fail identically on `836813b`.
+- `set_project_billing_readiness` locks the project `FOR UPDATE`; the
+  projects write policy allows designers only, so BILLING cannot run it under
+  RLS (live runs through the service key). Not changed here.
+- Sep 2 `set_billing_price` announces `cijd.billing_action = 'price'`, which
+  the live guards do not recognise. Compatibility function; not changed.

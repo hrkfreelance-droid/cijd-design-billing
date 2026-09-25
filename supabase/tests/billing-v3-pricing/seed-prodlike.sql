@@ -5,12 +5,13 @@ insert into auth.users (id) values
   ('00000000-0000-0000-0000-00000000000a'), ('00000000-0000-0000-0000-00000000000b'),
   ('00000000-0000-0000-0000-00000000000c'), ('00000000-0000-0000-0000-00000000000d'),
   ('00000000-0000-0000-0000-00000000000e');
-insert into public.users (id, name, role) values
-  ('00000000-0000-0000-0000-00000000000a', 'Admin A', 'ADMIN'),
-  ('00000000-0000-0000-0000-00000000000b', 'Billing B', 'BILLING'),
-  ('00000000-0000-0000-0000-00000000000c', 'Printing C', 'PRINTING'),
-  ('00000000-0000-0000-0000-00000000000d', 'Designer D', 'DESIGNER'),
-  ('00000000-0000-0000-0000-00000000000e', 'Accounting E', 'ACCOUNTING');
+-- active is explicit: 20260902121000 makes new users inactive by default.
+insert into public.users (id, name, role, active) values
+  ('00000000-0000-0000-0000-00000000000a', 'Admin A', 'ADMIN', true),
+  ('00000000-0000-0000-0000-00000000000b', 'Billing B', 'BILLING', true),
+  ('00000000-0000-0000-0000-00000000000c', 'Printing C', 'PRINTING', true),
+  ('00000000-0000-0000-0000-00000000000d', 'Designer D', 'DESIGNER', true),
+  ('00000000-0000-0000-0000-00000000000e', 'Accounting E', 'ACCOUNTING', true);
 insert into public.clients (id, name, active, created_at) values
   ('10000000-0000-0000-0000-000000000001', 'Ringer Hut', true, '2026-09-01T00:00:00Z');
 insert into public.projects (id, client_id, name, date, note, created_at, created_by, updated_at, updated_by, billing_readiness) values
