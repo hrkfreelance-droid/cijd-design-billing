@@ -8,6 +8,7 @@ import { CheckIcon } from "@/components/icons";
 import { Button } from "@/components/ui";
 import {
   billingBoard,
+  isBilled,
   selectableClients,
   type BoardGroup,
   type BoardItem,
@@ -257,6 +258,9 @@ export function BillingV3Board({ snapshot }: { snapshot: Snapshot }) {
           project={open.project}
           clientName={open.clientName}
           serviceTypes={snapshot.serviceTypes}
+          depositLocked={snapshot.billingItems.some(
+            (item) => item.projectId === open.project.id && !item.deletedAt && isBilled(item),
+          )}
           onClose={() => setOpenProject(null)}
         />
       )}
@@ -430,6 +434,23 @@ function ProjectRow({
             {project.items.length === 0 ? "" : pending ? <span className="font-normal text-faint">—</span> : moneyExact(project.total)}
           </span>
         </span>
+        {project.balance.deposit > 0 && project.items.length > 0 && (
+          <span className="tnum mt-0.5 block text-[12.5px] text-muted" data-testid="v3-project-balance">
+            {t("v3.deposit")} {moneyExact(project.balance.deposit)}
+            {" · "}
+            {project.balance.overpaid > 0 ? (
+              <span className="text-pending">
+                {t("v3.overpaid")} {moneyExact(project.balance.overpaid)}
+              </span>
+            ) : project.balance.settled && !pending ? (
+              <span className="text-paid">{t("v3.paidInFull")}</span>
+            ) : (
+              <span className="font-medium text-text">
+                {t("v3.remaining")} {moneyExact(project.balance.remaining)}
+              </span>
+            )}
+          </span>
+        )}
         {reason && (
           <span
             className={`mt-0.5 block text-[12.5px] ${project.blocker === "PRICE" ? "text-pending" : "text-muted"}`}
