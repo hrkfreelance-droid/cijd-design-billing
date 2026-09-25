@@ -44,11 +44,16 @@ trap 'su postgres -c "$BIN/pg_ctl -D $PGD stop -m fast" >/dev/null; rm -rf "$WOR
 sleep 2
 P="psql -h $WORK -p $PORT -U postgres -q -v ON_ERROR_STOP=1"
 Q="psql -h $WORK -p $PORT -U postgres -d cijd -qAt"
+apply() {  # apply a SQL file to cijd; any error stops the harness
+  if ! $P -d cijd -o /dev/null -f "$1" >"$WORK/apply.log" 2>&1; then
+    echo "FAILED applying $(basename "$1"):"; grep -v NOTICE "$WORK/apply.log"; exit 1
+  fi
+}
 $P -c "create database cijd"
 $P -d cijd -f "$WORK/supabase-stubs.sql"
-for f in $(ls "$WORK/chain" | grep -v -e "^$A" -e "^$B" | sort); do $P -d cijd -f "$WORK/chain/$f" 2>&1 | grep -v NOTICE || true; done
+for f in $(ls "$WORK/chain" | grep -v -e "^$A" -e "^$B" | sort); do apply "$WORK/chain/$f"; done
 echo "ok baseline: $BASE"
-$P -d cijd -f "$WORK/seed-prodlike.sql"
+apply "$WORK/seed-prodlike.sql"
 
 rows() {
   for t in $($Q -c "select schemaname||'.'||tablename from pg_tables where schemaname in ('public','auth') order by 1"); do
@@ -60,7 +65,7 @@ $Q -f "$WORK/schema-fingerprint.sql" > "$WORK/schema-0.txt"
 $Q -f "$WORK/live-snapshot.sql" > "$WORK/live-0.txt"
 
 # ---- A --------------------------------------------------------------------
-$P -d cijd -f "$WORK/chain/$A" 2>&1 | grep -v NOTICE || true
+apply "$WORK/chain/$A"
 rows > "$WORK/rows-A.txt"
 $Q -f "$WORK/schema-fingerprint.sql" > "$WORK/schema-A.txt"
 diff "$WORK/rows-0.txt" "$WORK/rows-A.txt"
@@ -69,12 +74,54 @@ echo "ok A: no existing row ($(wc -l < "$WORK/rows-0.txt")) or schema object ($(
 [ "$($Q -c "select count(*) from projects where deposit_amount is not null")$($Q -c "select count(*) from billing_items where markup_override is not null")" = "00" ]
 echo "ok A: new columns NULL on every existing row"
 
+# ---- B as committed: the gate ------------------------------------------------
+# The live 7-arg update_print_spec / 8-arg review_print_price bodies are only
+# reconstructed here (see live-baseline/20260924000000_live_app_rpc_bodies.sql),
+# so the committed B, which carries the ACTUAL live hashes, must refuse them —
+# and name exactly those two: the other five expected hashes match.
+gate() {  # $1 = migration file, $2 = log
+  $P -c "drop database if exists cijd_gate" >/dev/null
+  $P -c "create database cijd_gate template cijd"
+  $QG -f "$WORK/schema-fingerprint-all.sql" > "$WORK/gate-before.txt"
+  if $P -d cijd_gate -f "$1" >"$2" 2>&1; then echo "$1 was NOT refused"; exit 1; fi
+  $QG -f "$WORK/schema-fingerprint-all.sql" | diff "$WORK/gate-before.txt" -
+  $P -c "drop database cijd_gate"
+}
+QG="psql -h $WORK -p $PORT -U postgres -d cijd_gate -qAt"
+gate "$WORK/chain/$B" "$WORK/gate.log"
+grep -q "PREFLIGHT: live definitions differ" "$WORK/gate.log"
+grep -o "public\.[a-z_]*([a-z,]*)" "$WORK/gate.log" | sort -u > "$WORK/gate-names.txt"
+printf '%s\n' "public.review_print_price(uuid,numeric,numeric,numeric,boolean,text,text,text)" \
+  "public.update_print_spec(uuid,text,text,numeric,numeric,text,text)" | diff - "$WORK/gate-names.txt"
+echo "ok B gate: committed B refuses the non-live reconstruction, naming only the 2 app RPCs; nothing changed"
+
+# The previous alignment (62e56f8) expected the repository bodies; its hash
+# table does not contain the actual live hashes, so it aborts on live.
+OLD_B="$WORK/B-62e56f8.sql"
+git -C "$ROOT" show 62e56f8:supabase/migrations/$B > "$OLD_B"
+for h in bbbf6b4ac9c725e774a54c8e9db2d4a5 7aba03d0e45011bfb47f419714d23e93; do
+  grep -q "$h" "$OLD_B" && { echo "old B unexpectedly expects $h"; exit 1; }
+  grep -q "$h" "$WORK/chain/$B" || { echo "committed B does not expect live hash $h"; exit 1; }
+done
+grep -q 77cef03f754f1fa50a23164c90080f8f "$OLD_B" && grep -q 52a1ed7e4a7f94f6be559dc3a02a73c2 "$OLD_B"
+gate "$OLD_B" "$WORK/gate-old.log"
+grep -q "PREFLIGHT: live definitions differ" "$WORK/gate-old.log"
+echo "ok old B (62e56f8): expects 77cef03f…/52a1ed7e…, not the live bbbf6b4a…/7aba03d0… — aborts, nothing changed"
+
+# ---- B with the two expected hashes swapped for the reconstruction's -------
+SPEC_MD5=$($Q -c "select md5(prosrc) from pg_proc where oid = to_regprocedure('public.update_print_spec(uuid,text,text,numeric,numeric,text,text)')")
+REVIEW_MD5=$($Q -c "select md5(prosrc) from pg_proc where oid = to_regprocedure('public.review_print_price(uuid,numeric,numeric,numeric,boolean,text,text,text)')")
+BH="$WORK/B-harness.sql"
+sed -e "s/bbbf6b4ac9c725e774a54c8e9db2d4a5/$SPEC_MD5/" -e "s/7aba03d0e45011bfb47f419714d23e93/$REVIEW_MD5/" "$WORK/chain/$B" > "$BH"
+[ "$(diff "$WORK/chain/$B" "$BH" | grep -c '^>')" = "2" ]
+chmod a+r "$BH"
+
 # ---- B refuses a live body it was not written against -----------------------
 $P -c "create database cijd_drift template cijd"
 QD="psql -h $WORK -p $PORT -U postgres -d cijd_drift -qAt"
-$P -d cijd_drift -c "create or replace function public.update_print_spec(p_item_id uuid, p_description text, p_print_size text, p_quantity numeric, p_print_cost numeric, p_note text, p_actor text) returns public.billing_items language plpgsql security invoker set search_path = public as \$\$ declare item public.billing_items; begin return item; end \$\$"
+$P -d cijd_drift -c "create or replace function public.guard_office_billing_item_update() returns trigger language plpgsql security definer set search_path = public as \$\$ begin return new; end \$\$"
 $QD -f "$WORK/schema-fingerprint-all.sql" > "$WORK/drift-before.txt"
-if $P -d cijd_drift -f "$WORK/chain/$B" >"$WORK/drift.log" 2>&1; then echo "B applied over an unexpected body"; exit 1; fi
+if $P -d cijd_drift -f "$BH" >"$WORK/drift.log" 2>&1; then echo "B applied over an unexpected body"; exit 1; fi
 grep -q "PREFLIGHT: live definitions differ" "$WORK/drift.log"
 $QD -f "$WORK/schema-fingerprint-all.sql" | diff "$WORK/drift-before.txt" -
 $P -c "drop database cijd_drift"
@@ -82,7 +129,30 @@ echo "ok B preflight: an unexpected live body aborts B with nothing changed"
 
 # ---- B --------------------------------------------------------------------
 $Q -f "$WORK/schema-fingerprint-all.sql" > "$WORK/schemaall-A.txt"
-$P -d cijd -f "$WORK/chain/$B" 2>&1 | grep -v NOTICE || true
+$Q -c "create schema harness; create table harness.src_before as select p.oid::regprocedure::text as sig, p.prosrc from pg_proc p where p.oid in (to_regprocedure('public.update_print_spec(uuid,text,text,numeric,numeric,text,text)'), to_regprocedure('public.review_print_price(uuid,numeric,numeric,numeric,boolean,text,text,text)'))"
+apply "$BH"
+# The two live-derived bodies are exactly the old ones with the intended replacements.
+[ "$($Q <<'SQL'
+select count(*) from harness.src_before b join pg_proc p on p.oid = to_regprocedure(b.sig)
+ where p.prosrc = case b.sig
+   when 'update_print_spec(uuid,text,text,numeric,numeric,text,text)' then
+     replace(b.prosrc,
+       'ceil((next_cost / (1 - case when next_cost <= 50 then 0.5 when next_cost <= 100 then 0.4 else 0.3 end) - 0.000000001) / 5) * 5',
+       'public.print_markup_recommended_amount(next_cost, item.markup_override)')
+   else
+     replace(replace(b.prosrc,
+       'ceil((p_print_cost / (1 - case when p_print_cost <= 50 then 0.5 when p_print_cost <= 100 then 0.4 else 0.3 end) - 0.000000001) / 5) * 5',
+       'public.print_markup_recommended_amount(p_print_cost, item.markup_override)'),
+       'price_review_status = case when coalesce(p_confirm, false) then ''CONFIRMED'' else ''REVIEW_REQUIRED'' end,',
+       'price_review_status = (case when coalesce(p_confirm, false) then ''CONFIRMED'' else ''REVIEW_REQUIRED'' end)::public.price_review_status,')
+ end
+   and b.prosrc <> p.prosrc
+SQL
+)" = "2" ]
+$Q -c "select position('current_role_name() not in (''DESIGNER'', ''PRINTING'', ''ADMIN'')' in prosrc) > 0 and position('service_role' in prosrc) = 0 from pg_proc where oid = to_regprocedure('public.update_print_spec(uuid,text,text,numeric,numeric,text,text)')" | grep -qx t
+$Q -c "select position('current_role_name() not in (''PRINTING'', ''ADMIN'')' in prosrc) > 0 and position('service_role' in prosrc) = 0 from pg_proc where oid = to_regprocedure('public.review_print_price(uuid,numeric,numeric,numeric,boolean,text,text,text)')" | grep -qx t
+$Q -c "drop schema harness cascade" 2>/dev/null
+echo "ok B: update_print_spec / review_print_price = live body + only the intended replacements; live authorization kept, no service-role branch added"
 rows > "$WORK/rows-B.txt"
 $Q -f "$WORK/schema-fingerprint-all.sql" > "$WORK/schemaall-B.txt"
 diff "$WORK/rows-0.txt" "$WORK/rows-B.txt"
@@ -105,8 +175,8 @@ diff "$WORK/live-0.txt" "$WORK/live-B.txt"
 echo "ok live-snapshot.sql: identical before A / after B"
 
 # ---- re-runs are refused and change nothing ------------------------------
-for M in "$A" "$B"; do
-  if $P -d cijd -f "$WORK/chain/$M" >"$WORK/rerun.log" 2>&1; then echo "second run of $M was NOT refused"; exit 1; fi
+for M in "$WORK/chain/$A" "$BH"; do
+  if $P -d cijd -f "$M" >"$WORK/rerun.log" 2>&1; then echo "second run of $M was NOT refused"; exit 1; fi
   grep -q "PREFLIGHT" "$WORK/rerun.log"
 done
 $Q -f "$WORK/schema-fingerprint-all.sql" | diff "$WORK/schemaall-B.txt" -

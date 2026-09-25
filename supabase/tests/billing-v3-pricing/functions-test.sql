@@ -86,9 +86,18 @@ select amount, price_review_status from public.review_print_price('40000000-0000
 reset role;
 select pg_temp.check(amount = 60 and price_review_status = 'CONFIRMED', 'review confirms at $60')
   from public.billing_items where id = '40000000-0000-0000-0000-0000000000a1';
--- 2f. compatibility function keeps its own established semantics
+-- 2f. the live authorization of the two app RPCs is kept exactly
+select pg_temp.act(:BILLING);
+set role authenticated;
+select pg_temp.expect_error($q$select public.update_print_spec('40000000-0000-0000-0000-000000000001', null, null, 180, 80, null, 'x')$q$, 'FORBIDDEN');
+select pg_temp.expect_error($q$select public.review_print_price('40000000-0000-0000-0000-0000000000a1', 0.33, 60, 40, false, null, null, 'x')$q$, 'FORBIDDEN');
+select pg_temp.act(:DESIGN);
+select pg_temp.expect_error($q$select public.review_print_price('40000000-0000-0000-0000-0000000000a1', 0.33, 60, 40, false, null, null, 'x')$q$, 'FORBIDDEN');
+select amount from public.update_print_spec('40000000-0000-0000-0000-000000000001', null, null, 180, 80, null, 'Designer D');
+reset role;
+-- 2g. compatibility function keeps its own established semantics
 select pg_temp.check(public.round_print_billing_price(40) = 70, 'round_print_billing_price unchanged');
-select 'ok 2 insert / 7-arg spec / 8-arg review follow the markup rule; manual Final kept; compatibility unchanged' as result;
+select 'ok 2 insert / 7-arg spec / 8-arg review follow the markup rule; manual Final kept; live auth kept (spec: DESIGNER/PRINTING/ADMIN, review: PRINTING/ADMIN); compatibility unchanged' as result;
 
 -- 3. override_billing_unit_price: every pricing role ------------------------------
 select pg_temp.act(:BILLING);

@@ -85,10 +85,17 @@ One source per line — `finalMode`:
    already exists.
 2. `20260925100000` — alignment: replaces 7 functions (the 3 active
    recommendation paths, both guards, the 2 RPCs from step 1). Its preflight
-   compares `md5(prosrc)` of every function it replaces with the exact live
-   body it was written against (Sep 9 bodies, which the live
-   `maintain_print_price_review` behaviour confirms are the ones in force);
-   any difference aborts the whole migration with nothing changed.
+   compares `md5(prosrc)` of every function it replaces with the actual live
+   hash (verified read-only against production):
+   `ensure_print_price_review` a9295646…, `guard_office…` 3e61115d…,
+   `guard_printing…` 5f9eea98… (= this repository's bodies, copied),
+   `update_print_spec`(7) bbbf6b4a…, `review_print_price`(8) 7aba03d0…
+   (live bodies differ from this repository — own authorization, no
+   service-role branch — so these two are DERIVED in-transaction from the
+   live definition: only the formula (and review's enum cast) is replaced,
+   each substring must occur exactly once, and the result must equal the
+   live body with exactly those replacements and unchanged attributes),
+   plus the two RPCs from step 1. Any difference aborts with nothing changed.
 
 Guards after `20260925100000`:
 - `markup_override` changes only through `set_billing_item_markup`
@@ -117,10 +124,15 @@ Guards after `20260925100000`:
 - `tests/billing-v3-pricing.spec.ts` (Playwright, throwaway local store)
 - `supabase/tests/billing-v3-pricing/run.sh` — local Postgres 16 with the
   live history in version order (repository chain + the real 20260902* SQL +
-  a 20260912* reconstruction with the exact live signatures): A changes no
-  row or existing object; B changes no row and exactly its 7 functions; an
-  unexpected live body aborts B; re-runs are refused; behaviour per role; the
-  print-cost basis and margin_override are never written.
+  a 20260912* reconstruction with the exact live signatures + a
+  reconstruction of the live 7/8-arg app RPC bodies): A changes no row or
+  existing object; committed B refuses the (non-byte-identical)
+  reconstruction naming only the 2 app RPCs, and the previous B (62e56f8)
+  aborts; with only those 2 hashes swapped, B changes no row and exactly its
+  7 functions, and the 2 derived bodies equal the old ones plus exactly the
+  intended replacements with live authorization kept; an unexpected body
+  aborts B; re-runs are refused; behaviour per role; the print-cost basis and
+  margin_override are never written.
 
 ## Known, pre-existing (not changed here)
 
