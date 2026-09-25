@@ -35,6 +35,7 @@ import { serviceKeyFromName } from "@/lib/billing-v2/services";
 import { isProductionComplete, isPrintPriceConfirmed } from "@/lib/derive";
 import { roundMoney } from "@/lib/format";
 import { printSellingPriceFromCost } from "@/lib/printing-pricing";
+import { finalPriceConsistent } from "@/lib/billing-v2/pricing";
 import {
   ExchangeRateUnavailableError,
   getApplicableOfficialRate,
@@ -355,6 +356,19 @@ export class SupabaseRepository implements Repository {
     const result = await this.db.rpc("set_project_billing_readiness", {
       p_project_id: id,
       p_readiness: readiness,
+      p_actor: actor,
+    });
+    if (result.error) fail(result.error);
+    return toProject(result.data as Record<string, unknown>);
+  }
+
+  async setProjectDeposit(id: string, amount: number | null, actor = DEFAULT_ACTOR) {
+    if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+      throw new RuleError("INVALID", "Deposit must be zero or more.", 400);
+    }
+    const result = await this.db.rpc("set_project_deposit", {
+      p_project_id: id,
+      p_amount: amount === null ? null : money(amount),
       p_actor: actor,
     });
     if (result.error) fail(result.error);
@@ -746,7 +760,42 @@ export class SupabaseRepository implements Repository {
     return this.writeBillingPrice(id, amount, actor);
   }
 
-  private async writeBillingPrice(id: string, amount: number, actor: string) {
+  async overrideBillingUnitPrice(id: string, unitPrice: number, amount: number, actor = DEFAULT_ACTOR) {
+    if (!Number.isFinite(amount) || amount < 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+      throw new RuleError("INVALID", "Billing price must be zero or more.", 400);
+    }
+    const current = toItem(unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()));
+    if (current.createdBy.trim().toLowerCase() === "import") {
+      throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.", 403);
+    }
+    if (current.billingStatus === "INVOICED" || current.billingStatus === "PAID") {
+      throw new RuleError("ITEM_LOCKED", "This item has already been invoiced and cannot be edited.");
+    }
+    if (!finalPriceConsistent(current.quantity, unitPrice, amount)) {
+      throw new RuleError("INVALID", "Unit price and total do not match the quantity.", 400);
+    }
+    if (amount === 0 && this.accessRole) return this.writeBillingPrice(id, amount, actor, unitPrice);
+    const viaFunction = await this.db.rpc("override_billing_unit_price", {
+      p_item_id: id,
+      p_unit_price: unitPrice,
+      p_amount: amount,
+      p_actor: actor,
+    });
+    if (!viaFunction.error) return toItem(viaFunction.data as Row);
+    // A database that has not had 20260925090000 applied yet has no such
+    // function: keep saving the total exactly as before.
+    if (viaFunction.error.code === "PGRST202" || viaFunction.error.code === "42883") {
+      return this.overrideBillingPrice(id, amount, actor);
+    }
+    const refused =
+      viaFunction.error.message?.trim() === "FORBIDDEN" ||
+      viaFunction.error.code === "42501" ||
+      viaFunction.error.code === "PGRST301";
+    if (!refused || !this.accessRole) fail(viaFunction.error);
+    return this.writeBillingPrice(id, amount, actor, unitPrice);
+  }
+
+  private async writeBillingPrice(id: string, amount: number, actor: string, unitPrice?: number) {
     const current = toItem(unwrap(await this.db.from("billing_items").select("*").eq("id", id).single()));
     if (current.billingStatus === "INVOICED" || current.billingStatus === "PAID") {
       throw new RuleError("ITEM_LOCKED", "This item has already been invoiced and cannot be edited.");
@@ -756,6 +805,7 @@ export class SupabaseRepository implements Repository {
       .from("billing_items")
       .update({
         amount: money(amount),
+        ...(unitPrice === undefined ? {} : { unit_price: money(unitPrice) }),
         custom_amount: true,
         billing_price_manual: current.type === "PRINT",
         price_review_status: current.type === "PRINT" ? "CONFIRMED" : current.priceReviewStatus,
@@ -773,7 +823,7 @@ export class SupabaseRepository implements Repository {
       action: "billing.price.override",
       entity: "billing_item",
       entity_id: id,
-      detail: String(updated.amount),
+      detail: unitPrice === undefined ? String(updated.amount) : `${updated.unitPrice}/${updated.amount}`,
     });
     if (audit.error) console.error("[audit]", audit.error);
     return updated;

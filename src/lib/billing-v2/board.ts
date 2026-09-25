@@ -11,7 +11,7 @@
  */
 import { isHistoricalRecord, isProductionComplete } from "@/lib/derive";
 import type { BillingItem, Client, Project, Snapshot } from "@/lib/types";
-import { printMarginFromCost, printSellingPriceFromCost, roundCents } from "./pricing";
+import { printMarkupFromCost, printSellingPriceFromCost, projectBalance, roundCents, type ProjectBalance } from "./pricing";
 import { isCostPriced, serviceForItem, type ServiceDefinition } from "./services";
 
 export interface BoardItem {
@@ -23,8 +23,17 @@ export interface BoardItem {
   unitCost: number | null;
   /** The price the cost rule suggests, from the *total* cost; null when the service is not cost-priced. */
   recommended: number | null;
-  /** The margin band behind `recommended`, as a fraction (0.5 = 50%). */
+  /**
+   * The default markup band behind `recommended`, as a fraction of cost
+   * (0.5 = +50%). Named `margin` for the V2 screens that read it.
+   */
   margin: number | null;
+  /**
+   * The final price per unit: the stored unit price when it belongs to the
+   * stored total at this quantity, otherwise total ÷ quantity to the cent.
+   * Null while the price is pending.
+   */
+  finalUnitPrice: number | null;
   /** The final price differs from the recommendation because a person chose it. */
   manual: boolean;
   /** Final billing. Null is "price pending" — never the same thing as $0. */
@@ -51,6 +60,8 @@ export interface BoardProject {
   blockedBy: BoardItem | null;
   billingReadiness: Project["billingReadiness"];
   pricePendingCount: number;
+  /** Final total split into deposit received and what is left to collect. */
+  balance: ProjectBalance;
 }
 
 export interface BoardGroup<T extends BoardProject = BoardProject> {
@@ -134,10 +145,25 @@ export function toBoardItem(item: BillingItem, snapshot?: Pick<Snapshot, "servic
     cost,
     unitCost,
     recommended,
-    margin: cost == null ? null : printMarginFromCost(cost),
+    margin: cost == null ? null : printMarkupFromCost(cost),
+    finalUnitPrice: storedFinalUnitPrice(item),
     manual: costPriced && item.amount != null && recommended != null && item.amount !== recommended,
     amount: item.amount,
   };
+}
+
+/**
+ * Existing rows keep whatever unit price they were saved with. It is trusted
+ * only when it still reproduces the stored total at the stored quantity, so an
+ * older row whose unit price was never maintained falls back to total ÷ qty.
+ */
+export function storedFinalUnitPrice(item: Pick<BillingItem, "amount" | "unitPrice" | "quantity">): number | null {
+  if (item.amount == null || !(item.quantity > 0)) return null;
+  const unit = Number(item.unitPrice);
+  if (Number.isFinite(unit) && unit > 0 && roundCents(unit * item.quantity) === roundCents(item.amount)) {
+    return roundCents(unit);
+  }
+  return roundCents(item.amount / item.quantity);
 }
 
 /**
@@ -204,6 +230,7 @@ export function toBoardProject(
     .map((item) => toBoardItem(item, snapshot));
   const readiness = project.billingReadiness ?? "AUTO";
   const { blocker, blockedBy } = readinessOf(readiness, boardItems);
+  const total = sumItems(boardItems);
   return {
     id: project.id,
     name: project.name,
@@ -211,12 +238,13 @@ export function toBoardProject(
     date: project.date,
     clientId: project.clientId,
     items: boardItems,
-    total: sumItems(boardItems),
+    total,
     costTotal: sumCost(boardItems),
     blocker,
     blockedBy,
     billingReadiness: readiness,
     pricePendingCount: boardItems.filter((entry) => entry.amount === null).length,
+    balance: projectBalance(total, project.depositAmount ?? null),
   };
 }
 

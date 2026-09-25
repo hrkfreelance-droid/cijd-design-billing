@@ -1,29 +1,35 @@
 /**
  * The printing price rule, written once.
  *
- * Cost is what the print shop charges us. The billing price is derived from a
- * margin band and always lands on a $5 step, rounded up, so the office can say
- * the number out loud. Nothing else in the app recomputes this.
+ * Cost is what the print shop charges us. The recommended billing price is
+ * that cost plus a markup that depends on the size of the job:
+ *
+ *   Cost Total <= $50          → +50%
+ *   Cost Total >  $50, <= $100 → +40%
+ *   Cost Total >  $100         → +30%
+ *
+ *   Recommended Total = Cost Total × (1 + markup), rounded to cents.
+ *
+ * The same rule lives in SQL as `public.print_recommended_amount`; the two
+ * must always agree. Nothing else in the app recomputes it.
  *
  * Deliberately free of `@/` runtime imports so the rule can be unit tested on
  * its own, without the Next.js path aliases.
  */
 
-export interface MarginBand {
+export interface MarkupBand {
   /** Applies while the cost is at or below this amount. */
   upTo: number;
-  margin: number;
+  /** Markup on cost, as a fraction (0.5 = +50%). */
+  markup: number;
 }
 
 /** Ordered, and closed by an open-ended final band. */
-export const PRINT_MARGIN_BANDS: readonly MarginBand[] = [
-  { upTo: 50, margin: 0.5 },
-  { upTo: 100, margin: 0.4 },
-  { upTo: Number.POSITIVE_INFINITY, margin: 0.3 },
+export const PRINT_MARKUP_BANDS: readonly MarkupBand[] = [
+  { upTo: 50, markup: 0.5 },
+  { upTo: 100, markup: 0.4 },
+  { upTo: Number.POSITIVE_INFINITY, markup: 0.3 },
 ];
-
-/** Prices are quoted in whole $5 steps. */
-export const PRICE_STEP = 5;
 
 export function roundCents(amount: number): number {
   return Math.round((amount + Number.EPSILON) * 100) / 100;
@@ -44,21 +50,83 @@ export function formatUnitCost(value: number): string {
   return text;
 }
 
-export function printMarginFromCost(cost: number): number {
+/** The default markup for a job of this total cost, as a fraction. */
+export function printMarkupFromCost(cost: number): number {
   if (!Number.isFinite(cost) || cost < 0) return 0;
-  return PRINT_MARGIN_BANDS.find((band) => cost <= band.upTo)?.margin ?? 0.3;
+  return PRINT_MARKUP_BANDS.find((band) => cost <= band.upTo)?.markup ?? 0.3;
 }
 
 /**
- * cost / (1 - margin), rounded *up* to the next $5.
- *
- * The epsilon keeps a price that already sits exactly on a step — $50 cost is
- * exactly $100 — from being pushed to the step above it by float noise.
+ * Kept for the V2 screens, which label the band beside the recommendation.
+ * The value is the markup on cost — the 50 / 40 / 30 bands were never a
+ * gross margin.
  */
+export const printMarginFromCost = printMarkupFromCost;
+
+/** Cost × (1 + markup), to the cent. `markup` defaults to the band for `cost`. */
+export function recommendedFromCost(cost: number, markup: number = printMarkupFromCost(cost)): number {
+  if (!Number.isFinite(cost) || cost < 0 || !Number.isFinite(markup)) return 0;
+  return roundCents(cost * (1 + markup));
+}
+
+/** The recommended total at the default markup for this cost. */
 export function printSellingPriceFromCost(cost: number): number {
-  if (!Number.isFinite(cost) || cost < 0) return 0;
-  const selling = cost / (1 - printMarginFromCost(cost));
-  return roundCents(Math.ceil((selling - Number.EPSILON) / PRICE_STEP) * PRICE_STEP);
+  return recommendedFromCost(cost);
+}
+
+/**
+ * What the final price actually marks the cost up by, as a percentage
+ * (37.5 for +37.5%). Null when there is no cost to mark up.
+ */
+export function effectiveMarkupPercent(finalTotal: number | null, cost: number | null): number | null {
+  if (finalTotal == null || cost == null || !Number.isFinite(finalTotal) || !(cost > 0)) return null;
+  return Math.round(((finalTotal - cost) / cost) * 100 * 10) / 10;
+}
+
+/** A markup percentage for display: 50 → "50", 37.5 → "37.5". */
+export function formatPercent(percent: number): string {
+  const rounded = Math.round(percent * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+/**
+ * A final unit price and total belong together when one is the other at this
+ * quantity, to the cent: either the total is unit × qty (a unit price was
+ * set), or the unit price is total ÷ qty (a total was typed).
+ */
+export function finalPriceConsistent(quantity: number, unitPrice: number, amount: number): boolean {
+  if (!(quantity > 0) || !Number.isFinite(unitPrice) || !Number.isFinite(amount)) return false;
+  const unit = roundCents(unitPrice);
+  const total = roundCents(amount);
+  return total === roundCents(quantity * unit) || unit === roundCents(total / quantity);
+}
+
+/**
+ * Money already received against a project, and what is left to collect.
+ *
+ * A deposit never changes a price: it only splits the final total into what
+ * has been paid and what is still owed. More than the total is recorded as
+ * overpaid rather than as a negative balance.
+ */
+export interface ProjectBalance {
+  finalTotal: number;
+  deposit: number;
+  remaining: number;
+  overpaid: number;
+  /** Something was received and nothing is left to collect. */
+  settled: boolean;
+}
+
+export function projectBalance(finalTotal: number, deposit: number | null | undefined): ProjectBalance {
+  const total = roundCents(Math.max(finalTotal, 0));
+  const paid = deposit == null || !Number.isFinite(deposit) || deposit < 0 ? 0 : roundCents(deposit);
+  return {
+    finalTotal: total,
+    deposit: paid,
+    remaining: roundCents(Math.max(total - paid, 0)),
+    overpaid: roundCents(Math.max(paid - total, 0)),
+    settled: paid > 0 && paid >= total,
+  };
 }
 
 /**

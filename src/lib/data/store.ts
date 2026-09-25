@@ -35,6 +35,7 @@ import {
 } from "@/lib/derive";
 import { roundMoney } from "@/lib/format";
 import { printSellingPriceFromCost } from "@/lib/printing-pricing";
+import { finalPriceConsistent } from "@/lib/billing-v2/pricing";
 import {
   ensureCurrentExchangeRate,
   ExchangeRateUnavailableError,
@@ -357,6 +358,25 @@ export class Store implements Repository {
       project.updatedAt = now();
       project.updatedBy = patch.actor ?? DEFAULT_ACTOR;
       log(db, project.updatedBy, "project.update", "project", project.id);
+      return project;
+    });
+  }
+
+  setProjectDeposit(id: string, amount: number | null, actor = DEFAULT_ACTOR) {
+    return this.transaction((db) => {
+      const project = db.projects.find((candidate) => candidate.id === id && !candidate.deletedAt);
+      if (!project) throw new RuleError("NOT_FOUND", "Project was not found.", 404);
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        throw new RuleError("INVALID", "Deposit must be zero or more.", 400);
+      }
+      const billed = db.billingItems.some((item) => item.projectId === id && !item.deletedAt && isLocked(item));
+      if (billed) {
+        throw new RuleError("PROJECT_LOCKED", "This project has been billed, so its deposit cannot be changed.");
+      }
+      project.depositAmount = amount === null ? null : money(amount);
+      project.updatedAt = now();
+      project.updatedBy = actor;
+      log(db, actor, "project.deposit", "project", project.id, project.depositAmount == null ? "none" : String(project.depositAmount));
       return project;
     });
   }
@@ -700,6 +720,38 @@ export class Store implements Repository {
       item.updatedAt = now();
       item.updatedBy = actor;
       log(db, actor, "billing.price.override", "billing_item", item.id, String(item.amount));
+      return item;
+    });
+  }
+
+  overrideBillingUnitPrice(id: string, unitPrice: number, amount: number, actor = "Billing Staff") {
+    return this.transaction((db) => {
+      const item = requireItem(db, id);
+      if (isHistoricalRecord(item)) {
+        throw new RuleError("HISTORY_READ_ONLY", "Imported history is read-only.");
+      }
+      if (isLocked(item)) {
+        throw new RuleError("ITEM_LOCKED", "This item has already been invoiced and cannot be edited.");
+      }
+      if (!Number.isFinite(amount) || amount < 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+        throw new RuleError("INVALID", "Billing price must be zero or more.", 400);
+      }
+      if (!finalPriceConsistent(item.quantity, unitPrice, amount)) {
+        throw new RuleError("INVALID", "Unit price and total do not match the quantity.", 400);
+      }
+      item.amount = money(amount);
+      item.unitPrice = money(unitPrice);
+      item.customAmount = true;
+      if (item.type === "PRINT") {
+        item.suggestedAmount ??= item.printCost != null ? printSellingPriceFromCost(item.printCost) : item.amount;
+        item.suggestedUnitPrice ??= item.quantity > 0 ? money(item.suggestedAmount / item.quantity) : item.unitPrice;
+        item.priceReviewStatus = "CONFIRMED";
+        item.priceConfirmedBy = actor;
+        item.priceConfirmedAt = now();
+      }
+      item.updatedAt = now();
+      item.updatedBy = actor;
+      log(db, actor, "billing.price.override", "billing_item", item.id, `${item.unitPrice}/${item.amount}`);
       return item;
     });
   }

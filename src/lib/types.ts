@@ -66,6 +66,12 @@ export interface Project {
   deletedAt?: string | null;
   /** Optional override used by Billing V2 without changing production status. */
   billingReadiness?: BillingReadiness;
+  /**
+   * Money already received for this project before it is billed. Null (and
+   * a row written before the column existed) means no deposit. Payment
+   * information only: it never changes a cost or a price.
+   */
+  depositAmount?: number | null;
 }
 
 export interface ServiceType {

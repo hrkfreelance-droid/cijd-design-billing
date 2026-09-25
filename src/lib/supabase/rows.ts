@@ -49,6 +49,7 @@ export const toProject = (row: Row): Project => ({
   updatedBy: str(row.updated_by),
   deletedAt: (row.deleted_at as string) ?? null,
   billingReadiness: ((row.billing_readiness as string) ?? "AUTO") as Project["billingReadiness"],
+  depositAmount: row.deposit_amount == null ? null : numeric(row.deposit_amount),
 });
 
 export const toServiceType = (row: Row): ServiceType => ({
