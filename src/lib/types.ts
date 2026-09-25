@@ -112,6 +112,11 @@ export interface BillingItem {
   printSize?: string | null;
   /** Total printing cost, kept separate from the Billing selling price. */
   printCost?: number | null;
+  /**
+   * A markup chosen by hand for this line, in percent (35 = +35%). Null (and
+   * a row written before the column existed) uses the 50 / 40 / 30 band.
+   */
+  markupOverride?: number | null;
   priceReviewStatus?: PriceReviewStatus | null;
   suggestedUnitPrice?: number | null;
   suggestedAmount?: number | null;

@@ -133,6 +133,11 @@ export class GuardedRepository {
     return this.repo.overrideBillingUnitPrice(id, unitPrice, amount, this.actor(actor));
   }
 
+  setBillingItemMarkup(id: string, markupPercent: number | null, actor?: string) {
+    this.assert("billing:price:write");
+    return this.repo.setBillingItemMarkup(id, markupPercent, this.actor(actor));
+  }
+
   setProjectDeposit(id: string, amount: number | null, actor?: string) {
     this.assert("billing:price:write");
     return this.repo.setProjectDeposit(id, amount, this.actor(actor));

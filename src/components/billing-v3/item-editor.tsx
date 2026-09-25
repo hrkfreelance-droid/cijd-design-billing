@@ -250,17 +250,23 @@ export function ItemEditor({
                 />
                 <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[14px] text-faint">%</span>
               </span>
-              <Note>
+              <Note wrap>
                 {draft.markupTouched ? (
-                  <button
-                    type="button"
-                    onClick={() => onChange(withDefaultMarkup(draft, serviceTypes))}
-                    disabled={disabled}
-                    className="font-medium text-accent hover:underline disabled:text-faint"
-                    data-testid={`v3-item-markup-reset-${index}`}
-                  >
-                    {t("v3.markup.reset")}
-                  </button>
+                  <>
+                    <span className="text-muted" data-testid={`v3-item-markup-manual-${index}`}>
+                      {t("v3.manual")}
+                    </span>
+                    <span className="text-faint" aria-hidden>·</span>
+                    <button
+                      type="button"
+                      onClick={() => onChange(withDefaultMarkup(draft, serviceTypes))}
+                      disabled={disabled}
+                      className="font-medium text-accent hover:underline disabled:text-faint"
+                      data-testid={`v3-item-markup-reset-${index}`}
+                    >
+                      {t("v3.markup.reset")}
+                    </button>
+                  </>
                 ) : (
                   <span className="text-faint" data-testid={`v3-item-markup-default-${index}`}>
                     {t("v3.markup.default")}
@@ -410,8 +416,14 @@ function Field({
   );
 }
 
-function Note({ children }: { children: ReactNode }) {
-  return <span className="mt-1 block truncate text-[12px] leading-tight">{children}</span>;
+function Note({ children, wrap = false }: { children: ReactNode; wrap?: boolean }) {
+  return (
+    <span
+      className={`mt-1 text-[12px] leading-tight ${wrap ? "flex flex-wrap items-baseline gap-x-1 gap-y-0.5" : "block truncate"}`}
+    >
+      {children}
+    </span>
+  );
 }
 
 /**

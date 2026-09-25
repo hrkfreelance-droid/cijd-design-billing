@@ -69,9 +69,23 @@ export function recommendedFromCost(cost: number, markup: number = printMarkupFr
   return roundCents(cost * (1 + markup));
 }
 
-/** The recommended total at the default markup for this cost. */
-export function printSellingPriceFromCost(cost: number): number {
-  return recommendedFromCost(cost);
+/**
+ * The markup used for a line, as a fraction: its stored manual override
+ * (a percentage, e.g. 35 for +35%) when there is one, otherwise the band.
+ */
+export function markupForCost(cost: number, overridePercent?: number | null): number {
+  if (overridePercent != null && Number.isFinite(overridePercent) && overridePercent >= 0) {
+    return overridePercent / 100;
+  }
+  return printMarkupFromCost(cost);
+}
+
+/**
+ * The recommended total for this cost: at the line's manual markup override
+ * when it has one, otherwise at the default band.
+ */
+export function printSellingPriceFromCost(cost: number, overridePercent?: number | null): number {
+  return recommendedFromCost(cost, markupForCost(cost, overridePercent));
 }
 
 /**

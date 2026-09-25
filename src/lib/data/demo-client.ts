@@ -188,6 +188,11 @@ export async function demoRequest<T>(
         }
         if (method === "DELETE") return (await guarded.setItemCompletion(id, false)) as T;
       }
+      if (id && sub === "markup" && method === "PATCH") {
+        const markupPercent = body.markupPercent === null ? null : num(body.markupPercent);
+        if (markupPercent === undefined) throw new RuleError("INVALID", "Markup must be a number.", 400);
+        return (await guarded.setBillingItemMarkup(id, markupPercent)) as T;
+      }
       if (id && sub === "billing-price" && method === "PATCH") {
         const unitPrice = num(body.unitPrice);
         return (unitPrice === undefined

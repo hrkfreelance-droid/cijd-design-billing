@@ -9,6 +9,7 @@ import {
   draftFromItem,
   draftIsManual,
   draftMarkup,
+  draftMarkupOverride,
   draftRecommended,
   draftTotalCost,
   draftUnitCost,
@@ -262,4 +263,59 @@ test("a new unit price at the same total is still a change", () => {
   const draft = open({ quantity: 3, printCost: 30, amount: 55, unitPrice: 18.33, customAmount: true });
   const retyped = withFinalUnit(draft, "18.34");
   assert.equal(draftChanged(retyped), true);
+});
+
+// ---- Persisted manual markup --------------------------------------------
+
+test("a stored markup override reopens as the line's own markup: 35% · Manual", () => {
+  // $40 cost, saved at +35% → $54.
+  const draft = open({ quantity: 1, printCost: 40, amount: 54, unitPrice: 54, markupOverride: 35 });
+  assert.equal(draft.markup, "35");
+  assert.equal(draft.markupTouched, true);
+  assert.equal(draftMarkup(draft), 0.35);
+  assert.equal(draftRecommended(draft), 54);
+  assert.equal(draftMarkupOverride(draft), 35);
+  // It still follows its (own) recommendation, and opening it is not a change.
+  assert.equal(draft.finalMode, "AUTO");
+  assert.equal(draftChanged(draft), false);
+});
+
+test("with a stored 35% markup, a later cost change recommends cost × 1.35", () => {
+  const draft = open({ quantity: 1, printCost: 40, amount: 54, unitPrice: 54, markupOverride: 35 });
+  const moved = withUnitCost(draft, "80");
+  assert.equal(draftMarkup(moved), 0.35);
+  assert.equal(moved.markup, "35");
+  assert.equal(draftRecommended(moved), 108);
+  assert.equal(draftFinal(moved), 108);
+});
+
+test("default 50% → manual 35% is a change to save; Use default clears it", () => {
+  const draft = open({ quantity: 1, printCost: 40, amount: 60, unitPrice: 60 });
+  assert.equal(draftMarkupOverride(draft), null);
+  const edited = withMarkup(draft, "35");
+  assert.equal(draftMarkupOverride(edited), 35);
+  assert.equal(draftChanged(edited), true);
+  const stored = open({ quantity: 1, printCost: 80, amount: 108, unitPrice: 108, markupOverride: 35 });
+  const reset = withDefaultMarkup(stored);
+  assert.equal(draftMarkupOverride(reset), null);
+  assert.equal(reset.markup, "40");
+  assert.equal(draftRecommended(reset), 112);
+  assert.equal(draftChanged(reset), true);
+});
+
+test("a manual Final stays independent of a stored markup", () => {
+  const draft = open({ quantity: 180, printCost: 360, amount: 774, unitPrice: 4.3, markupOverride: 35 });
+  assert.equal(draft.finalMode, "UNIT");
+  assert.equal(draftRecommended(draft), 486);
+  const moved = withQuantity(draft, "200");
+  assert.equal(draftFinalUnit(moved), 4.3);
+  assert.equal(draftFinal(moved), 860);
+  assert.equal(draftRecommended(moved), 540); // $400 × 1.35
+});
+
+test("rows without a markup override keep the band and are unchanged", () => {
+  const draft = open(); // markupOverride absent (NULL)
+  assert.equal(draft.markupTouched, false);
+  assert.equal(draftMarkupOverride(draft), null);
+  assert.equal(draftChanged(draft), false);
 });

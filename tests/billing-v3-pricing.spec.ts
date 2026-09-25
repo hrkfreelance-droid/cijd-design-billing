@@ -21,7 +21,14 @@ async function state(page: Page) {
   return (await (await page.request.get("/api/state")).json()).data as {
     clients: { id: string; name: string }[];
     projects: { id: string; depositAmount?: number | null }[];
-    billingItems: { id: string; projectId: string; quantity: number; unitPrice: number; amount: number | null }[];
+    billingItems: {
+      id: string;
+      projectId: string;
+      quantity: number;
+      unitPrice: number;
+      amount: number | null;
+      markupOverride?: number | null;
+    }[];
   };
 }
 
@@ -227,4 +234,72 @@ test("billed work stays locked: no price, unit price or deposit change", async (
 
   await page.goto("/office-v3");
   await expect(page.getByRole("button", { name: "Open V3 Locked" })).toHaveCount(0);
+});
+
+test("a manual markup persists: 35% · Manual survives save and reload, and prices a later cost", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V3 Saved Markup");
+  await addItem(page, projectId, { description: "Leaflets", type: "PRINT", serviceType: "PRINTING", quantity: 1, printCost: 40 });
+  // An untouched neighbour: its NULL markup and its price must not move.
+  const otherId = await newProject(page, "V3 Untouched");
+  await addItem(page, otherId, { description: "Cards", type: "PRINT", serviceType: "PRINTING", quantity: 1, printCost: 40 });
+  const untouched = () => state(page).then((snap) => snap.billingItems.find((item) => item.projectId === otherId)!);
+  const untouchedBefore = await untouched();
+  const line = () => state(page).then((snap) => snap.billingItems.find((item) => item.projectId === projectId)!);
+
+  // 1. default 50% → manual 35%
+  let dialog = await edit(page, "V3 Saved Markup");
+  await expect(dialog.getByTestId("v3-item-markup-0")).toHaveValue("50");
+  await dialog.getByTestId("v3-item-markup-0").fill("35");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$54.00");
+  // 2. save
+  await save(dialog);
+  expect(await line()).toMatchObject({ markupOverride: 35, amount: 54 });
+
+  // 3. reload → 4. markup still 35% · Manual
+  await page.reload();
+  dialog = await edit(page, "V3 Saved Markup");
+  await expect(dialog.getByTestId("v3-item-markup-0")).toHaveValue("35");
+  await expect(dialog.getByTestId("v3-item-markup-manual-0")).toHaveText("Manual");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$54.00");
+  if (SHOTS) await dialog.getByTestId("v2-item").screenshot({ path: `${SHOTS}/v3-markup-manual.png` });
+
+  // 5. change Cost → 6. Recommended uses 35%, not the 40% band
+  await dialog.getByTestId("v2-item-unit-cost-0").fill("80");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$108.00");
+  await expect(dialog.getByTestId("v3-item-markup-0")).toHaveValue("35");
+  await save(dialog);
+  expect(await line()).toMatchObject({ markupOverride: 35, amount: 108 });
+  await page.reload();
+  dialog = await edit(page, "V3 Saved Markup");
+  await expect(dialog.getByTestId("v3-item-markup-0")).toHaveValue("35");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$108.00");
+
+  // 7. Use default → 8. back to the automatic tier ($80 → 40%)
+  await dialog.getByTestId("v3-item-markup-reset-0").click();
+  await expect(dialog.getByTestId("v3-item-markup-0")).toHaveValue("40");
+  await expect(dialog.getByTestId("v3-item-markup-default-0")).toBeVisible();
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$112.00");
+  await save(dialog);
+  expect((await line()).markupOverride ?? null).toBeNull();
+  await page.reload();
+  dialog = await edit(page, "V3 Saved Markup");
+  await expect(dialog.getByTestId("v3-item-markup-0")).toHaveValue("40");
+  await expect(dialog.getByTestId("v3-item-markup-default-0")).toBeVisible();
+
+  // 9. the NULL-markup row was never touched
+  expect(await untouched()).toEqual(untouchedBefore);
+  expect(untouchedBefore.markupOverride ?? null).toBeNull();
+});
+
+test("a billed line's markup stays locked", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V3 Locked Markup");
+  const itemId = await addItem(page, projectId, { description: "Logo", type: "DESIGN", serviceType: "DESIGN", amount: 300 });
+  expect((await page.request.post(`/api/billing-items/${itemId}/complete`)).ok()).toBeTruthy();
+  expect((await page.request.patch(`/api/projects/${projectId}/readiness`, { data: { readiness: "READY" } })).ok()).toBeTruthy();
+  expect((await page.request.post("/api/billing-v2/billed", { data: { projectIds: [projectId] } })).ok()).toBeTruthy();
+  const response = await page.request.patch(`/api/billing-items/${itemId}/markup`, { data: { markupPercent: 35 } });
+  expect(response.status()).toBe(409);
+  expect((await response.json()).code).toBe("ITEM_LOCKED");
 });

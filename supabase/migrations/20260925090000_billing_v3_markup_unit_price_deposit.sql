@@ -24,6 +24,13 @@
 --     it. Imported history, invoiced/paid locks and every other column check
 --     are unchanged.
 --   * set_project_deposit is a NEW narrow RPC for the deposit only.
+--   * billing_items.markup_override is a new NULLABLE column: a line's manual
+--     markup in percent (35 = +35%). NULL — every existing row — keeps the
+--     50 / 40 / 30 band. It moves the recommendation only, never a stored
+--     price, and is written only by the NEW narrow RPC set_billing_item_markup.
+--     Each guard gains one branch for that RPC that lets markup_override
+--     (and the updated_* stamps) change and nothing else; a direct BILLING
+--     update of markup_override is refused like the other price columns.
 --
 -- Function bodies below are copied from 20260909120000 / 20260909190000 with
 -- only the changes described above.
@@ -39,18 +46,32 @@ alter table public.projects
   add constraint projects_deposit_amount_nonnegative
   check (deposit_amount is null or deposit_amount >= 0);
 
+-- 1b. Manual markup per line ---------------------------------------------
+
+alter table public.billing_items
+  add column if not exists markup_override numeric(6, 2);
+
+alter table public.billing_items
+  drop constraint if exists billing_items_markup_override_range;
+alter table public.billing_items
+  add constraint billing_items_markup_override_range
+  check (markup_override is null or (markup_override >= 0 and markup_override <= 1000));
+
 -- 2. The printing recommendation, written once in SQL ----------------------
 -- Must agree with recommendedFromCost() in src/lib/billing-v2/pricing.ts.
 
-create or replace function public.print_recommended_amount(p_cost numeric) returns numeric
+create or replace function public.print_recommended_amount(p_cost numeric, p_markup_percent numeric default null)
+returns numeric
 language sql immutable set search_path = public as $$
+  -- p_markup_percent is the line's manual override (35 = +35%); NULL uses the band.
   select case
     when p_cost is null or p_cost < 0 then null
-    else round(p_cost * (1 + case when p_cost <= 50 then 0.5 when p_cost <= 100 then 0.4 else 0.3 end), 2)
+    else round(p_cost * (1 + coalesce(p_markup_percent / 100,
+      case when p_cost <= 50 then 0.5 when p_cost <= 100 then 0.4 else 0.3 end)), 2)
   end;
 $$;
 
-grant execute on function public.print_recommended_amount(numeric) to authenticated, service_role;
+grant execute on function public.print_recommended_amount(numeric, numeric) to authenticated, service_role;
 
 -- 3. Functions that calculate a recommendation (formula only) --------------
 
@@ -67,7 +88,7 @@ begin
     new.print_cost_confirmed_at := null;
     new.billing_price_manual := coalesce(new.billing_price_manual, false);
     if new.print_cost is not null then
-      suggested := public.print_recommended_amount(new.print_cost);
+      suggested := public.print_recommended_amount(new.print_cost, new.markup_override);
       new.suggested_amount := suggested;
       new.suggested_unit_price := case when new.quantity > 0 then round(suggested / new.quantity, 2) else null end;
       if not new.billing_price_manual then
@@ -125,7 +146,7 @@ begin
   if next_cost is not null and next_cost < 0 then raise exception 'INVALID' using detail = 'Printing cost must be zero or more.'; end if;
 
   next_suggested := case
-    when next_cost is not null then public.print_recommended_amount(next_cost)
+    when next_cost is not null then public.print_recommended_amount(next_cost, item.markup_override)
     else round(next_quantity * item.unit_price, 2)
   end;
   preserve_manual := coalesce(item.billing_price_manual, false);
@@ -193,7 +214,7 @@ begin
     raise exception 'INVALID' using detail = 'A confirmed print price must be greater than zero.';
   end if;
   expected_amount := case
-    when p_print_cost is not null then public.print_recommended_amount(p_print_cost)
+    when p_print_cost is not null then public.print_recommended_amount(p_print_cost, item.markup_override)
     else round(item.quantity * p_unit_price, 2)
   end;
   if p_print_cost is not null and p_print_cost < 0 then raise exception 'INVALID' using detail = 'Printing cost must be zero or more.'; end if;
@@ -236,7 +257,22 @@ declare
   role_name public.user_role := public.current_role_name();
   action_name text := coalesce(current_setting('cijd.billing_action', true), '');
   unit_price_write boolean := coalesce(current_setting('cijd.billing_unit_price', true), '') = 'on';
+  markup_write boolean := coalesce(current_setting('cijd.billing_markup', true), '') = 'on';
 begin
+  -- set_billing_item_markup: the line's markup and nothing else.
+  if markup_write then
+    if role_name not in ('DESIGNER', 'BILLING', 'ACCOUNTING', 'PRINTING', 'ADMIN') then
+      raise exception 'FORBIDDEN';
+    end if;
+    if lower(btrim(old.created_by)) = 'import' then raise exception 'HISTORY_READ_ONLY'; end if;
+    if old.billing_status in ('INVOICED', 'PAID') then raise exception 'ITEM_LOCKED'; end if;
+    if (to_jsonb(new) - 'markup_override' - 'updated_at' - 'updated_by')
+       is distinct from (to_jsonb(old) - 'markup_override' - 'updated_at' - 'updated_by') then
+      raise exception 'FORBIDDEN';
+    end if;
+    return new;
+  end if;
+
   if action_name = 'billing_price' then
     if role_name not in ('DESIGNER', 'BILLING', 'ACCOUNTING', 'PRINTING', 'ADMIN') then
       raise exception 'FORBIDDEN';
@@ -296,6 +332,7 @@ begin
        or old.amount is distinct from new.amount
        or old.custom_amount is distinct from new.custom_amount
        or old.print_cost is distinct from new.print_cost
+       or old.markup_override is distinct from new.markup_override
        or old.production_status is distinct from new.production_status
        or old.delivered_at is distinct from new.delivered_at
        or old.delivered_by is distinct from new.delivered_by
@@ -326,6 +363,7 @@ declare
   action_name text := coalesce(current_setting('cijd.printing_action', true), '');
   billing_action_name text := coalesce(current_setting('cijd.billing_action', true), '');
   unit_price_write boolean := coalesce(current_setting('cijd.billing_unit_price', true), '') = 'on';
+  markup_write boolean := coalesce(current_setting('cijd.billing_markup', true), '') = 'on';
 begin
   if role_name is distinct from 'PRINTING' then
     return new;
@@ -337,7 +375,13 @@ begin
     raise exception 'FORBIDDEN';
   end if;
 
-  if billing_action_name = 'billing_price' then
+  if markup_write then
+    -- set_billing_item_markup: the line's markup and nothing else.
+    if (to_jsonb(new) - 'markup_override' - 'updated_at' - 'updated_by')
+       is distinct from (to_jsonb(old) - 'markup_override' - 'updated_at' - 'updated_by') then
+      raise exception 'FORBIDDEN';
+    end if;
+  elsif billing_action_name = 'billing_price' then
     if old.id is distinct from new.id
        or old.project_id is distinct from new.project_id
        or old.description is distinct from new.description
@@ -542,3 +586,49 @@ $$;
 
 revoke all on function public.set_project_deposit(uuid, numeric, text) from public, anon;
 grant execute on function public.set_project_deposit(uuid, numeric, text) to authenticated, service_role;
+
+-- 7. A line's manual markup, in one narrow write ----------------------------
+-- NULL returns the line to the 50 / 40 / 30 band. Only markup_override moves:
+-- no amount, unit price or suggested price is rewritten here.
+
+create or replace function public.set_billing_item_markup(
+  p_item_id uuid,
+  p_markup_percent numeric,
+  p_actor text
+) returns public.billing_items
+language plpgsql security invoker set search_path = public as $$
+declare
+  item public.billing_items;
+  actor_name text := coalesce((select name from public.users where id = auth.uid()), nullif(btrim(p_actor), ''), 'Unknown');
+begin
+  if coalesce(auth.role(), '') <> 'service_role' then
+    if current_role_name() is null
+       or current_role_name() not in ('DESIGNER', 'BILLING', 'ACCOUNTING', 'PRINTING', 'ADMIN') then
+      raise exception 'FORBIDDEN';
+    end if;
+  end if;
+  if p_markup_percent is not null and (p_markup_percent < 0 or p_markup_percent > 1000) then
+    raise exception 'INVALID' using detail = 'Markup must be between 0% and 1000%.';
+  end if;
+  select * into item from public.billing_items where id = p_item_id and deleted_at is null;
+  if not found then raise exception 'NOT_FOUND' using detail = 'Billing item was not found.'; end if;
+  if lower(btrim(item.created_by)) = 'import' then raise exception 'HISTORY_READ_ONLY'; end if;
+  if item.billing_status in ('INVOICED', 'PAID') then raise exception 'ITEM_LOCKED'; end if;
+
+  perform set_config('cijd.billing_markup', 'on', true);
+  update public.billing_items set
+    markup_override = case when p_markup_percent is null then null else round(p_markup_percent, 2) end,
+    updated_at = now(), updated_by = actor_name
+  where id = p_item_id
+  returning * into item;
+  -- Row security can hide the row from this role; say so rather than return nothing.
+  if not found then raise exception 'FORBIDDEN'; end if;
+  perform set_config('cijd.billing_markup', '', true);
+  insert into public.audit_logs (actor, action, entity, entity_id, detail)
+  values (actor_name, 'billing.markup', 'billing_item', item.id, coalesce(item.markup_override::text, 'default'));
+  return item;
+end;
+$$;
+
+revoke all on function public.set_billing_item_markup(uuid, numeric, text) from public, anon;
+grant execute on function public.set_billing_item_markup(uuid, numeric, text) to authenticated, service_role;

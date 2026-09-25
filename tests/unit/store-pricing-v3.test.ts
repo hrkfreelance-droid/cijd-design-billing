@@ -193,3 +193,53 @@ test("existing stored prices are never rewritten by the new rule", async () => {
   await mem.reopen().getSnapshot();
   assert.equal(JSON.stringify(mem.raw()), before);
 });
+
+test("manual markup: save, reload, cost change recommends with it, Use default clears it", async () => {
+  const { mem, print } = await setup(); // qty 180, cost $40 → $60
+  const reload = async () => (await mem.reopen().getSnapshot()).billingItems.find((item) => item.id === print.id)!;
+
+  await mem.reopen().setBillingItemMarkup(print.id, 35);
+  let stored = await reload();
+  assert.equal(stored.markupOverride, 35);
+  // Setting the markup moves no stored price.
+  assert.equal(stored.amount, 60);
+
+  await mem.reopen().updatePrintSpec(print.id, { printCost: 80 });
+  stored = await reload();
+  assert.equal(stored.markupOverride, 35);
+  assert.equal(stored.suggestedAmount, 108); // $80 × 1.35, not the 40% band
+
+  await mem.reopen().setBillingItemMarkup(print.id, null);
+  stored = await reload();
+  assert.equal(stored.markupOverride, null);
+  await mem.reopen().updatePrintSpec(print.id, { printCost: 80 });
+  assert.equal((await reload()).suggestedAmount, 112);
+});
+
+test("markup outside 0–1000% is refused", async () => {
+  const { mem, print } = await setup();
+  await rejectsWith(mem.reopen().setBillingItemMarkup(print.id, -1), "INVALID");
+  await rejectsWith(mem.reopen().setBillingItemMarkup(print.id, 1001), "INVALID");
+});
+
+for (const status of ["INVOICED", "PAID"] as const) {
+  test(`an ${status.toLowerCase()} line's markup is locked`, async () => {
+    const { mem, print } = await setup();
+    mem.edit((db) => {
+      const item = db.billingItems.find((entry) => entry.id === print.id)!;
+      item.billingStatus = status;
+      item.invoiceId = "inv_test";
+    });
+    const before = JSON.stringify(mem.raw().billingItems.find((entry) => entry.id === print.id));
+    await rejectsWith(mem.reopen().setBillingItemMarkup(print.id, 35), "ITEM_LOCKED");
+    assert.equal(JSON.stringify(mem.raw().billingItems.find((entry) => entry.id === print.id)), before);
+  });
+}
+
+test("existing rows without a markup override stay exactly as stored", async () => {
+  const mem = memory();
+  const before = JSON.stringify(mem.raw());
+  const snap = await mem.reopen().getSnapshot();
+  for (const item of snap.billingItems) assert.equal(item.markupOverride ?? null, null);
+  assert.equal(JSON.stringify(mem.raw()), before);
+});

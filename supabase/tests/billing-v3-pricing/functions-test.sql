@@ -126,3 +126,63 @@ select deposit_amount from public.set_project_deposit('20000000-0000-0000-0000-0
 select pg_temp.expect_error($q$select public.override_billing_unit_price('40000000-0000-0000-0000-000000000004', 365, 730, 'Pilot')$q$, 'ITEM_LOCKED');
 reset role;
 select 'ok 11 service-role (pilot) path' as result;
+
+-- 12. set_billing_item_markup ------------------------------------------------
+select set_config('request.jwt.claim.role', '', false);
+-- BILLING on a delivered line: markup only, no stored price moves
+select pg_temp.act('00000000-0000-0000-0000-00000000000b');
+set role authenticated;
+select markup_override from public.set_billing_item_markup('40000000-0000-0000-0000-000000000003', 35, 'Billing B');
+reset role;
+do $$ declare m public.billing_items; begin
+  select * into m from public.billing_items where id = '40000000-0000-0000-0000-000000000003';
+  if m.markup_override <> 35 then raise exception 'markup not stored: %', m.markup_override; end if;
+  if m.amount <> 860 or m.unit_price <> 4.3 then raise exception 'markup moved the price: % / %', m.amount, m.unit_price; end if;
+end $$;
+-- ADMIN on an auto line: a later cost edit recommends with the stored markup
+select pg_temp.act('00000000-0000-0000-0000-00000000000a');
+set role authenticated;
+select markup_override from public.set_billing_item_markup('40000000-0000-0000-0000-000000000001', 35, 'Admin A');
+select amount, suggested_amount from public.update_print_spec('40000000-0000-0000-0000-000000000001', null, null, 180, 80, null, 'Admin A');
+reset role;
+do $$ declare a public.billing_items; begin
+  select * into a from public.billing_items where id = '40000000-0000-0000-0000-000000000001';
+  if a.suggested_amount <> 108 or a.amount <> 108 then raise exception 'spec edit ignored markup: % / %', a.amount, a.suggested_amount; end if;
+end $$;
+-- Use default: NULL returns to the band
+select pg_temp.act('00000000-0000-0000-0000-00000000000a');
+set role authenticated;
+select markup_override from public.set_billing_item_markup('40000000-0000-0000-0000-000000000001', null, 'Admin A');
+select amount, suggested_amount from public.update_print_spec('40000000-0000-0000-0000-000000000001', null, null, 180, 80, null, 'Admin A');
+reset role;
+do $$ declare a public.billing_items; begin
+  select * into a from public.billing_items where id = '40000000-0000-0000-0000-000000000001';
+  if a.markup_override is not null or a.suggested_amount <> 112 then raise exception 'default not restored: % / %', a.markup_override, a.suggested_amount; end if;
+end $$;
+-- PRINTING through its own guard
+select pg_temp.act('00000000-0000-0000-0000-00000000000c');
+set role authenticated;
+select markup_override from public.set_billing_item_markup('40000000-0000-0000-0000-000000000003', 20, 'Printing C');
+-- locks, range, history, direct writes
+select pg_temp.expect_error($q$select public.set_billing_item_markup('40000000-0000-0000-0000-000000000004', 35, 'x')$q$, 'ITEM_LOCKED');
+reset role;
+select pg_temp.act('00000000-0000-0000-0000-00000000000b');
+set role authenticated;
+select pg_temp.expect_error($q$select public.set_billing_item_markup('40000000-0000-0000-0000-000000000004', 35, 'x')$q$, 'ITEM_LOCKED');
+select pg_temp.expect_error($q$select public.set_billing_item_markup('40000000-0000-0000-0000-000000000005', 35, 'x')$q$, 'ITEM_LOCKED');
+select pg_temp.expect_error($q$select public.set_billing_item_markup('40000000-0000-0000-0000-000000000006', 35, 'x')$q$, 'HISTORY_READ_ONLY');
+select pg_temp.expect_error($q$select public.set_billing_item_markup('40000000-0000-0000-0000-000000000003', -1, 'x')$q$, 'INVALID');
+select pg_temp.expect_error($q$update public.billing_items set markup_override = 99 where id = '40000000-0000-0000-0000-000000000003'$q$, 'FORBIDDEN');
+reset role;
+set role anon;
+select pg_temp.expect_error($q$select public.set_billing_item_markup('40000000-0000-0000-0000-000000000003', 35, 'x')$q$, 'permission denied');
+reset role;
+select set_config('request.jwt.claim.sub', '', false);
+select pg_temp.expect_error($q$update public.billing_items set markup_override = 2000 where id = '40000000-0000-0000-0000-000000000003'$q$, 'new row for relation "billing_items" violates check constraint');
+-- service key (pilot)
+select set_config('request.jwt.claim.sub', '', false);
+select set_config('request.jwt.claim.role', 'service_role', false);
+set role service_role;
+select markup_override from public.set_billing_item_markup('40000000-0000-0000-0000-000000000003', null, 'Pilot');
+reset role;
+select 'ok 12 markup override: stored, used by spec edits, cleared, locked, narrow' as result;

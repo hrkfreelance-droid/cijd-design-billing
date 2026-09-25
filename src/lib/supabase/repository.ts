@@ -560,7 +560,7 @@ export class SupabaseRepository implements Repository {
     }
     const suggestedAmount =
       printCost !== null && printCost !== undefined
-        ? printSellingPriceFromCost(printCost)
+        ? printSellingPriceFromCost(printCost, current.markupOverride)
         : money(quantity * current.unitPrice);
     const preserveManualOverride = current.customAmount;
     const amount = preserveManualOverride ? current.amount : suggestedAmount;
@@ -631,7 +631,7 @@ export class SupabaseRepository implements Repository {
     }
     if (
       printCost !== null && printCost !== undefined
-        ? money(amount) !== printSellingPriceFromCost(printCost)
+        ? money(amount) !== printSellingPriceFromCost(printCost, current.markupOverride)
         : money(amount) !== money(current.quantity * unitPrice)
     ) {
       throw new RuleError("INVALID", "Print total must equal quantity × unit price.", 400);
@@ -648,11 +648,11 @@ export class SupabaseRepository implements Repository {
         print_cost: printCost,
         suggested_unit_price:
           printCost !== null && printCost !== undefined && current.quantity > 0
-            ? money(printSellingPriceFromCost(printCost) / current.quantity)
+            ? money(printSellingPriceFromCost(printCost, current.markupOverride) / current.quantity)
             : current.suggestedUnitPrice ?? current.unitPrice,
         suggested_amount:
           printCost !== null && printCost !== undefined
-            ? printSellingPriceFromCost(printCost)
+            ? printSellingPriceFromCost(printCost, current.markupOverride)
             : current.suggestedAmount ?? current.amount,
         unit_price: preserveManualOverride ? current.unitPrice : money(unitPrice),
         amount: preserveManualOverride ? current.amount : money(amount),
@@ -704,9 +704,10 @@ export class SupabaseRepository implements Repository {
     if (!Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(amount) || amount < 0) {
       throw new RuleError("INVALID", "A confirmed print price must be zero or more.", 400);
     }
-    const current = unwrap<{ quantity: number | string }>(
-      await this.db.from("billing_items").select("quantity").eq("id", id).single(),
+    const current = unwrap<{ quantity: number | string; markup_override?: number | string | null }>(
+      await this.db.from("billing_items").select("*").eq("id", id).single(),
     );
+    const markupOverride = current.markup_override == null ? null : Number(current.markup_override);
     const quantity = Number(current.quantity);
     const printCost = input.printCost;
     if (printCost !== undefined && (!Number.isFinite(printCost) || printCost < 0)) {
@@ -714,7 +715,7 @@ export class SupabaseRepository implements Repository {
     }
     const expectedAmount =
       printCost !== undefined
-        ? printSellingPriceFromCost(printCost)
+        ? printSellingPriceFromCost(printCost, markupOverride)
         : money(quantity * unitPrice);
     if (!Number.isFinite(quantity) || money(amount) !== expectedAmount) {
       throw new RuleError("INVALID", "Print total must equal quantity × unit price.", 400);
@@ -758,6 +759,19 @@ export class SupabaseRepository implements Repository {
       viaFunction.error.code === "PGRST301";
     if (!refused || !this.accessRole) fail(viaFunction.error);
     return this.writeBillingPrice(id, amount, actor);
+  }
+
+  async setBillingItemMarkup(id: string, markupPercent: number | null, actor = DEFAULT_ACTOR) {
+    if (markupPercent !== null && (!Number.isFinite(markupPercent) || markupPercent < 0 || markupPercent > 1000)) {
+      throw new RuleError("INVALID", "Markup must be between 0% and 1000%.", 400);
+    }
+    const result = await this.db.rpc("set_billing_item_markup", {
+      p_item_id: id,
+      p_markup_percent: markupPercent === null ? null : money(markupPercent),
+      p_actor: actor,
+    });
+    if (result.error) fail(result.error);
+    return toItem(result.data as Row);
   }
 
   async overrideBillingUnitPrice(id: string, unitPrice: number, amount: number, actor = DEFAULT_ACTOR) {

@@ -5,7 +5,8 @@
 #   1. fresh cluster + minimal Supabase stubs (auth schema, roles)
 #   2. every migration BEFORE 20260925090000
 #   3. production-like rows (old-rule prices, manual overrides, invoiced, paid, imported)
-#   4. snapshot every row → apply the new migration → snapshot → diff (must be empty)
+#   4. snapshot every row → apply the new migration → snapshot → diff (must be empty);
+#      the two new NULL columns are set aside and checked to be NULL
 #   5. exercise the new/redefined functions as ADMIN, BILLING, PRINTING, anon, service_role
 #
 # Usage: supabase/tests/billing-v3-pricing/run.sh   (run as root; uses the `postgres` OS user)
@@ -29,7 +30,7 @@ $P -d cijd -f "$WORK/seed-prodlike.sql"
 snapshot() {
   local Q="psql -h $WORK -p $PORT -U postgres -d cijd -qAt"
   for t in $($Q -c "select schemaname||'.'||tablename from pg_tables where schemaname in ('public','auth') order by 1"); do
-    $Q -c "select '$t ' || (to_jsonb(r) - 'deposit_amount')::text from $t r order by 1"
+    $Q -c "select '$t ' || (to_jsonb(r) - 'deposit_amount' - 'markup_override')::text from $t r order by 1"
   done
 }
 snapshot > "$WORK/before.txt"
@@ -37,6 +38,10 @@ $P -d cijd -f "$WORK/20260925090000_billing_v3_markup_unit_price_deposit.sql" 2>
 snapshot > "$WORK/after.txt"
 diff "$WORK/before.txt" "$WORK/after.txt"
 echo "ok migration: no existing row changed ($(wc -l < "$WORK/before.txt") rows compared)"
+NEW=$(psql -h "$WORK" -p "$PORT" -U postgres -d cijd -qAt -c "select count(*) filter (where deposit_amount is not null) from public.projects")
+NEW=$((NEW + $(psql -h "$WORK" -p "$PORT" -U postgres -d cijd -qAt -c "select count(*) filter (where markup_override is not null) from public.billing_items")))
+[ "$NEW" = "0" ] || { echo "new columns not NULL on existing rows"; exit 1; }
+echo "ok migration: every existing row reads deposit_amount = NULL, markup_override = NULL"
 $P -d cijd -f "$WORK/20260925090000_billing_v3_markup_unit_price_deposit.sql" 2>&1 | grep -v NOTICE || true
 echo "ok migration: re-apply is idempotent"
 psql -h "$WORK" -p "$PORT" -U postgres -d cijd -q -v ON_ERROR_STOP=1 -f "$WORK/functions-test.sql" 2>&1 | grep -E "^ ok |ERROR"

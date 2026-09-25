@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   effectiveMarkupPercent,
   finalPriceConsistent,
+  markupForCost,
   nextFinalPrice,
   printMarginFromCost,
   printMarkupFromCost,
@@ -96,4 +97,14 @@ test("a deposit never changes a price", () => {
   const before = printSellingPriceFromCost(40);
   projectBalance(before, 1000);
   assert.equal(printSellingPriceFromCost(40), 60);
+});
+
+test("a line's manual markup override replaces the band; null keeps the band", () => {
+  assert.equal(markupForCost(40, 35), 0.35);
+  assert.equal(markupForCost(40, null), 0.5);
+  assert.equal(markupForCost(40, undefined), 0.5);
+  assert.equal(markupForCost(150, 0), 0);
+  assert.equal(printSellingPriceFromCost(40, 35), 54);
+  assert.equal(printSellingPriceFromCost(80, 35), 108);
+  assert.equal(printSellingPriceFromCost(80, null), 112);
 });

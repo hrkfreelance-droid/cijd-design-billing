@@ -60,7 +60,10 @@ export interface ItemDraft {
   totalCost: string;
   /** Markup on cost in percent, as typed ("35" is +35%). */
   markup: string;
-  /** The markup was typed by a person; otherwise it follows the cost band. */
+  /**
+   * The markup is the line's own (typed now, or stored as its override);
+   * otherwise it follows the cost band. Saved as `markupOverride`.
+   */
   markupTouched: boolean;
   /** Final Total. Empty is "price pending", never $0. */
   finalPrice: string;
@@ -87,6 +90,7 @@ export function draftFromItem(entry: BoardItem): ItemDraft {
   const quantity = entry.item.quantity;
   const totalCost = entry.item.printCost;
   const costPriced = isCostPriced(entry.service);
+  const override = costPriced ? (entry.item.markupOverride ?? null) : null;
   const unitPrice = entry.finalUnitPrice ?? (entry.amount != null && quantity > 0 ? roundCents(entry.amount / quantity) : null);
   // A stored price that equals today's recommendation keeps following the
   // cost. Anything else is someone's price and opens as a manual unit price,
@@ -104,8 +108,9 @@ export function draftFromItem(entry: BoardItem): ItemDraft {
     costMode: "UNIT",
     totalCost: totalCost == null ? "" : String(totalCost),
     unitCost: totalCost == null || !quantity ? "" : formatUnitCost(totalCost / quantity),
-    markup: totalCost == null ? "" : percentText(printMarkupFromCost(totalCost)),
-    markupTouched: false,
+    markup:
+      override != null ? percentText(override / 100) : totalCost == null ? "" : percentText(printMarkupFromCost(totalCost)),
+    markupTouched: override != null,
     finalPrice: entry.amount == null ? "" : String(entry.amount),
     finalUnitPrice: unitPrice == null ? "" : String(unitPrice),
     finalMode: follows ? "AUTO" : "UNIT",
@@ -206,6 +211,17 @@ export function draftMarkup(draft: ItemDraft, serviceTypes: ServiceTypes = []): 
   if (!draft.markupTouched || isInvalidMarkup(draft.markup)) return fallback;
   const typed = parseAmount(draft.markup);
   return typed == null ? fallback : typed / 100;
+}
+
+/**
+ * The markup to store as the line's override, in percent (35 for +35%), or
+ * null for "use the default band".
+ */
+export function draftMarkupOverride(draft: ItemDraft, serviceTypes: ServiceTypes = []): number | null {
+  if (!isCostPriced(draftService(draft, serviceTypes)) || !draft.markupTouched) return null;
+  if (isInvalidMarkup(draft.markup)) return null;
+  const typed = parseAmount(draft.markup);
+  return typed == null ? null : roundCents(typed);
 }
 
 /** The pricing rule always reads Total Cost, never Unit Cost. */
@@ -380,6 +396,7 @@ export function draftChanged(draft: ItemDraft): boolean {
     draftQuantity(draft) !== before.item.quantity ||
     final !== before.amount ||
     (final != null && draft.finalMode !== "AUTO" && draftFinalUnit(draft) !== before.finalUnitPrice) ||
-    (isCostPriced(before.service) && rawTotalCost(draft) !== (before.item.printCost ?? null))
+    (isCostPriced(before.service) && rawTotalCost(draft) !== (before.item.printCost ?? null)) ||
+    (isCostPriced(before.service) && draftMarkupOverride(draft) !== (before.item.markupOverride ?? null))
   );
 }

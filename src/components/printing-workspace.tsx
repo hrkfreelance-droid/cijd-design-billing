@@ -300,7 +300,7 @@ function PrintEditSheet({
   const calculatedAmount = calculatePrintTotal(quantity, unitPrice);
   const costValue = parseNumber(printCost);
   const hasCost = costValue !== null && costValue > 0;
-  const calculatedBilling = hasCost ? printSellingPriceFromCost(costValue) : Number(calculatedAmount || 0);
+  const calculatedBilling = hasCost ? printSellingPriceFromCost(costValue, item.markupOverride) : Number(calculatedAmount || 0);
   const validQuantity = quantityValue !== null && quantityValue > 0;
   const validCost = hasCost && calculatedBilling > 0;
   const validPrice =

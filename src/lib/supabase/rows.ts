@@ -86,6 +86,7 @@ export const toItem = (row: Row): BillingItem => ({
       : row.print_cost_amount == null
         ? null
         : numeric(row.print_cost_amount),
+  markupOverride: row.markup_override == null ? null : numeric(row.markup_override),
   priceReviewStatus: (row.price_review_status as BillingItem["priceReviewStatus"]) ?? null,
   suggestedUnitPrice: row.suggested_unit_price == null ? null : numeric(row.suggested_unit_price),
   suggestedAmount: row.suggested_amount == null ? null : numeric(row.suggested_amount),

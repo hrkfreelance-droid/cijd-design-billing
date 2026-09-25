@@ -11,7 +11,7 @@
  */
 import { isHistoricalRecord, isProductionComplete } from "@/lib/derive";
 import type { BillingItem, Client, Project, Snapshot } from "@/lib/types";
-import { printMarkupFromCost, printSellingPriceFromCost, projectBalance, roundCents, type ProjectBalance } from "./pricing";
+import { markupForCost, printSellingPriceFromCost, projectBalance, roundCents, type ProjectBalance } from "./pricing";
 import { isCostPriced, serviceForItem, type ServiceDefinition } from "./services";
 
 export interface BoardItem {
@@ -21,7 +21,10 @@ export interface BoardItem {
   cost: number | null;
   /** `cost` ÷ quantity — always derived, never stored; null under the same conditions as `cost`. */
   unitCost: number | null;
-  /** The price the cost rule suggests, from the *total* cost; null when the service is not cost-priced. */
+  /**
+   * The price the cost rule suggests, from the *total* cost and the line's
+   * markup (its manual override, else the band); null when not cost-priced.
+   */
   recommended: number | null;
   /**
    * The default markup band behind `recommended`, as a fraction of cost
@@ -138,14 +141,15 @@ export function toBoardItem(item: BillingItem, snapshot?: Pick<Snapshot, "servic
   const costPriced = isCostPriced(service);
   const cost = costPriced ? (item.printCost ?? null) : null;
   const unitCost = cost == null || item.quantity <= 0 ? null : cost / item.quantity;
-  const recommended = cost == null ? null : printSellingPriceFromCost(cost);
+  const override = costPriced ? (item.markupOverride ?? null) : null;
+  const recommended = cost == null ? null : printSellingPriceFromCost(cost, override);
   return {
     item,
     service,
     cost,
     unitCost,
     recommended,
-    margin: cost == null ? null : printMarkupFromCost(cost),
+    margin: cost == null ? null : markupForCost(cost, override),
     finalUnitPrice: storedFinalUnitPrice(item),
     manual: costPriced && item.amount != null && recommended != null && item.amount !== recommended,
     amount: item.amount,

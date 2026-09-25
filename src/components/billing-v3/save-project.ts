@@ -10,6 +10,7 @@ import {
   draftTotalCost,
   draftFinal,
   draftFinalUnit,
+  draftMarkupOverride,
   draftService,
   parseAmount,
   type ItemDraft,
@@ -99,6 +100,7 @@ async function createItem(
   const followsRecommendation =
     isCostPriced(service) &&
     draft.finalMode === "AUTO" &&
+    !draft.markupTouched &&
     cost != null &&
     final === printSellingPriceFromCost(cost);
 
@@ -115,6 +117,9 @@ async function createItem(
     },
   });
 
+  const markup = draftMarkupOverride(draft, serviceTypes);
+  if (markup !== null) await writeMarkup(created.id, markup);
+
   // The ledger prices a costed line from its cost on the way in; an emptied
   // price field means "pending", so say so explicitly.
   if (final === null && created.amount !== null) {
@@ -122,6 +127,14 @@ async function createItem(
   }
   // Whatever the ledger settled on, the number on screen is the one saved.
   return (await writeFinal(created, draft)) ?? created;
+}
+
+/** A line's own markup (percent), or null to return it to the default band. */
+function writeMarkup(id: string, markupPercent: number | null): Promise<BillingItem> {
+  return api<BillingItem>(`/api/billing-items/${id}/markup`, {
+    method: "PATCH",
+    body: { markupPercent },
+  });
 }
 
 /**
@@ -166,6 +179,12 @@ async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): P
         ...(detailsChanged && !costPriced ? { description, quantity } : {}),
       },
     });
+  }
+
+  // The markup goes before the cost, so a recalculated recommendation uses it.
+  const markup = draftMarkupOverride(draft, serviceTypes);
+  if (costPriced && markup !== (before?.item.markupOverride ?? null)) {
+    latest = await writeMarkup(id, markup);
   }
 
   if (costPriced && (serviceChanged || detailsChanged || before?.item.printCost !== cost)) {

@@ -36,6 +36,9 @@ One source per line — `finalMode`:
 
 - Qty change on a manual line keeps the unit price (TOTAL becomes UNIT).
 - Markup edit moves Recommended; only an AUTO Final follows it.
+- An edited markup is saved per line (`markupOverride`) and reopens as
+  "35 % · Manual"; later cost changes recommend with it. "Use default"
+  clears it back to the 50 / 40 / 30 band.
 - Only "Use recommended" returns a manual line to AUTO.
 - Unit prices are cents (`billing_items.unit_price` is `numeric(12,2)`).
 
@@ -45,6 +48,13 @@ One source per line — `finalMode`:
   total by the new RPC `override_billing_unit_price` (API: `PATCH
   /api/billing-items/:id/billing-price` with `unitPrice`). Without the
   migration the server falls back to the old amount-only override.
+- Markup % → new nullable `billing_items.markup_override numeric(6,2)`
+  (percent; NULL = band; 0–1000 check), written only by
+  `set_billing_item_markup` (API: `PATCH /api/billing-items/:id/markup`,
+  `{ markupPercent: number | null }`). It moves the recommendation only —
+  `print_recommended_amount(cost, markup_override)` in SQL and
+  `printSellingPriceFromCost(cost, markupOverride)` in the app — never a
+  stored price. Locked for invoiced/paid and imported lines.
 - Deposit → new nullable `projects.deposit_amount numeric(12,2)` (NULL = $0,
   `>= 0` check), written only by `set_project_deposit` (API: `PATCH
   /api/projects/:id/deposit`). Locked once the project has invoiced/paid work.
@@ -60,7 +70,7 @@ One source per line — `finalMode`:
    Qty 180→181 / 180→200 on a manual unit price.
 
 Deploying the code before step 2 is safe for prices (falls back), but saving
-a deposit fails until the migration exists.
+a deposit or an edited markup fails until the migration exists.
 
 ## Verification
 

@@ -176,6 +176,11 @@ export interface Repository {
    * quantity; both are rounded to cents.
    */
   overrideBillingUnitPrice(id: string, unitPrice: number, amount: number, actor?: string): Promise<BillingItem>;
+  /**
+   * A line's manual markup, in percent; null returns it to the 50 / 40 / 30
+   * band. Moves the recommendation only — never the final price.
+   */
+  setBillingItemMarkup(id: string, markupPercent: number | null, actor?: string): Promise<BillingItem>;
   setBillingStatus(
     id: string,
     status: BillingStatus,
