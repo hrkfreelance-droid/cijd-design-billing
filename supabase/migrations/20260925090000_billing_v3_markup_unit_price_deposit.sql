@@ -1,69 +1,104 @@
--- CIJD Billing V3: markup pricing, persisted Final Unit Price, project deposit.
+-- CIJD Billing V3: project deposit, per-line manual markup, Final Unit Price.
 --
--- Additive and backward-compatible. This migration does NOT update, delete or
--- backfill any existing row:
+-- ADDITIVE ONLY. Written against the LIVE schema, which is newer than this
+-- repository's migration chain (20260912084617 add_print_margin_override,
+-- 20260912084732 print_margin_rpc, 20260912092409 print_cost_basis_rpc are
+-- applied live but not present here). Therefore this migration:
 --
---   * projects.deposit_amount is a new NULLABLE column. Every existing project
---     reads NULL, which the application treats as "no deposit" ($0).
---   * The printing recommendation changes from the old gross-margin rule
---     (cost / (1 - margin), rounded up to $5) to a markup on cost:
+--   * redefines NO existing function, trigger, policy or constraint — every
+--     function below is created with plain CREATE FUNCTION, so if a name and
+--     signature already exist the whole migration fails instead of replacing
+--     it (update_print_spec, review_print_price, ensure_print_price_review,
+--     round_print_billing_price, *_with_margin, the guard triggers and the
+--     print-cost-basis workflow are untouched);
+--   * updates, deletes and backfills NO row;
+--   * adds two NULLABLE columns (every existing row reads NULL):
+--       projects.deposit_amount        numeric(12,2)  NULL = no deposit
+--       billing_items.markup_override  numeric(6,2)   percent, NULL = band
+--     markup_override is markup ON COST (35 = +35%). It is deliberately a
+--     separate column from the live gross-margin billing_items.margin_override
+--     numeric(5,4), which is neither read nor written here;
+--   * adds new narrow RPCs that work inside the EXISTING guard triggers:
+--       set_project_deposit, set_billing_item_markup,
+--       override_billing_unit_price, print_markup_recommended_amount.
 --
---         Recommended = round(cost × (1 + markup), 2)
---         cost <= 50 → +50%   cost <= 100 → +40%   otherwise → +30%
+-- The markup-on-cost rule for the SQL-side recommendation paths (both
+-- update_print_spec / review_print_price overloads, ensure_print_price_review,
+-- round_print_billing_price, *_with_margin) is NOT changed here: it must be
+-- written against the live function bodies (see
+-- supabase/tests/billing-v3-pricing/live-schema-export.sql) in a follow-up
+-- migration.
 --
---     Only the function bodies that CALCULATE a recommendation are replaced.
---     They run when a line is created, when its print spec is edited, or when
---     a price is reviewed — never over stored rows. Every stored amount,
---     unit_price, suggested_amount, manual flag, invoice and payment keeps its
---     current value.
---   * override_billing_unit_price is a NEW narrow RPC that writes a final
---     amount together with its unit price. The existing override_billing_price
---     keeps its signature and behaviour for older callers.
---   * The two billing-item guards gain exactly one allowance: unit_price may
---     change inside a billing-price override only when that new RPC announced
---     it. Imported history, invoiced/paid locks and every other column check
---     are unchanged.
---   * set_project_deposit is a NEW narrow RPC for the deposit only.
---   * billing_items.markup_override is a new NULLABLE column: a line's manual
---     markup in percent (35 = +35%). NULL — every existing row — keeps the
---     50 / 40 / 30 band. It moves the recommendation only, never a stored
---     price, and is written only by the NEW narrow RPC set_billing_item_markup.
---     Each guard gains one branch for that RPC that lets markup_override
---     (and the updated_* stamps) change and nothing else; a direct BILLING
---     update of markup_override is refused like the other price columns.
---
--- Function bodies below are copied from 20260909120000 / 20260909190000 with
--- only the changes described above.
+-- Runs in one transaction: either everything below applies, or nothing does.
 
--- 1. Project deposit -------------------------------------------------------
+begin;
+
+-- 0. Preflight: refuse to run against an unexpected schema -----------------
+
+do $$
+declare
+  missing text[] := array[]::text[];
+  present text[] := array[]::text[];
+  fn text;
+begin
+  -- Existing objects this release builds on.
+  foreach fn in array array[
+    'public.override_billing_price(uuid,numeric,text)',
+    'public.current_role_name()',
+    'public.guard_office_billing_item_update()',
+    'public.guard_printing_billing_item_update()'
+  ] loop
+    if to_regprocedure(fn) is null then missing := missing || fn; end if;
+  end loop;
+  if array_length(missing, 1) > 0 then
+    raise exception 'PREFLIGHT: expected objects are missing: %', missing;
+  end if;
+
+  -- New objects must not exist yet (nothing is ever replaced).
+  foreach fn in array array[
+    'public.print_markup_recommended_amount(numeric,numeric)',
+    'public.set_project_deposit(uuid,numeric,text)',
+    'public.set_billing_item_markup(uuid,numeric,text)',
+    'public.override_billing_unit_price(uuid,numeric,numeric,text)'
+  ] loop
+    if to_regprocedure(fn) is not null then present := present || fn; end if;
+  end loop;
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'projects' and column_name = 'deposit_amount') then
+    present := present || 'projects.deposit_amount'::text;
+  end if;
+  if exists (select 1 from information_schema.columns
+             where table_schema = 'public' and table_name = 'billing_items' and column_name = 'markup_override') then
+    present := present || 'billing_items.markup_override'::text;
+  end if;
+  if array_length(present, 1) > 0 then
+    raise exception 'PREFLIGHT: objects already exist, refusing to replace: %', present;
+  end if;
+end $$;
+
+-- 1. New nullable columns --------------------------------------------------
 
 alter table public.projects
-  add column if not exists deposit_amount numeric(12, 2);
-
-alter table public.projects
-  drop constraint if exists projects_deposit_amount_nonnegative;
+  add column deposit_amount numeric(12, 2);
 alter table public.projects
   add constraint projects_deposit_amount_nonnegative
   check (deposit_amount is null or deposit_amount >= 0);
 
--- 1b. Manual markup per line ---------------------------------------------
-
 alter table public.billing_items
-  add column if not exists markup_override numeric(6, 2);
-
-alter table public.billing_items
-  drop constraint if exists billing_items_markup_override_range;
+  add column markup_override numeric(6, 2);
 alter table public.billing_items
   add constraint billing_items_markup_override_range
   check (markup_override is null or (markup_override >= 0 and markup_override <= 1000));
 
--- 2. The printing recommendation, written once in SQL ----------------------
--- Must agree with recommendedFromCost() in src/lib/billing-v2/pricing.ts.
+-- 2. The markup-on-cost rule, in SQL -----------------------------------------
+-- Must agree with recommendedFromCost()/printSellingPriceFromCost() in
+-- src/lib/billing-v2/pricing.ts. Reference for the follow-up alignment of
+-- the existing recommendation functions; nothing existing calls it yet.
 
-create or replace function public.print_recommended_amount(p_cost numeric, p_markup_percent numeric default null)
+create function public.print_markup_recommended_amount(p_cost numeric, p_markup_percent numeric default null)
 returns numeric
 language sql immutable set search_path = public as $$
-  -- p_markup_percent is the line's manual override (35 = +35%); NULL uses the band.
+  -- p_markup_percent is a line's manual override (35 = +35%); NULL uses the band.
   select case
     when p_cost is null or p_cost < 0 then null
     else round(p_cost * (1 + coalesce(p_markup_percent / 100,
@@ -71,409 +106,20 @@ language sql immutable set search_path = public as $$
   end;
 $$;
 
-grant execute on function public.print_recommended_amount(numeric, numeric) to authenticated, service_role;
+grant execute on function public.print_markup_recommended_amount(numeric, numeric) to authenticated, service_role;
 
--- 3. Functions that calculate a recommendation (formula only) --------------
-
-create or replace function public.ensure_print_price_review() returns trigger
-language plpgsql security definer set search_path = public as $$
-declare
-  suggested numeric;
-begin
-  if new.type = 'PRINT' and lower(btrim(new.created_by)) <> 'import' then
-    new.price_review_status := 'REVIEW_REQUIRED';
-    new.price_confirmed_by := null;
-    new.price_confirmed_at := null;
-    new.print_cost_confirmed_by := null;
-    new.print_cost_confirmed_at := null;
-    new.billing_price_manual := coalesce(new.billing_price_manual, false);
-    if new.print_cost is not null then
-      suggested := public.print_recommended_amount(new.print_cost, new.markup_override);
-      new.suggested_amount := suggested;
-      new.suggested_unit_price := case when new.quantity > 0 then round(suggested / new.quantity, 2) else null end;
-      if not new.billing_price_manual then
-        new.amount := suggested;
-        new.unit_price := case when new.quantity > 0 then round(suggested / new.quantity, 2) else new.unit_price end;
-      end if;
-    else
-      new.suggested_unit_price := null;
-      new.suggested_amount := null;
-    end if;
-  end if;
-  return new;
-end;
-$$;
-
-create or replace function public.update_print_spec(
-  p_item_id uuid,
-  p_description text,
-  p_print_size text,
-  p_quantity numeric,
-  p_print_cost numeric,
-  p_note text,
-  p_actor text
-) returns public.billing_items
-language plpgsql security invoker set search_path = public as $$
-declare
-  item public.billing_items;
-  actor_name text := coalesce((select name from public.users where id = auth.uid()), nullif(btrim(p_actor), ''), 'Unknown');
-  next_description text;
-  next_size text;
-  next_note text;
-  next_quantity numeric;
-  next_cost numeric;
-  next_suggested numeric;
-  next_amount numeric;
-  preserve_manual boolean;
-begin
-  if coalesce(auth.role(), '') <> 'service_role'
-     and (current_role_name() is null or current_role_name() not in ('DESIGNER', 'PRINTING', 'ADMIN')) then
-    raise exception 'FORBIDDEN';
-  end if;
-  select * into item from public.billing_items where id = p_item_id and deleted_at is null;
-  if not found then raise exception 'NOT_FOUND' using detail = 'Billing item was not found.'; end if;
-  if item.type <> 'PRINT' then raise exception 'INVALID_PRINT'; end if;
-  if lower(btrim(item.created_by)) = 'import' then raise exception 'HISTORY_READ_ONLY'; end if;
-  if item.billing_status in ('INVOICED', 'PAID') then raise exception 'ITEM_LOCKED'; end if;
-
-  next_description := case when p_description is null then item.description else nullif(btrim(p_description), '') end;
-  if next_description is null then raise exception 'INVALID' using detail = 'Description is required.'; end if;
-  next_size := case when p_print_size is null then item.print_size else nullif(btrim(p_print_size), '') end;
-  next_note := case when p_note is null then item.note else nullif(btrim(p_note), '') end;
-  next_quantity := coalesce(p_quantity, item.quantity);
-  if next_quantity <= 0 then raise exception 'INVALID' using detail = 'Quantity must be greater than zero.'; end if;
-  next_cost := case when p_print_cost is null then item.print_cost else round(p_print_cost, 2) end;
-  if next_cost is not null and next_cost < 0 then raise exception 'INVALID' using detail = 'Printing cost must be zero or more.'; end if;
-
-  next_suggested := case
-    when next_cost is not null then public.print_recommended_amount(next_cost, item.markup_override)
-    else round(next_quantity * item.unit_price, 2)
-  end;
-  preserve_manual := coalesce(item.billing_price_manual, false);
-  next_amount := case when preserve_manual then item.amount else next_suggested end;
-
-  perform set_config('cijd.printing_action', 'spec', true);
-  update public.billing_items set
-    description = next_description,
-    print_size = next_size,
-    print_cost = next_cost,
-    quantity = next_quantity,
-    note = next_note,
-    amount = next_amount,
-    billing_price_manual = preserve_manual,
-    price_review_status = case when preserve_manual and item.price_review_status = 'CONFIRMED' then item.price_review_status else 'REVIEW_REQUIRED' end,
-    suggested_unit_price = round(next_suggested / next_quantity, 2),
-    suggested_amount = next_suggested,
-    price_confirmed_by = case when preserve_manual and item.price_review_status = 'CONFIRMED' then item.price_confirmed_by else null end,
-    price_confirmed_at = case when preserve_manual and item.price_review_status = 'CONFIRMED' then item.price_confirmed_at else null end,
-    billing_status = case
-      when preserve_manual and item.price_review_status = 'CONFIRMED' then item.billing_status
-      when item.billing_status = 'READY_TO_INVOICE' then 'NEEDS_REVIEW'::public.billing_status
-      else item.billing_status
-    end,
-    updated_at = now(), updated_by = actor_name
-  where id = p_item_id
-  returning * into item;
-  insert into public.audit_logs (actor, action, entity, entity_id, detail)
-  values (actor_name, 'print.spec.update', 'billing_item', item.id, item.description);
-  insert into public.audit_logs (actor, action, entity, entity_id, detail)
-  values (actor_name, 'price.suggested', 'billing_item', item.id, coalesce(item.price_reason, item.description));
-  return item;
-end;
-$$;
-
-create or replace function public.review_print_price(
-  p_item_id uuid,
-  p_unit_price numeric,
-  p_amount numeric,
-  p_print_cost numeric,
-  p_confirm boolean,
-  p_price_source text,
-  p_price_reason text,
-  p_actor text
-) returns public.billing_items
-language plpgsql security invoker set search_path = public as $$
-declare
-  item public.billing_items;
-  actor_name text := coalesce((select name from public.users where id = auth.uid()), nullif(btrim(p_actor), ''), 'Unknown');
-  expected_amount numeric;
-  preserve_manual boolean;
-  next_amount numeric;
-  next_unit_price numeric;
-begin
-  if coalesce(auth.role(), '') <> 'service_role'
-     and (current_role_name() is null or current_role_name() not in ('PRINTING', 'ADMIN')) then
-    raise exception 'FORBIDDEN';
-  end if;
-  select * into item from public.billing_items where id = p_item_id and deleted_at is null;
-  if not found then raise exception 'NOT_FOUND' using detail = 'Billing item was not found.'; end if;
-  if item.type <> 'PRINT' then raise exception 'INVALID_PRINT'; end if;
-  if lower(btrim(item.created_by)) = 'import' then raise exception 'HISTORY_READ_ONLY'; end if;
-  if item.billing_status in ('INVOICED', 'PAID') then raise exception 'ITEM_LOCKED'; end if;
-  if p_unit_price is null or p_unit_price <= 0 or p_amount is null or p_amount <= 0 then
-    raise exception 'INVALID' using detail = 'A confirmed print price must be greater than zero.';
-  end if;
-  expected_amount := case
-    when p_print_cost is not null then public.print_recommended_amount(p_print_cost, item.markup_override)
-    else round(item.quantity * p_unit_price, 2)
-  end;
-  if p_print_cost is not null and p_print_cost < 0 then raise exception 'INVALID' using detail = 'Printing cost must be zero or more.'; end if;
-  if round(p_amount, 2) <> round(expected_amount, 2) then
-    raise exception 'INVALID' using detail = 'Print total does not match the printing cost rule.';
-  end if;
-
-  preserve_manual := p_print_cost is not null and coalesce(item.billing_price_manual, false);
-  next_amount := case when preserve_manual then item.amount else round(p_amount, 2) end;
-  next_unit_price := case when preserve_manual then item.unit_price else round(p_unit_price, 2) end;
-  perform set_config('cijd.printing_action', 'price', true);
-  update public.billing_items set
-    print_cost = case when p_print_cost is null then print_cost else round(p_print_cost, 2) end,
-    suggested_unit_price = case when p_print_cost is null then coalesce(suggested_unit_price, unit_price) else round(expected_amount / quantity, 2) end,
-    suggested_amount = case when p_print_cost is null then coalesce(suggested_amount, amount) else round(expected_amount, 2) end,
-    unit_price = next_unit_price,
-    amount = next_amount,
-    custom_amount = case when preserve_manual then true else false end,
-    billing_price_manual = preserve_manual,
-    price_source = case when p_price_source is null then price_source else nullif(btrim(p_price_source), '') end,
-    price_reason = case when p_price_reason is null then price_reason else nullif(btrim(p_price_reason), '') end,
-    price_review_status = case when coalesce(p_confirm, false) then 'CONFIRMED' else 'REVIEW_REQUIRED' end,
-    price_confirmed_by = case when coalesce(p_confirm, false) then actor_name else null end,
-    price_confirmed_at = case when coalesce(p_confirm, false) then now() else null end,
-    updated_at = now(), updated_by = actor_name
-  where id = p_item_id
-  returning * into item;
-  insert into public.audit_logs (actor, action, entity, entity_id, detail)
-  values (actor_name, case when p_confirm then 'price.confirm' else 'price.edit' end,
-          'billing_item', item.id, format('%s/%s', item.unit_price, item.amount));
-  return item;
-end;
-$$;
-
--- 4. Guards: allow unit_price only inside the announced unit-price override --
-
-create or replace function public.guard_office_billing_item_update() returns trigger
-language plpgsql security definer set search_path = public as $$
-declare
-  role_name public.user_role := public.current_role_name();
-  action_name text := coalesce(current_setting('cijd.billing_action', true), '');
-  unit_price_write boolean := coalesce(current_setting('cijd.billing_unit_price', true), '') = 'on';
-  markup_write boolean := coalesce(current_setting('cijd.billing_markup', true), '') = 'on';
-begin
-  -- set_billing_item_markup: the line's markup and nothing else.
-  if markup_write then
-    if role_name not in ('DESIGNER', 'BILLING', 'ACCOUNTING', 'PRINTING', 'ADMIN') then
-      raise exception 'FORBIDDEN';
-    end if;
-    if lower(btrim(old.created_by)) = 'import' then raise exception 'HISTORY_READ_ONLY'; end if;
-    if old.billing_status in ('INVOICED', 'PAID') then raise exception 'ITEM_LOCKED'; end if;
-    if (to_jsonb(new) - 'markup_override' - 'updated_at' - 'updated_by')
-       is distinct from (to_jsonb(old) - 'markup_override' - 'updated_at' - 'updated_by') then
-      raise exception 'FORBIDDEN';
-    end if;
-    return new;
-  end if;
-
-  if action_name = 'billing_price' then
-    if role_name not in ('DESIGNER', 'BILLING', 'ACCOUNTING', 'PRINTING', 'ADMIN') then
-      raise exception 'FORBIDDEN';
-    end if;
-    if lower(btrim(old.created_by)) = 'import' then
-      raise exception 'HISTORY_READ_ONLY';
-    end if;
-    if old.billing_status in ('INVOICED', 'PAID') then
-      raise exception 'ITEM_LOCKED';
-    end if;
-    if new.amount is null or new.amount <= 0 then
-      raise exception 'INVALID' using detail = 'Billing price must be greater than zero.';
-    end if;
-    if old.id is distinct from new.id
-       or old.project_id is distinct from new.project_id
-       or old.description is distinct from new.description
-       or old.type is distinct from new.type
-       or old.quantity is distinct from new.quantity
-       or (old.unit_price is distinct from new.unit_price and not unit_price_write)
-       or old.print_cost is distinct from new.print_cost
-       or old.print_size is distinct from new.print_size
-       or old.suggested_unit_price is distinct from new.suggested_unit_price
-       or old.suggested_amount is distinct from new.suggested_amount
-       or old.price_source is distinct from new.price_source
-       or old.price_reason is distinct from new.price_reason
-       or old.production_status is distinct from new.production_status
-       or old.delivered_at is distinct from new.delivered_at
-       or old.delivered_by is distinct from new.delivered_by
-       or old.billing_status is distinct from new.billing_status
-       or old.invoice_id is distinct from new.invoice_id
-       or old.note is distinct from new.note
-       or old.created_at is distinct from new.created_at
-       or old.created_by is distinct from new.created_by
-       or old.deleted_at is distinct from new.deleted_at then
-      raise exception 'FORBIDDEN';
-    end if;
-    return new;
-  end if;
-
-  if role_name = 'ACCOUNTING' then
-    raise exception 'FORBIDDEN';
-  end if;
-
-  if role_name = 'BILLING' then
-    if old.billing_status in ('INVOICED', 'PAID') then
-      raise exception 'ITEM_LOCKED';
-    end if;
-    if new.billing_status not in ('NOT_READY', 'READY_TO_INVOICE', 'NEEDS_REVIEW') then
-      raise exception 'FORBIDDEN';
-    end if;
-    if old.id is distinct from new.id
-       or old.project_id is distinct from new.project_id
-       or old.description is distinct from new.description
-       or old.type is distinct from new.type
-       or old.quantity is distinct from new.quantity
-       or old.unit_price is distinct from new.unit_price
-       or old.amount is distinct from new.amount
-       or old.custom_amount is distinct from new.custom_amount
-       or old.print_cost is distinct from new.print_cost
-       or old.markup_override is distinct from new.markup_override
-       or old.production_status is distinct from new.production_status
-       or old.delivered_at is distinct from new.delivered_at
-       or old.delivered_by is distinct from new.delivered_by
-       or old.invoice_id is distinct from new.invoice_id
-       or old.print_size is distinct from new.print_size
-       or old.price_review_status is distinct from new.price_review_status
-       or old.suggested_unit_price is distinct from new.suggested_unit_price
-       or old.suggested_amount is distinct from new.suggested_amount
-       or old.price_source is distinct from new.price_source
-       or old.price_reason is distinct from new.price_reason
-       or old.price_confirmed_by is distinct from new.price_confirmed_by
-       or old.price_confirmed_at is distinct from new.price_confirmed_at
-       or old.note is distinct from new.note
-       or old.created_at is distinct from new.created_at
-       or old.created_by is distinct from new.created_by
-       or old.deleted_at is distinct from new.deleted_at then
-      raise exception 'FORBIDDEN';
-    end if;
-  end if;
-  return new;
-end;
-$$;
-
-create or replace function public.guard_printing_billing_item_update() returns trigger
-language plpgsql security definer set search_path = public as $$
-declare
-  role_name public.user_role := public.current_role_name();
-  action_name text := coalesce(current_setting('cijd.printing_action', true), '');
-  billing_action_name text := coalesce(current_setting('cijd.billing_action', true), '');
-  unit_price_write boolean := coalesce(current_setting('cijd.billing_unit_price', true), '') = 'on';
-  markup_write boolean := coalesce(current_setting('cijd.billing_markup', true), '') = 'on';
-begin
-  if role_name is distinct from 'PRINTING' then
-    return new;
-  end if;
-  if old.type <> 'PRINT'
-     or new.type <> 'PRINT'
-     or lower(btrim(old.created_by)) = 'import'
-     or old.billing_status in ('INVOICED', 'PAID') then
-    raise exception 'FORBIDDEN';
-  end if;
-
-  if markup_write then
-    -- set_billing_item_markup: the line's markup and nothing else.
-    if (to_jsonb(new) - 'markup_override' - 'updated_at' - 'updated_by')
-       is distinct from (to_jsonb(old) - 'markup_override' - 'updated_at' - 'updated_by') then
-      raise exception 'FORBIDDEN';
-    end if;
-  elsif billing_action_name = 'billing_price' then
-    if old.id is distinct from new.id
-       or old.project_id is distinct from new.project_id
-       or old.description is distinct from new.description
-       or old.type is distinct from new.type
-       or old.quantity is distinct from new.quantity
-       or (old.unit_price is distinct from new.unit_price and not unit_price_write)
-       or old.print_cost is distinct from new.print_cost
-       or old.print_size is distinct from new.print_size
-       or old.suggested_unit_price is distinct from new.suggested_unit_price
-       or old.suggested_amount is distinct from new.suggested_amount
-       or old.price_source is distinct from new.price_source
-       or old.price_reason is distinct from new.price_reason
-       or old.production_status is distinct from new.production_status
-       or old.delivered_at is distinct from new.delivered_at
-       or old.delivered_by is distinct from new.delivered_by
-       or old.billing_status is distinct from new.billing_status
-       or old.invoice_id is distinct from new.invoice_id
-       or old.note is distinct from new.note
-       or old.created_at is distinct from new.created_at
-       or old.created_by is distinct from new.created_by
-       or old.deleted_at is distinct from new.deleted_at then
-      raise exception 'FORBIDDEN';
-    end if;
-  elsif action_name = 'delivery' then
-    if old.id is distinct from new.id
-       or old.project_id is distinct from new.project_id
-       or old.description is distinct from new.description
-       or old.type is distinct from new.type
-       or old.quantity is distinct from new.quantity
-       or old.unit_price is distinct from new.unit_price
-       or old.amount is distinct from new.amount
-       or old.custom_amount is distinct from new.custom_amount
-       or old.note is distinct from new.note
-       or old.print_size is distinct from new.print_size
-       or old.price_review_status is distinct from new.price_review_status
-       or old.suggested_unit_price is distinct from new.suggested_unit_price
-       or old.suggested_amount is distinct from new.suggested_amount
-       or old.price_source is distinct from new.price_source
-       or old.price_reason is distinct from new.price_reason
-       or old.price_confirmed_by is distinct from new.price_confirmed_by
-       or old.price_confirmed_at is distinct from new.price_confirmed_at
-       or old.invoice_id is distinct from new.invoice_id
-       or old.created_at is distinct from new.created_at
-       or old.created_by is distinct from new.created_by
-       or old.deleted_at is distinct from new.deleted_at then
-      raise exception 'FORBIDDEN';
-    end if;
-  elsif action_name = 'price' then
-    if old.id is distinct from new.id
-       or old.project_id is distinct from new.project_id
-       or old.description is distinct from new.description
-       or old.type is distinct from new.type
-       or old.quantity is distinct from new.quantity
-       or old.production_status is distinct from new.production_status
-       or old.delivered_at is distinct from new.delivered_at
-       or old.delivered_by is distinct from new.delivered_by
-       or old.billing_status is distinct from new.billing_status
-       or old.invoice_id is distinct from new.invoice_id
-       or old.created_at is distinct from new.created_at
-       or old.created_by is distinct from new.created_by
-       or old.deleted_at is distinct from new.deleted_at then
-      raise exception 'FORBIDDEN';
-    end if;
-  elsif action_name = 'spec' then
-    if old.id is distinct from new.id
-       or old.project_id is distinct from new.project_id
-       or old.type is distinct from new.type
-       or old.production_status is distinct from new.production_status
-       or old.delivered_at is distinct from new.delivered_at
-       or old.delivered_by is distinct from new.delivered_by
-       or old.invoice_id is distinct from new.invoice_id
-       or old.created_at is distinct from new.created_at
-       or old.created_by is distinct from new.created_by
-       or old.deleted_at is distinct from new.deleted_at
-       or new.price_review_status is distinct from 'REVIEW_REQUIRED'
-       or new.price_confirmed_by is not null
-       or new.price_confirmed_at is not null then
-      raise exception 'FORBIDDEN';
-    end if;
-  else
-    raise exception 'FORBIDDEN';
-  end if;
-  return new;
-end;
-$$;
-
--- 5. Final amount + Final Unit Price, in one narrow write ------------------
+-- 3. Final amount + Final Unit Price, in one narrow write ------------------
 -- Accepts either direction of a manual price:
 --   * a unit price, with amount = round(quantity × unit price, 2), or
 --   * a typed total, with unit price = round(amount / quantity, 2).
+-- Announces itself as a printing 'price' action (the existing guard and
+-- review triggers already understand it) and NOT as 'billing_price', whose
+-- guard branch forbids unit_price. Roles whose existing guard refuses a
+-- unit_price change (BILLING, ACCOUNTING) get FORBIDDEN; the application
+-- then saves the total alone through override_billing_price, exactly as
+-- before this release.
 
-create or replace function public.override_billing_unit_price(
+create function public.override_billing_unit_price(
   p_item_id uuid,
   p_unit_price numeric,
   p_amount numeric,
@@ -511,8 +157,6 @@ begin
   end if;
 
   perform set_config('cijd.printing_action', 'price', true);
-  perform set_config('cijd.billing_action', 'billing_price', true);
-  perform set_config('cijd.billing_unit_price', 'on', true);
   update public.billing_items set
     amount = round(p_amount, 2),
     unit_price = round(p_unit_price, 2),
@@ -526,7 +170,9 @@ begin
     updated_at = now(), updated_by = actor_name
   where id = p_item_id
   returning * into item;
-  perform set_config('cijd.billing_unit_price', '', true);
+  -- Row security can hide the row from this role; say so rather than return nothing.
+  if not found then raise exception 'FORBIDDEN'; end if;
+  perform set_config('cijd.printing_action', '', true);
   insert into public.audit_logs (actor, action, entity, entity_id, detail)
   values (actor_name, 'billing.price.override', 'billing_item', item.id, format('%s/%s', item.unit_price, item.amount));
   return item;
@@ -536,11 +182,12 @@ $$;
 revoke all on function public.override_billing_unit_price(uuid, numeric, numeric, text) from public, anon;
 grant execute on function public.override_billing_unit_price(uuid, numeric, numeric, text) to authenticated, service_role;
 
--- 6. Project deposit, in one narrow write ----------------------------------
+-- 4. Project deposit, in one narrow write ----------------------------------
 -- NULL clears the deposit. A project with billed (invoiced/paid) work is
--- locked, like its prices.
+-- locked, like its prices. projects has no guard trigger; the role check and
+-- the lock are here.
 
-create or replace function public.set_project_deposit(
+create function public.set_project_deposit(
   p_project_id uuid,
   p_amount numeric,
   p_actor text
@@ -550,8 +197,6 @@ declare
   project_row public.projects;
   actor_name text := coalesce((select name from public.users where id = auth.uid()), nullif(btrim(p_actor), ''), 'Unknown');
 begin
-  -- A trusted server session (service key) has no application role; nested so
-  -- current_role_name() is never evaluated for it.
   if coalesce(auth.role(), '') <> 'service_role' then
     if current_role_name() is null
        or current_role_name() not in ('DESIGNER', 'BILLING', 'ACCOUNTING', 'PRINTING', 'ADMIN') then
@@ -587,11 +232,15 @@ $$;
 revoke all on function public.set_project_deposit(uuid, numeric, text) from public, anon;
 grant execute on function public.set_project_deposit(uuid, numeric, text) to authenticated, service_role;
 
--- 7. A line's manual markup, in one narrow write ----------------------------
--- NULL returns the line to the 50 / 40 / 30 band. Only markup_override moves:
--- no amount, unit price or suggested price is rewritten here.
+-- 5. A line's manual markup, in one narrow write -----------------------------
+-- NULL returns the line to the 50 / 40 / 30 band. Only markup_override (and
+-- the updated_* stamps) move: no amount, unit price, suggestion, print cost,
+-- print-cost basis or margin_override is written. Announced as a printing
+-- 'price' action so the existing PRINTING guard accepts it; ACCOUNTING, whose
+-- existing guard accepts only the billing-price action, uses that instead
+-- (its branch requires a priced line).
 
-create or replace function public.set_billing_item_markup(
+create function public.set_billing_item_markup(
   p_item_id uuid,
   p_markup_percent numeric,
   p_actor text
@@ -600,10 +249,11 @@ language plpgsql security invoker set search_path = public as $$
 declare
   item public.billing_items;
   actor_name text := coalesce((select name from public.users where id = auth.uid()), nullif(btrim(p_actor), ''), 'Unknown');
+  role_name public.user_role;
 begin
   if coalesce(auth.role(), '') <> 'service_role' then
-    if current_role_name() is null
-       or current_role_name() not in ('DESIGNER', 'BILLING', 'ACCOUNTING', 'PRINTING', 'ADMIN') then
+    role_name := current_role_name();
+    if role_name is null or role_name not in ('DESIGNER', 'BILLING', 'ACCOUNTING', 'PRINTING', 'ADMIN') then
       raise exception 'FORBIDDEN';
     end if;
   end if;
@@ -615,15 +265,18 @@ begin
   if lower(btrim(item.created_by)) = 'import' then raise exception 'HISTORY_READ_ONLY'; end if;
   if item.billing_status in ('INVOICED', 'PAID') then raise exception 'ITEM_LOCKED'; end if;
 
-  perform set_config('cijd.billing_markup', 'on', true);
+  perform set_config('cijd.printing_action', 'price', true);
+  if role_name = 'ACCOUNTING' then
+    perform set_config('cijd.billing_action', 'billing_price', true);
+  end if;
   update public.billing_items set
     markup_override = case when p_markup_percent is null then null else round(p_markup_percent, 2) end,
     updated_at = now(), updated_by = actor_name
   where id = p_item_id
   returning * into item;
-  -- Row security can hide the row from this role; say so rather than return nothing.
   if not found then raise exception 'FORBIDDEN'; end if;
-  perform set_config('cijd.billing_markup', '', true);
+  perform set_config('cijd.printing_action', '', true);
+  perform set_config('cijd.billing_action', '', true);
   insert into public.audit_logs (actor, action, entity, entity_id, detail)
   values (actor_name, 'billing.markup', 'billing_item', item.id, coalesce(item.markup_override::text, 'default'));
   return item;
@@ -632,3 +285,5 @@ $$;
 
 revoke all on function public.set_billing_item_markup(uuid, numeric, text) from public, anon;
 grant execute on function public.set_billing_item_markup(uuid, numeric, text) to authenticated, service_role;
+
+commit;

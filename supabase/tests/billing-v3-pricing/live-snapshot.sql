@@ -6,7 +6,9 @@
 -- The two columns the migration adds (projects.deposit_amount,
 -- billing_items.markup_override) are left out of the fingerprint so an
 -- unchanged row compares equal; the last query checks they are all NULL.
--- This file contains SELECTs only; it changes nothing.
+-- This file contains SELECTs only; it changes nothing. Run
+-- schema-fingerprint.sql alongside it to compare every function, trigger,
+-- constraint, policy and column definition as well.
 select 'clients' as table_name, count(*) as row_count,
        md5(coalesce(string_agg(to_jsonb(t)::text, '|' order by t.id::text), '')) as fingerprint
   from public.clients t

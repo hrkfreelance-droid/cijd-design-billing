@@ -14,12 +14,23 @@ Not merged, not deployed, migration not applied.
 ```
 Recommended Total = round(Cost Total × (1 + markup), 2)
 Cost Total <= $50 → +50%   <= $100 → +40%   otherwise → +30%
+A line's manual markup (markup_override, percent) replaces the band.
 ```
 
-Replaces `cost / (1 - margin)` rounded up to $5, everywhere it is calculated:
-`src/lib/billing-v2/pricing.ts` (shared by V2/V3/Printing and both
-repositories) and SQL `public.print_recommended_amount`, used by
-`ensure_print_price_review`, `update_print_spec`, `review_print_price`.
+App side (done): `src/lib/billing-v2/pricing.ts` — shared by V2, V3, the
+Printing screen and both repositories.
+
+SQL side (NOT done — follow-up): the live recommendation functions still use
+the old rule. Live has newer objects than this repository (Sep 12:
+add_print_margin_override, print_margin_rpc, print_cost_basis_rpc — two
+overloads each of `update_print_spec` / `review_print_price`,
+`round_print_billing_price`, `*_with_margin`, `margin_override`,
+print-cost-basis columns). Their bodies are not in any repository, so they
+must be exported (`supabase/tests/billing-v3-pricing/live-schema-export.sql`)
+and changed formula-only in a separate migration. Until then the Printing
+screen's cost-based "Set price" (TS new rule vs SQL old rule) disagrees.
+The app calls only the 7-arg `update_print_spec` and 8-arg
+`review_print_price` (named `p_print_cost`).
 
 Stored prices are never recalculated. A line priced under the old rule opens
 in V3 as a manual price (Final unchanged, Recommended shows the new rule).
@@ -46,38 +57,54 @@ One source per line — `finalMode`:
 
 - Final Unit Price → existing `billing_items.unit_price`, written with the
   total by the new RPC `override_billing_unit_price` (API: `PATCH
-  /api/billing-items/:id/billing-price` with `unitPrice`). Without the
-  migration the server falls back to the old amount-only override.
+  /api/billing-items/:id/billing-price` with `unitPrice`). It works inside the
+  existing guards for ADMIN, DESIGNER, PRINTING and the service key (pilot);
+  the existing guards refuse unit_price to BILLING/ACCOUNTING, and without the
+  migration the function is missing — both fall back to the old amount-only
+  override. The Qty rule holds either way: the unit price is read back as
+  total ÷ qty when the stored one does not reproduce the total.
 - Markup % → new nullable `billing_items.markup_override numeric(6,2)`
   (percent; NULL = band; 0–1000 check), written only by
   `set_billing_item_markup` (API: `PATCH /api/billing-items/:id/markup`,
   `{ markupPercent: number | null }`). It moves the recommendation only —
   `print_recommended_amount(cost, markup_override)` in SQL and
   `printSellingPriceFromCost(cost, markupOverride)` in the app — never a
-  stored price. Locked for invoiced/paid and imported lines.
+  stored price. Locked for invoiced/paid and imported lines. Separate from
+  the live gross-margin `margin_override numeric(5,4)`, which is untouched.
 - Deposit → new nullable `projects.deposit_amount numeric(12,2)` (NULL = $0,
   `>= 0` check), written only by `set_project_deposit` (API: `PATCH
   /api/projects/:id/deposit`). Locked once the project has invoiced/paid work.
 
+## Migration design
+
+`20260925090000` is additive only: two nullable columns, four NEW functions,
+no CREATE OR REPLACE of anything existing, no row writes, one transaction,
+and a preflight that refuses to run if an expected object is missing or a new
+name already exists (a second run is refused and changes nothing).
+
 ## Before merge / deploy (in this order)
 
-1. Live snapshot: run `supabase/tests/billing-v3-pricing/live-snapshot.sql`
-   (read-only) in the Supabase SQL editor; keep the output.
-2. Apply `supabase/migrations/20260925090000_billing_v3_markup_unit_price_deposit.sql`.
-3. Run the snapshot again — every fingerprint must match step 1.
-4. Merge into `feature/billing-v3` (this pushes to the auto-deployed branch).
-5. Verify the live `/office-v3`: pricing panel, deposit save + reload,
-   Qty 180→181 / 180→200 on a manual unit price.
-
-Deploying the code before step 2 is safe for prices (falls back), but saving
-a deposit or an edited markup fails until the migration exists.
+1. Read-only export: run `live-schema-export.sql`; save result 1 as
+   `supabase/tests/billing-v3-pricing/live-schema/functions.sql`.
+2. Write the follow-up migration that aligns the live recommendation
+   functions (formula only) and re-run `run.sh` against the real definitions.
+3. Read-only snapshot: `live-snapshot.sql` (data) and `schema-fingerprint.sql`
+   (definitions); keep both outputs.
+4. Apply `20260925090000` (then the follow-up).
+5. Re-run both snapshots: data must match; schema must differ only by the
+   follow-up's intended functions.
+6. Confirm the Cloudflare production branch (Workers & Pages →
+   cijd-design-billing-preview → Settings → Build → Branch control).
+7. Merge into `feature/billing-v3`; verify the live `/office-v3`.
 
 ## Verification
 
 - `npm run typecheck`, `npm run test:unit`, `npx eslint`, `npm run build:vinext`
 - `tests/billing-v3-pricing.spec.ts` (Playwright, throwaway local store)
-- `supabase/tests/billing-v3-pricing/run.sh` — local Postgres 16: migration
-  changes no row, is idempotent, and the new functions behave per role.
+- `supabase/tests/billing-v3-pricing/run.sh` — local Postgres 16 with the
+  repository chain + the live Sep 12 columns and function names: no row and
+  no schema object changes, a second run is refused, the new functions behave
+  per role, and the print-cost basis is never written.
 
 ## Known, pre-existing (not changed here)
 

@@ -805,8 +805,12 @@ export class SupabaseRepository implements Repository {
       viaFunction.error.message?.trim() === "FORBIDDEN" ||
       viaFunction.error.code === "42501" ||
       viaFunction.error.code === "PGRST301";
-    if (!refused || !this.accessRole) fail(viaFunction.error);
-    return this.writeBillingPrice(id, amount, actor, unitPrice);
+    if (!refused) fail(viaFunction.error);
+    if (this.accessRole) return this.writeBillingPrice(id, amount, actor, unitPrice);
+    // The existing billing guards do not let every role move unit_price (BILLING
+    // and ACCOUNTING cannot). Save the total as before; the unit price is then
+    // read back as total ÷ quantity, which keeps a cent unit price exact.
+    return this.overrideBillingPrice(id, amount, actor);
   }
 
   private async writeBillingPrice(id: string, amount: number, actor: string, unitPrice?: number) {
