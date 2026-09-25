@@ -303,3 +303,61 @@ test("a billed line's markup stays locked", async ({ page }) => {
   expect(response.status()).toBe(409);
   expect((await response.json()).code).toBe("ITEM_LOCKED");
 });
+
+test("HOTFIX: a manual Final ($305.00 at 170 × $1.79) never moves on a Markup or Cost change", async ({ page }) => {
+  await signIn(page);
+  const projectId = await newProject(page, "V3 Manual 305");
+  const itemId = await addItem(page, projectId, {
+    description: "Labels",
+    type: "PRINT",
+    serviceType: "PRINTING",
+    quantity: 170,
+    printCost: 212.5,
+  });
+  // The historical manual price, as stored today: total only.
+  expect((await page.request.patch(`/api/billing-items/${itemId}/billing-price`, { data: { amount: 305 } })).ok()).toBeTruthy();
+  const stored = async () => (await state(page)).billingItems.find((item) => item.id === itemId)!;
+
+  let dialog = await edit(page, "V3 Manual 305");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$276.25");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("305");
+  await expect(dialog.getByTestId("v3-item-final-unit-0")).toHaveValue("1.79");
+  await expect(dialog.getByTestId("v3-item-final-mode-0")).toHaveAttribute("data-mode", "manual");
+
+  // Markup 30% → 40%: Recommended only.
+  await dialog.getByTestId("v3-item-markup-0").fill("40");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$297.50");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("305");
+  await expect(dialog.getByTestId("v3-item-final-unit-0")).toHaveValue("1.79");
+  await save(dialog);
+  expect(await stored()).toMatchObject({ amount: 305, markupOverride: 40, quantity: 170 });
+
+  // Reload; Use default; Cost 1.25 → 1.50: Recommended only.
+  await page.reload();
+  dialog = await edit(page, "V3 Manual 305");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("305");
+  await dialog.getByTestId("v3-item-markup-reset-0").click();
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$276.25");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("305");
+  await dialog.getByTestId("v2-item-unit-cost-0").fill("1.50");
+  await expect(dialog.getByTestId("v3-item-total-cost-0")).toHaveText("$255.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$331.50");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("305");
+  await expect(dialog.getByTestId("v3-item-final-unit-0")).toHaveValue("1.79");
+  await save(dialog);
+  expect(await stored()).toMatchObject({ amount: 305, markupOverride: null, quantity: 170 });
+
+  // Qty 170 → 171: the unit rule (intended) — $1.79 × 171 = $306.09.
+  dialog = await edit(page, "V3 Manual 305");
+  await dialog.getByTestId("v2-item-quantity-0").fill("171");
+  await expect(dialog.getByTestId("v3-item-final-unit-0")).toHaveValue("1.79");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("306.09");
+
+  // Use recommended: only now does Final follow Recommended ($1.50 × 171 = $256.50, +30% → $333.45).
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$333.45");
+  await dialog.getByTestId("v2-item-reset-0").click();
+  await expect(dialog.getByTestId("v3-item-final-mode-0")).toHaveAttribute("data-mode", "auto");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("333.45");
+  await dialog.getByTestId("v2-modal-cancel").click();
+  expect(await stored()).toMatchObject({ amount: 305, quantity: 170 });
+});

@@ -319,3 +319,96 @@ test("rows without a markup override keep the band and are unchanged", () => {
   assert.equal(draftMarkupOverride(draft), null);
   assert.equal(draftChanged(draft), false);
 });
+
+// ---- HOTFIX: a manual Final never moves on a Cost or Markup change ----------
+// Live case: Qty 170, Cost Unit $1.25 (Total $212.50, default +30% → $276.25),
+// manual Final $305.00 whose unit reads $1.79 (1.79 × 170 = 304.30 ≠ 305.00).
+
+function liveManual(): ItemDraft {
+  return open({ quantity: 170, printCost: 212.5, amount: 305, unitPrice: 1.79, customAmount: true });
+}
+
+function assertFinalUntouched(draft: ItemDraft, what: string) {
+  assert.equal(draft.finalMode, "UNIT", what);
+  assert.equal(draftFinal(draft), 305, what);
+  assert.equal(draftFinalUnit(draft), 1.79, what);
+  assert.equal(draft.finalPrice, "305", what);
+}
+
+test("HOTFIX 1: an existing manual line opens with its historical total, not unit × qty", () => {
+  const draft = liveManual();
+  assert.equal(draftTotalCost(draft), 212.5);
+  assert.equal(draftMarkup(draft), 0.3);
+  assert.equal(draftRecommended(draft), 276.25);
+  assertFinalUntouched(draft, "opened");
+  assert.equal(draftChanged(draft), false);
+});
+
+test("HOTFIX 2: markup 30% → 40% moves Recommended only", () => {
+  const changed = withMarkup(liveManual(), "40");
+  assert.equal(draftTotalCost(changed), 212.5);
+  assert.equal(changed.markupTouched, true);
+  assert.equal(draftRecommended(changed), 297.5);
+  assertFinalUntouched(changed, "markup 40%");
+});
+
+test("HOTFIX 3: Use default markup moves Recommended only", () => {
+  const reset = withDefaultMarkup(withMarkup(liveManual(), "40"));
+  assert.equal(reset.markupTouched, false);
+  assert.equal(draftRecommended(reset), 276.25);
+  assertFinalUntouched(reset, "markup reset");
+});
+
+test("HOTFIX 4: Cost Unit 1.25 → 1.50 moves Recommended only", () => {
+  const moved = withUnitCost(liveManual(), "1.50");
+  assert.equal(draftTotalCost(moved), 255);
+  assert.equal(draftMarkup(moved), 0.3);
+  assert.equal(draftRecommended(moved), 331.5);
+  assertFinalUntouched(moved, "cost 1.50");
+  // …and a manual markup on top of it still moves Recommended only
+  assertFinalUntouched(withMarkup(moved, "40"), "cost 1.50 + markup 40%");
+});
+
+test("HOTFIX 4b: a typed Final Total is equally untouched by Cost and Markup", () => {
+  const typed = withFinalTotal(liveManual(), "305");
+  for (const next of [withUnitCost(typed, "1.50"), withMarkup(typed, "40"), withDefaultMarkup(withMarkup(typed, "40"))]) {
+    assert.equal(draftFinal(next), 305);
+    assert.equal(next.finalPrice, "305");
+    assert.equal(next.finalUnitPrice, typed.finalUnitPrice);
+  }
+});
+
+test("HOTFIX 5: Qty 170 → 171 keeps the unit $1.79; total $306.09 (intended)", () => {
+  const requantified = withQuantity(liveManual(), "171");
+  assert.equal(draftFinalUnit(requantified), 1.79);
+  assert.equal(draftFinal(requantified), 306.09);
+});
+
+test("HOTFIX 5b: after Cost/Markup edits, a Qty change still applies the unit rule", () => {
+  const edited = withQuantity(withMarkup(withUnitCost(liveManual(), "1.50"), "40"), "171");
+  assert.equal(draftFinalUnit(edited), 1.79);
+  assert.equal(draftFinal(edited), 306.09);
+});
+
+test("HOTFIX 6: Use recommended is what makes Final follow Recommended again", () => {
+  const back = withRecommended(withMarkup(liveManual(), "40"));
+  assert.equal(back.finalMode, "AUTO");
+  assert.equal(draftFinal(back), 297.5);
+  // and from then on Cost changes move it
+  assert.equal(draftFinal(withUnitCost(back, "1.50")), 357);
+});
+
+test("HOTFIX 7: a direct Final Total edit still works", () => {
+  const typed = withFinalTotal(withMarkup(liveManual(), "40"), "320");
+  assert.equal(typed.finalMode, "TOTAL");
+  assert.equal(draftFinal(typed), 320);
+  assert.equal(draftFinalUnit(typed), 1.88);
+  assert.equal(draftRecommended(typed), 297.5);
+});
+
+test("HOTFIX: an AUTO line still follows Cost and Markup", () => {
+  const auto = open({ quantity: 170, printCost: 212.5, amount: 276.25, unitPrice: 1.63 });
+  assert.equal(auto.finalMode, "AUTO");
+  assert.equal(draftFinal(withMarkup(auto, "40")), 297.5);
+  assert.equal(draftFinal(withUnitCost(auto, "1.50")), 331.5);
+});

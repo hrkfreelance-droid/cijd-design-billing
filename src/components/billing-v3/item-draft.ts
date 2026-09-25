@@ -279,8 +279,23 @@ function settleFinal(draft: ItemDraft, serviceTypes: ServiceTypes): ItemDraft {
   }
 }
 
-/** Cost moved: Total Cost, the band markup and (for AUTO) Final follow it. */
-function recomputeCost(draft: ItemDraft, serviceTypes: ServiceTypes): ItemDraft {
+/**
+ * Recommended moved (cost or markup). Only an AUTO Final follows it; a
+ * manual Final is the person's price and stays exactly as it is — including
+ * a stored total that is not unit × qty to the cent (e.g. $305.00 at
+ * 170 × $1.79 = $304.30). Only the Final fields, a Quantity change and
+ * "Use recommended" may move a manual Final.
+ */
+function followRecommendation(draft: ItemDraft, serviceTypes: ServiceTypes): ItemDraft {
+  return draft.finalMode === "AUTO" ? settleFinal(draft, serviceTypes) : draft;
+}
+
+/**
+ * Cost moved: Total Cost, the band markup and (for AUTO) Final follow it.
+ * `quantityChanged` is the one case a manual Final is re-derived: its unit
+ * price stays and its total becomes unit × the new quantity.
+ */
+function recomputeCost(draft: ItemDraft, serviceTypes: ServiceTypes, quantityChanged = false): ItemDraft {
   let next: ItemDraft = { ...draft, costMode: "UNIT" };
   if (isCostPriced(draftService(next, serviceTypes))) {
     const total = rawTotalCost(next);
@@ -290,7 +305,7 @@ function recomputeCost(draft: ItemDraft, serviceTypes: ServiceTypes): ItemDraft 
       markup: next.markupTouched ? next.markup : total == null ? "" : percentText(printMarkupFromCost(total)),
     };
   }
-  return settleFinal(next, serviceTypes);
+  return quantityChanged ? settleFinal(next, serviceTypes) : followRecommendation(next, serviceTypes);
 }
 
 /**
@@ -300,7 +315,7 @@ function recomputeCost(draft: ItemDraft, serviceTypes: ServiceTypes): ItemDraft 
 export function withQuantity(draft: ItemDraft, quantity: string, serviceTypes: ServiceTypes = []): ItemDraft {
   let next: ItemDraft = { ...draft, quantity };
   if (next.finalMode === "TOTAL" && draftFinalUnit(next) != null) next = { ...next, finalMode: "UNIT" };
-  return recomputeCost(next, serviceTypes);
+  return recomputeCost(next, serviceTypes, true);
 }
 
 export function withUnitCost(draft: ItemDraft, unitCost: string, serviceTypes: ServiceTypes = []): ItemDraft {
@@ -309,13 +324,13 @@ export function withUnitCost(draft: ItemDraft, unitCost: string, serviceTypes: S
 
 /** A typed markup: Recommended recalculates; a manual Final stays where it is. */
 export function withMarkup(draft: ItemDraft, markup: string, serviceTypes: ServiceTypes = []): ItemDraft {
-  return settleFinal({ ...draft, markup, markupTouched: true }, serviceTypes);
+  return followRecommendation({ ...draft, markup, markupTouched: true }, serviceTypes);
 }
 
 /** Back to the markup band for the current cost. */
 export function withDefaultMarkup(draft: ItemDraft, serviceTypes: ServiceTypes = []): ItemDraft {
   const fallback = draftDefaultMarkup(draft, serviceTypes);
-  return settleFinal(
+  return followRecommendation(
     { ...draft, markup: fallback == null ? "" : percentText(fallback), markupTouched: false },
     serviceTypes,
   );
