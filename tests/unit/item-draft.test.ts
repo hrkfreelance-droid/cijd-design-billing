@@ -60,14 +60,14 @@ test("typing a Unit Cost computes Total Cost from Qty × Unit", () => {
   const next = withUnitCost(printingDraft("150"), "4.30");
   assert.equal(draftTotalCost(next), 645);
   assert.equal(draftUnitCost(next), 4.3);
-  assert.equal(draftRecommended(next), 925);
+  assert.equal(draftRecommended(next), 838.5);
 });
 
 test("typing a Total Cost derives Unit Cost as Total ÷ Qty", () => {
   const next = withTotalCost(printingDraft("900"), "30");
   assert.equal(draftTotalCost(next), 30);
   assert.equal(draftUnitCost(next), 30 / 900);
-  assert.equal(draftRecommended(next), 60);
+  assert.equal(draftRecommended(next), 45);
 });
 
 test("a quantity change in Unit Cost mode recomputes Total Cost, not Unit Cost", () => {
@@ -77,7 +77,7 @@ test("a quantity change in Unit Cost mode recomputes Total Cost, not Unit Cost",
   const requantified = withQuantity(unit, "150");
   assert.equal(draftUnitCost(requantified), 2);
   assert.equal(draftTotalCost(requantified), 300);
-  assert.equal(draftRecommended(requantified), 430);
+  assert.equal(draftRecommended(requantified), 390);
 });
 
 test("a quantity change in Total Cost mode holds Total Cost and recomputes Unit Cost", () => {
@@ -94,12 +94,12 @@ test("a quantity change in Total Cost mode holds Total Cost and recomputes Unit 
 
 test("a manual override survives a later Unit Cost and quantity change", () => {
   const priced = withUnitCost(printingDraft("150"), "4.30");
-  assert.equal(draftRecommended(priced), 925);
+  assert.equal(draftRecommended(priced), 838.5);
 
   const overridden: ItemDraft = { ...priced, finalPrice: "950", priceTouched: true };
   const requantified = withQuantity(overridden, "200");
   assert.equal(draftTotalCost(requantified), 860);
-  assert.equal(draftRecommended(requantified), 1230);
+  assert.equal(draftRecommended(requantified), 1118);
   assert.equal(draftFinal(requantified), 950);
 });
 

@@ -74,37 +74,37 @@ test("the list shows every line with its price, and the detail is read-only", as
   await expect(page.getByTestId("v2-brand")).toHaveText("CIJD Billing");
 
   const listed = row(page, "V2 Combined");
-  await expect(listed.getByTestId("v2-project-total")).toHaveText("$70.00");
+  await expect(listed.getByTestId("v2-project-total")).toHaveText("$55.00");
   await expect(listed.getByTestId("v2-line-item")).toHaveCount(2);
   await expect(listed).toContainText("Printing · Print x900");
   await expect(listed).toContainText("Cost $30.00");
-  await expect(listed).toContainText("$60.00");
+  await expect(listed).toContainText("$45.00");
 
   const dialog = await openProject(page, "V2 Combined");
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
   await expect(dialog.locator("input, select, textarea")).toHaveCount(0);
-  await expect(dialog.getByTestId("v2-view-project-total")).toHaveText("$70.00");
+  await expect(dialog.getByTestId("v2-view-project-total")).toHaveText("$55.00");
   await expect(dialog).toContainText("Recommended");
-  await expect(dialog).toContainText("50% margin");
+  await expect(dialog).toContainText("+50% markup");
 });
 
-test("a cost recommends a price on the $5 step, and the price follows it", async ({ page }) => {
+test("a cost recommends cost + markup, and the price follows it", async ({ page }) => {
   await signIn(page);
   const projectId = await newProject(page, "V2 Pricing");
   await addItem(page, projectId, { description: "Print", type: "PRINT", serviceType: "PRINTING", printCost: 5 });
 
   await page.goto("/office-v2");
   const dialog = await edit(page, "V2 Pricing");
-  for (const [cost, expected] of [
-    ["5", "10"],
-    ["20", "40"],
-    ["50", "100"],
-    ["60", "100"],
-    ["101", "145"],
+  for (const [cost, recommended, final] of [
+    ["5", "$7.50", "7.5"],
+    ["20", "$30.00", "30"],
+    ["50", "$75.00", "75"],
+    ["60", "$84.00", "84"],
+    ["101", "$131.30", "131.3"],
   ] as const) {
     await dialog.getByTestId("v2-item-total-cost-0").fill(cost);
-    await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText(`$${expected}.00`);
-    await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue(expected);
+    await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText(recommended);
+    await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue(final);
   }
 });
 
@@ -125,14 +125,14 @@ test("a price set by hand survives a reload and a later cost change", async ({ p
   dialog = await edit(page, "V2 Override");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("15");
   await dialog.getByTestId("v2-item-total-cost-0").fill("20");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$40.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$30.00");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("15");
   await dialog.getByTestId("v2-modal-save").click();
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
 
   await page.reload();
   dialog = await edit(page, "V2 Override");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$40.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$30.00");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("15");
 });
 
@@ -148,7 +148,7 @@ test("without an override, a saved cost change moves the price with it", async (
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
 
   await page.reload();
-  await expect(row(page, "V2 Follows").getByTestId("v2-project-total")).toHaveText("$40.00");
+  await expect(row(page, "V2 Follows").getByTestId("v2-project-total")).toHaveText("$30.00");
 });
 
 test("a cost typed as an expression is calculated, priced, and saved as a number", async ({ page }) => {
@@ -162,8 +162,8 @@ test("a cost typed as an expression is calculated, priced, and saved as a number
   await cost.fill("4.3*150");
   await cost.press("Enter");
   await expect(cost).toHaveValue("645.00");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
-  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("925");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$838.50");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("838.5");
 
   await dialog.getByTestId("v2-modal-save").click();
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
@@ -171,8 +171,8 @@ test("a cost typed as an expression is calculated, priced, and saved as a number
   await page.reload();
   dialog = await edit(page, "V2 Calculator");
   await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("645");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
-  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("925");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$838.50");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("838.5");
 
   // A manual override survives a later cost recalculation.
   await dialog.getByTestId("v2-item-final-0").fill("999");
@@ -180,7 +180,7 @@ test("a cost typed as an expression is calculated, priced, and saved as a number
   await dialog.getByTestId("v2-item-total-cost-0").fill("30+5");
   await dialog.getByTestId("v2-item-total-cost-0").press("Enter");
   await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("35.00");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$70.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$52.50");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("999");
 });
 
@@ -213,8 +213,8 @@ test("typing a Unit Cost computes Total Cost and prices from it", async ({ page 
   const dialog = await edit(page, "V2 Unit Cost");
   await dialog.getByTestId("v2-item-unit-cost-0").fill("4.30");
   await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("645");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
-  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("925");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$838.50");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("838.5");
 });
 
 test("typing a Total Cost derives Unit Cost and prices from the total", async ({ page }) => {
@@ -226,8 +226,8 @@ test("typing a Total Cost derives Unit Cost and prices from the total", async ({
   const dialog = await edit(page, "V2 Total Cost");
   await dialog.getByTestId("v2-item-total-cost-0").fill("30");
   await expect(dialog.getByTestId("v2-item-unit-cost-0")).toHaveValue("0.0333");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$60.00");
-  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("60");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$45.00");
+  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("45");
 });
 
 test("changing quantity in Unit Cost mode recomputes Total Cost", async ({ page }) => {
@@ -242,7 +242,7 @@ test("changing quantity in Unit Cost mode recomputes Total Cost", async ({ page 
 
   await dialog.getByTestId("v2-item-quantity-0").fill("150");
   await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("300");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$430.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$390.00");
 });
 
 test("changing quantity in Total Cost mode keeps Total Cost and recomputes Unit Cost", async ({ page }) => {
@@ -275,14 +275,14 @@ test("a manual override survives a Unit Cost and quantity change", async ({ page
   await page.goto("/office-v2");
   const dialog = await edit(page, "V2 Unit Override");
   await dialog.getByTestId("v2-item-unit-cost-0").fill("4.30");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$925.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$838.50");
 
   await dialog.getByTestId("v2-item-final-0").fill("950");
   await dialog.getByTestId("v2-item-final-0").press("Tab");
 
   await dialog.getByTestId("v2-item-quantity-0").fill("200");
   await expect(dialog.getByTestId("v2-item-total-cost-0")).toHaveValue("860");
-  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$1,230.00");
+  await expect(dialog.getByTestId("v2-item-recommended-0")).toHaveText("$1,118.00");
   await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("950");
 });
 
@@ -381,7 +381,7 @@ test("editing a ready project keeps it ready, and it bills, archives and comes b
   await dialog.getByTestId("v2-item-service-1").selectOption("PRINTING");
   await dialog.getByTestId("v2-item-description-1").fill("Print run");
   await dialog.getByTestId("v2-item-unit-cost-1").fill("50");
-  await expect(dialog.getByTestId("v2-modal-total")).toHaveText("$125.00");
+  await expect(dialog.getByTestId("v2-modal-total")).toHaveText("$100.00");
   await dialog.getByTestId("v2-modal-save").click();
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
   await expect(dialog.getByTestId("v2-view-status")).toHaveText("Ready to bill");
@@ -390,14 +390,14 @@ test("editing a ready project keeps it ready, and it bills, archives and comes b
 
   const listed = page.getByTestId("v2-section-ready").getByTestId("v2-project-row").filter({ hasText: "V2 Billed" });
   await listed.getByRole("checkbox").click();
-  await expect(page.getByTestId("v2-selected-total")).toHaveText("$125.00");
+  await expect(page.getByTestId("v2-selected-total")).toHaveText("$100.00");
   await page.getByTestId("v2-mark-billed").click();
   await page.getByTestId("v2-confirm-bill-confirm").click();
   await expect(row(page, "V2 Billed")).toHaveCount(0);
 
   await page.goto("/office-v2/archive");
   const archived = page.getByTestId("v2-archive-row").filter({ hasText: "V2 Billed" });
-  await expect(archived).toContainText("$125.00");
+  await expect(archived).toContainText("$100.00");
   await archived.getByRole("button").click();
   const detail = page.getByRole("dialog", { name: "V2 Billed" });
   await expect(detail.locator("input, select, textarea")).toHaveCount(0);
