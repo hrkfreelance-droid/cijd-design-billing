@@ -17,14 +17,14 @@ export default function TaxInvoicesPage() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10));
   const [busy, setBusy] = useState(false);
-  if (!snapshot) return <BoardSkeleton />;
-  const clients = new Map(snapshot.clients.map((client) => [client.id, client.name]));
-  const projects = new Map(snapshot.projects.map((project) => [project.id, project]));
-  const available = snapshot.billingItems.filter((item) => projects.get(item.projectId)?.clientId === clientId).filter((item) => !item.invoiceId && item.amount != null && item.billingStatus === "READY_TO_INVOICE");
-  const selectedItems = snapshot.billingItems.filter((item) => selected.includes(item.id));
+  const clients = new Map(snapshot?.clients.map((client) => [client.id, client.name]) ?? []);
+  const projects = new Map(snapshot?.projects.map((project) => [project.id, project]) ?? []);
+  const selectedItems = snapshot?.billingItems.filter((item) => selected.includes(item.id)) ?? [];
   const subtotal = useMemo(() => selectedItems.reduce((sum, item) => sum + (item.amount ?? 0), 0), [selectedItems]);
   const vat = Math.round(subtotal * 0.1 * 100) / 100;
   const total = Math.round((subtotal + vat) * 100) / 100;
+  if (!snapshot) return <BoardSkeleton />;
+  const available = snapshot.billingItems.filter((item) => projects.get(item.projectId)?.clientId === clientId).filter((item) => !item.invoiceId && item.amount != null && item.billingStatus === "READY_TO_INVOICE");
   const issue = async () => {
     if (!clientId || !selected.length) return;
     setBusy(true);

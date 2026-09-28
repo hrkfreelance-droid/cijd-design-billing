@@ -1,6 +1,7 @@
 import type { Locale } from "@/lib/i18n";
 import { money } from "@/lib/format";
 import type { BillingItem, Invoice } from "@/lib/types";
+import type { V4Invoice } from "@/lib/v4/types";
 
 const PAGE_HEIGHT = 842;
 const LEFT = 48;
@@ -95,6 +96,25 @@ export function openInvoicePdf(input: InvoicePdfInput): void {
   const popup = window.open(url, "_blank", "noopener,noreferrer");
   if (!popup) downloadInvoicePdf(input);
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Opens the V4 Excel-aligned bilingual A4 invoice in a print/PDF-ready tab. */
+export function openV4TaxInvoicePrint(invoice: V4Invoice): void {
+  const popup = window.open("", "_blank", "noopener,noreferrer");
+  if (!popup) return;
+  const rows = invoice.lines.map((line) => `<tr><td>${escapeHtml(line.description)}</td><td>${escapeHtml(line.quantity)}</td><td>${escapeHtml(line.unitPrice)}</td><td>${escapeHtml(lineAmountText(line.quantity, line.unitPrice))}</td></tr>`).join("");
+  popup.document.write(`<!doctype html><html lang="km"><head><meta charset="utf-8"><title>${escapeHtml(invoice.invoiceNumber ?? "Tax Invoice")}</title><style>@page{size:A4;margin:14mm}body{font-family:Arial,"Noto Sans Khmer",sans-serif;color:#111;margin:0}header{border-bottom:3px solid #111;padding-bottom:14px;display:flex;justify-content:space-between}h1{font-size:28px;margin:0 0 4px}h2{font-size:18px;margin:0 0 4px}p{margin:4px 0;font-size:12px}.meta{text-align:right}table{width:100%;border-collapse:collapse;margin-top:28px;font-size:12px}th,td{border-bottom:1px solid #bbb;padding:8px;text-align:left}th:nth-child(n+2),td:nth-child(n+2){text-align:right}.totals{margin:22px 0 0 auto;width:260px;font-size:13px}.totals div{display:flex;justify-content:space-between;padding:4px 0}.grand{border-top:2px solid #111;font-size:17px;font-weight:700;margin-top:5px;padding-top:8px}.actions{margin-top:28px}@media print{.actions{display:none}}</style></head><body><header><div><h2>CIJD CO., LTD.</h2><p>ស៊ីអាយជេឌី ឯ.ក</p><h1>TAX INVOICE</h1><p>វិក្កយបត្រអាករ</p></div><div class="meta"><p><strong>No. ${escapeHtml(invoice.invoiceNumber ?? "Draft")}</strong></p><p>${escapeHtml(invoice.invoiceDate)}</p><p>${escapeHtml(invoice.status)}</p></div></header><section style="margin-top:18px"><p><strong>Customer / អតិថិជន:</strong> ${escapeHtml(invoice.customerName)}</p><p>${escapeHtml(invoice.customerKhmerName ?? "")}</p><p>${escapeHtml(invoice.customerAddress ?? "")}</p><p>${escapeHtml(invoice.customerPhone ?? "")}${invoice.customerVatin ? ` · VATIN ${escapeHtml(invoice.customerVatin)}` : ""}</p></section><table><thead><tr><th>Description / បរិយាយ</th><th>Quantity / បរិមាណ</th><th>Unit Price / តម្លៃឯកតា (USD)</th><th>Amount / ចំនួនទឹកប្រាក់ (USD)</th></tr></thead><tbody>${rows}</tbody></table><div class="totals"><div><span>Subtotal</span><span>$${escapeHtml(invoice.subtotal)}</span></div><div><span>VAT 10%</span><span>$${escapeHtml(invoice.vatAmount)}</span></div><div class="grand"><span>USD Total</span><span>$${escapeHtml(invoice.usdTotal)}</span></div>${invoice.exchangeRate && invoice.khrTotal ? `<div><span>Exchange Rate</span><span>${escapeHtml(invoice.exchangeRate)} KHR/USD</span></div><div><span>KHR Total</span><span>៛${escapeHtml(invoice.khrTotal)}</span></div>` : ""}</div><div class="actions"><button onclick="window.print()">Print / Save PDF</button></div><script>window.onload=()=>setTimeout(()=>window.print(),250)</script></body></html>`);
+  popup.document.close();
+  popup.focus();
+}
+
+function lineAmountText(quantity: string, unitPrice: string): string {
+  const amount = Number(quantity) * Number(unitPrice);
+  return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 }
 
 function invoicePdfBlob(input: InvoicePdfInput): Blob {
