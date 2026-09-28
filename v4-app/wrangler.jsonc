@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cijd-design-billing-v4-preview",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cijd-design-billing-v4-preview",
+      "database_id": "234764df-5fc3-40c8-9bd3-eaadd6b262d0",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "CIJD_V4_ENVIRONMENT": "preview"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "cijd-design-billing-v4-isolated",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "WRANGLER_LOG_PATH=.wrangler/logs vite dev --host 127.0.0.1",
+    "build": "CIJD_NEXT_DIST_DIR=.next-v4-build next build --webpack",
+    "build:worker": "WRANGLER_LOG_PATH=.wrangler/logs vinext build",
+    "deploy:preview": "WRANGLER_LOG_PATH=.wrangler/logs vinext-cloudflare deploy --config dist/server/wrangler.json",
+    "typecheck": "tsc --noEmit --incremental false",
+    "test": "node --experimental-transform-types --test \"tests/*.test.ts\"",
+    "test:architecture": "node scripts/architecture-guard.mjs",
+    "test:d1": "WRANGLER_LOG_PATH=.wrangler/logs node scripts/d1-integration.mjs",
+    "verify": "npm run test:architecture && npm test && npm run typecheck && npm run build && npm run build:worker && npm run test:d1"
+  },
+  "dependencies": {
+    "@vinext/cloudflare": "1.0.0-beta.6",
+    "next": "16.3.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-server-dom-webpack": "19.2.8",
+    "vinext": "1.0.0-beta.8"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.54.2",
+    "@types/node": "20.19.37",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.1.1",
+    "@vitejs/plugin-rsc": "0.5.34",
+    "typescript": "5.9.3",
+    "vite": "8.2.2",
+    "wrangler": "4.127.1"
+  }
+}
