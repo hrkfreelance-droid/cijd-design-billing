@@ -60,8 +60,18 @@ alter table public.v4_customers enable row level security;
 alter table public.v4_tax_invoices enable row level security;
 alter table public.v4_tax_invoice_lines enable row level security;
 
--- The issue transition is deliberately one database transaction. The row lock
--- makes the sequence allocation safe when two operators issue invoices at once.
+-- V4 Preview/Pilot persistence is server-only. Keep the new ledger inaccessible
+-- to browser anon/authenticated roles and allow the server service role.
+revoke all privileges on table public.v4_customers from anon, authenticated;
+revoke all privileges on table public.v4_tax_invoices from anon, authenticated;
+revoke all privileges on table public.v4_tax_invoice_lines from anon, authenticated;
+grant select, insert, update, delete on table public.v4_customers to service_role;
+grant select, insert, update, delete on table public.v4_tax_invoices to service_role;
+grant select, insert, update, delete on table public.v4_tax_invoice_lines to service_role;
+
+-- Issue is one database transaction. A per-year advisory lock serializes number
+-- allocation. The verified 2026 legacy workbook reserves sequences through 080,
+-- so new 2026 invoices begin at 081 even though legacy rows are not imported.
 create or replace function public.v4_issue_tax_invoice(p_invoice_id uuid)
 returns uuid
 language plpgsql
@@ -70,16 +80,128 @@ set search_path = public
 as $$
 declare
   draft public.v4_tax_invoices;
+  snapshot public.v4_customers;
+  issue_year integer;
+  legacy_floor integer;
   next_number text;
   next_seq integer;
+  calc_subtotal numeric(14,2);
+  calc_vat numeric(14,2);
+  calc_usd numeric(14,2);
+  calc_khr numeric(20,0);
 begin
-  select * into draft from public.v4_tax_invoices where id = p_invoice_id for update;
-  if not found then raise exception 'V4 invoice not found'; end if;
-  if draft.status <> 'DRAFT' then raise exception 'Only Draft invoices can be issued'; end if;
-  if not exists (select 1 from public.v4_tax_invoice_lines where invoice_id = p_invoice_id) then raise exception 'At least one line is required'; end if;
-  next_seq := coalesce((select max((substring(invoice_number from 11))::integer) from public.v4_tax_invoices where invoice_number like 'CIJDTI' || extract(year from draft.invoice_date)::text || '%'), 0) + 1;
-  next_number := 'CIJDTI' || extract(year from draft.invoice_date)::text || lpad(next_seq::text, 3, '0');
-  update public.v4_tax_invoices set invoice_number = next_number, status = 'ISSUED', issued_at = now(), updated_at = now() where id = p_invoice_id;
+  select * into draft
+  from public.v4_tax_invoices
+  where id = p_invoice_id
+  for update;
+
+  if not found then
+    raise exception 'V4 invoice not found';
+  end if;
+  if draft.status <> 'DRAFT' then
+    raise exception 'Only Draft invoices can be issued';
+  end if;
+  if nullif(btrim(draft.customer_name), '') is null then
+    raise exception 'Customer is required';
+  end if;
+  if draft.exchange_rate is not null and draft.exchange_rate <= 0 then
+    raise exception 'Exchange rate is invalid';
+  end if;
+  if not exists (
+    select 1 from public.v4_tax_invoice_lines where invoice_id = p_invoice_id
+  ) then
+    raise exception 'At least one line is required';
+  end if;
+  if exists (
+    select 1
+    from public.v4_tax_invoice_lines
+    where invoice_id = p_invoice_id
+      and (
+        nullif(btrim(description), '') is null
+        or quantity < 0
+        or unit_price < 0
+      )
+  ) then
+    raise exception 'Invoice line is invalid';
+  end if;
+
+  -- Recalculate line amounts and totals authoritatively at issue time.
+  update public.v4_tax_invoice_lines
+  set amount = round(quantity * unit_price, 2)
+  where invoice_id = p_invoice_id;
+
+  select coalesce(sum(amount), 0)::numeric(14,2)
+  into calc_subtotal
+  from public.v4_tax_invoice_lines
+  where invoice_id = p_invoice_id;
+
+  calc_vat := round(calc_subtotal * 0.10, 2);
+  calc_usd := calc_subtotal + calc_vat;
+  calc_khr := case
+    when draft.exchange_rate is null then null
+    else round(calc_usd * draft.exchange_rate)::numeric(20,0)
+  end;
+
+  -- Refresh the customer snapshot at issue time when a customer master is linked.
+  if draft.customer_id is not null then
+    select * into snapshot
+    from public.v4_customers
+    where id = draft.customer_id;
+
+    if not found then
+      raise exception 'V4 customer not found';
+    end if;
+  end if;
+
+  issue_year := extract(year from draft.invoice_date)::integer;
+  legacy_floor := case when issue_year = 2026 then 80 else 0 end;
+
+  perform pg_advisory_xact_lock(
+    hashtextextended('v4-tax-invoice-' || issue_year::text, 0)
+  );
+
+  select greatest(
+    coalesce(
+      max((substring(invoice_number from 11))::integer)
+        filter (
+          where invoice_number ~ ('^CIJDTI' || issue_year::text || '[0-9]{3}$')
+        ),
+      0
+    ),
+    legacy_floor
+  ) + 1
+  into next_seq
+  from public.v4_tax_invoices;
+
+  if next_seq > 999 then
+    raise exception 'Invoice sequence exhausted for year %', issue_year;
+  end if;
+
+  next_number := 'CIJDTI'
+    || issue_year::text
+    || lpad(next_seq::text, 3, '0');
+
+  update public.v4_tax_invoices
+  set
+    invoice_number = next_number,
+    status = 'ISSUED',
+    customer_name = case when draft.customer_id is null then draft.customer_name else snapshot.name end,
+    customer_khmer_name = case when draft.customer_id is null then draft.customer_khmer_name else snapshot.khmer_name end,
+    customer_address = case when draft.customer_id is null then draft.customer_address else snapshot.address end,
+    customer_phone = case when draft.customer_id is null then draft.customer_phone else snapshot.phone end,
+    customer_vatin = case when draft.customer_id is null then draft.customer_vatin else snapshot.vatin end,
+    subtotal = calc_subtotal,
+    vat_rate = 0.1000,
+    vat_amount = calc_vat,
+    usd_total = calc_usd,
+    khr_total = calc_khr,
+    issued_at = now(),
+    updated_at = now()
+  where id = p_invoice_id;
+
   return p_invoice_id;
 end;
 $$;
+
+revoke all on function public.v4_issue_tax_invoice(uuid) from public, anon, authenticated;
+grant execute on function public.v4_issue_tax_invoice(uuid) to service_role;
