@@ -1,0 +1,6 @@
+import { readJson, str } from "@/lib/api";
+import { v4Handle, v4Repo } from "@/lib/v4/api";
+import type { TaxInvoiceLineDraft } from "@/lib/tax-invoice-v4";
+function lines(body: Record<string, unknown>): TaxInvoiceLineDraft[] { return Array.isArray(body.lines) ? body.lines.map((raw, index) => { const item = (raw ?? {}) as Record<string, unknown>; return { id: str(item.id) ?? crypto.randomUUID(), sourceType: item.sourceType === "BILLING_ITEM" ? "BILLING_ITEM" : "MANUAL", billingItemId: str(item.billingItemId) ?? null, description: str(item.description) ?? "", quantity: str(item.quantity) ?? "0", unitPrice: str(item.unitPrice) ?? "0", sortOrder: index }; }) : []; }
+export async function GET(request: Request) { const search = new URL(request.url).searchParams.get("search") ?? ""; return v4Handle(() => v4Repo().then((repo) => repo.listInvoices(search))); }
+export async function POST(request: Request) { const body = await readJson(request); return v4Handle(() => v4Repo().then((repo) => repo.createDraft({ customerId: str(body.customerId), invoiceDate: str(body.invoiceDate) ?? "", exchangeRate: str(body.exchangeRate), exchangeRateSource: str(body.exchangeRateSource), exchangeRateDate: str(body.exchangeRateDate), exchangeRateManualOverride: body.exchangeRateManualOverride === true, lines: lines(body) }))); }
