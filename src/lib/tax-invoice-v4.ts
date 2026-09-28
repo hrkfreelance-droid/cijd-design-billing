@@ -9,6 +9,7 @@ export interface TaxInvoiceLineDraft {
   description: string;
   quantity: string;
   unitPrice: string;
+  amount?: string;
   sortOrder: number;
 }
 
