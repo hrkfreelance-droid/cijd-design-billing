@@ -45,6 +45,8 @@ export const PRICE_REVIEW_STATUSES = ["NOT_REQUIRED", "REVIEW_REQUIRED", "CONFIR
 export type PriceReviewStatus = (typeof PRICE_REVIEW_STATUSES)[number];
 export const BILLING_READINESS = ["AUTO", "READY", "IN_PROGRESS"] as const;
 export type BillingReadiness = (typeof BILLING_READINESS)[number];
+/** The stored source of a line's Final price (V5). */
+export type FinalMode = "AUTO" | "MANUAL";
 
 export interface Client {
   id: string;
@@ -117,6 +119,12 @@ export interface BillingItem {
    * a row written before the column existed) uses the 50 / 40 / 30 band.
    */
   markupOverride?: number | null;
+  /**
+   * Where the Final comes from, stored explicitly (V5). AUTO follows
+   * Recommended; MANUAL is a price a person chose and is never moved by a
+   * cost or markup change. Absent on older rows: see `resolveFinalMode`.
+   */
+  finalMode?: FinalMode | null;
   priceReviewStatus?: PriceReviewStatus | null;
   suggestedUnitPrice?: number | null;
   suggestedAmount?: number | null;
@@ -250,6 +258,85 @@ export interface Database {
   exchangeRates: ExchangeRate[];
   exchangeRateFailures: ExchangeRateFailure[];
   serviceTypes: ServiceType[];
+  /** V5 only (absent on older stores and on Supabase). */
+  projectPayments?: ProjectPayment[];
+  clientTaxProfiles?: ClientTaxProfile[];
+  taxInvoices?: TaxInvoiceRecord[];
+}
+
+/* ------------------------------------------------------------- V5 accounting */
+
+/**
+ * Money received against a project. A deposit is one kind of payment; the
+ * balance is always Final Total − every payment that is not voided.
+ */
+export type ProjectPaymentKind = "DEPOSIT" | "PARTIAL" | "FINAL";
+
+export interface ProjectPayment {
+  id: string;
+  projectId: string;
+  kind: ProjectPaymentKind;
+  amount: number;
+  paidOn: string; // yyyy-mm-dd
+  note?: string | null;
+  createdAt: string;
+  createdBy: string;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+}
+
+/** The legal identity a Tax Invoice is addressed to. One per client. */
+export interface ClientTaxProfile {
+  clientId: string;
+  companyNameEn: string;
+  companyNameKm: string;
+  addressEn: string;
+  addressKm: string;
+  telephone: string;
+  vatin: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface TaxInvoiceLine {
+  billingItemId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  /** The designer's Final line amount, carried over unchanged. */
+  amount: number;
+}
+
+/**
+ * An issued Tax Invoice. Everything printed on it is copied in at issue time,
+ * so a later edit to the project, the client or the rate never changes it.
+ */
+export interface TaxInvoiceRecord {
+  id: string;
+  projectId: string;
+  clientId: string;
+  /** The internal ledger entry that billed the project's lines. */
+  ledgerInvoiceId: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  status: "ISSUED" | "CANCELLED";
+  customer: Omit<ClientTaxProfile, "clientId" | "updatedAt" | "updatedBy">;
+  project: { name: string; note: string };
+  lines: TaxInvoiceLine[];
+  vatApplicable: boolean;
+  vatPercent: number;
+  subtotalUsd: number;
+  vatUsd: number;
+  totalUsd: number;
+  exchangeRate: number;
+  exchangeRateSource: "NBC" | "MANUAL";
+  exchangeRateEffectiveDate: string | null;
+  totalKhr: number;
+  issuedAt: string;
+  issuedBy: string;
+  cancelledAt?: string | null;
+  cancelledBy?: string | null;
+  cancellationReason?: string | null;
 }
 
 /** Everything the UI needs, in one round trip. */
@@ -268,4 +355,8 @@ export interface Snapshot {
   mode: "local" | "supabase";
   /** Which slice of the data this snapshot contains, given the viewer's role. */
   scope: { production: boolean; billing: boolean; payment: boolean; printing?: boolean };
+  /** V5 accounting data; absent outside V5. */
+  projectPayments?: ProjectPayment[];
+  clientTaxProfiles?: ClientTaxProfile[];
+  taxInvoices?: TaxInvoiceRecord[];
 }

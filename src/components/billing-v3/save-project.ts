@@ -4,6 +4,7 @@ import { api } from "@/components/providers";
 import { storedFinalUnitPrice } from "@/lib/billing-v2/board";
 import { printSellingPriceFromCost, roundCents } from "@/lib/billing-v2/pricing";
 import { isCostPriced } from "@/lib/billing-v2/services";
+import { isV5Client } from "@/lib/billing-v5/runtime";
 import type { BillingItem, Project, ServiceType } from "@/lib/types";
 import {
   draftChanged,
@@ -114,6 +115,8 @@ async function createItem(
       quantity: parseAmount(draft.quantity) ?? 1,
       printCost: cost ?? undefined,
       amount: followsRecommendation ? undefined : (final ?? undefined),
+      // V5 stores the Final's source explicitly instead of inferring it.
+      ...(isV5Client() ? { finalMode: explicitMode(draft, serviceTypes) } : {}),
     },
   });
 
@@ -127,6 +130,10 @@ async function createItem(
   }
   // Whatever the ledger settled on, the number on screen is the one saved.
   return (await writeFinal(created, draft)) ?? created;
+}
+
+function explicitMode(draft: ItemDraft, serviceTypes: ServiceType[] = []): "AUTO" | "MANUAL" {
+  return isCostPriced(draftService(draft, serviceTypes)) && draft.finalMode === "AUTO" ? "AUTO" : "MANUAL";
 }
 
 /** A line's own markup (percent), or null to return it to the default band. */
@@ -148,7 +155,20 @@ async function writeFinal(stored: BillingItem, draft: ItemDraft): Promise<Billin
   const manual = draft.finalMode !== "AUTO";
   const amountDiffers = stored.amount === null || roundCents(stored.amount) !== final;
   const unitDiffers = manual && unit !== null && storedFinalUnitPrice(stored) !== unit;
-  if (!amountDiffers && !unitDiffers) return null;
+  if (isV5Client()) {
+    if (!manual) {
+      // "Use recommended": the server prices it from the same rule.
+      if (stored.finalMode === "AUTO" && !amountDiffers) return null;
+      return api<BillingItem>(`/api/billing-items/${stored.id}`, {
+        method: "PATCH",
+        body: { finalMode: "AUTO", confirmPrice: true },
+      });
+    }
+    // A manual Final that happens to equal Recommended is still manual.
+    if (!amountDiffers && !unitDiffers && stored.finalMode === "MANUAL") return null;
+  } else if (!amountDiffers && !unitDiffers) {
+    return null;
+  }
   return api<BillingItem>(`/api/billing-items/${stored.id}/billing-price`, {
     method: "PATCH",
     body: unit === null ? { amount: final } : { amount: final, unitPrice: unit },

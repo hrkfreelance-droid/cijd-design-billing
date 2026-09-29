@@ -1,7 +1,12 @@
 import type {
   BillingItem,
   BillingStatus,
+  ClientTaxProfile,
   ProductionStatus,
+  ProjectPayment,
+  ProjectPaymentKind,
+  TaxInvoiceLine,
+  TaxInvoiceRecord,
   User,
   Client,
   Database,
@@ -36,9 +41,12 @@ import {
 import { roundMoney } from "@/lib/format";
 import { printSellingPriceFromCost } from "@/lib/printing-pricing";
 import { finalPriceConsistent } from "@/lib/billing-v2/pricing";
+import { pendingProjects, storedFinalUnitPrice } from "@/lib/billing-v2/board";
+import { invoiceUnitPrice, taxTotals } from "@/lib/billing-v5/calculation";
 import {
   ensureCurrentExchangeRate,
   ExchangeRateUnavailableError,
+  fetchAndStoreLatestOfficialRate,
   getApplicableOfficialRate,
   latestOfficialRateCheckedAt,
 } from "@/lib/exchange-rate";
@@ -91,6 +99,25 @@ function requireItem(db: Database, id: string): BillingItem {
   const item = db.billingItems.find((i) => i.id === id && !i.deletedAt);
   if (!item) throw new RuleError("NOT_FOUND", `Billing item ${id} was not found.`, 404);
   return item;
+}
+
+/**
+ * A cost-priced line whose stored mode is explicitly AUTO (written by V5).
+ * Rows without a stored mode keep the V3 rules exactly as they were.
+ */
+function followsRecommendationExplicitly(item: BillingItem): boolean {
+  return item.finalMode === "AUTO" && item.type === "PRINT" && item.printCost != null;
+}
+
+/** Re-prices an explicit-AUTO line from its cost and markup. */
+function settleAutoFinal(item: BillingItem): void {
+  if (!followsRecommendationExplicitly(item)) return;
+  const recommended = printSellingPriceFromCost(item.printCost as number, item.markupOverride);
+  item.amount = recommended;
+  item.unitPrice = item.quantity > 0 ? money(recommended / item.quantity) : recommended;
+  item.customAmount = false;
+  item.suggestedAmount = recommended;
+  item.suggestedUnitPrice = item.unitPrice;
 }
 
 function requireInvoice(db: Database, id: string): Invoice {
@@ -208,6 +235,13 @@ export class Store implements Repository {
       exchangeRateLastCheckedAt: latestOfficialRateCheckedAt(db.exchangeRates),
       mode: this.mode,
       scope: { production: true, billing: true, payment: true },
+      ...(db.taxInvoices !== undefined
+        ? {
+            projectPayments: db.projectPayments ?? [],
+            clientTaxProfiles: db.clientTaxProfiles ?? [],
+            taxInvoices: db.taxInvoices,
+          }
+        : {}),
     };
   }
 
@@ -493,6 +527,13 @@ export class Store implements Repository {
         updatedBy: actor,
         deletedAt: null,
       };
+      if (input.finalMode) {
+        // Only a costed line can follow a recommendation; anything else is a
+        // price a person set.
+        item.finalMode = type === "PRINT" && printCost !== null ? input.finalMode : "MANUAL";
+        if (item.finalMode === "MANUAL") item.customAmount = amount !== null;
+        settleAutoFinal(item);
+      }
       db.billingItems.push(item);
       log(db, actor, "item.create", "billing_item", item.id, description);
       if (type === "PRINT" && !imported) {
@@ -551,6 +592,32 @@ export class Store implements Repository {
       ) {
         item.amount = money(item.quantity * item.unitPrice);
       }
+      if (
+        item.finalMode === "MANUAL" &&
+        patch.amount === undefined &&
+        patch.unitPrice === undefined &&
+        item.quantity !== previousPrice.quantity &&
+        previousPrice.amount !== null &&
+        item.quantity > 0
+      ) {
+        // Quantity moves a manual line's total, never its Unit Final.
+        const unit = storedFinalUnitPrice({ ...previousPrice, amount: previousPrice.amount });
+        if (unit !== null) {
+          item.unitPrice = unit;
+          item.amount = money(unit * item.quantity);
+        }
+      }
+      if (patch.finalMode === "AUTO") {
+        if (item.type !== "PRINT" || item.printCost == null) {
+          throw new RuleError("INVALID", "Only a line with a cost can follow the recommendation.", 400);
+        }
+        item.finalMode = "AUTO";
+      } else if (patch.finalMode === "MANUAL" || (patch.amount !== undefined && item.finalMode)) {
+        // A price a person set stays theirs until "Use recommended".
+        item.finalMode = "MANUAL";
+        item.customAmount = item.amount !== null;
+      }
+      settleAutoFinal(item);
       if (item.amount !== null && (!Number.isFinite(item.amount) || item.amount < 0)) {
         throw new RuleError("INVALID", "Amount must be zero or more.", 400);
       }
@@ -561,7 +628,11 @@ export class Store implements Repository {
         previousPrice.amount !== item.amount ||
         previousPrice.customAmount !== item.customAmount;
       const priceDetail = `${item.quantity} × ${item.unitPrice} = ${item.amount ?? "unset"}`;
-      if (item.type === "PRINT" && !isHistoricalRecordForStore(item) && (priceChanged || !wasPrint)) {
+      if (
+        item.type === "PRINT" &&
+        !isHistoricalRecordForStore(item) &&
+        (priceChanged || !wasPrint || patch.finalMode !== undefined)
+      ) {
         item.suggestedUnitPrice = item.unitPrice;
         item.suggestedAmount = item.amount;
         if (patch.confirmPrice) {
@@ -596,6 +667,8 @@ export class Store implements Repository {
       const actor = patch.actor ?? DEFAULT_ACTOR;
       const wasPriceConfirmed = item.priceReviewStatus === "CONFIRMED";
       const wasManualOverride = item.customAmount;
+      const previousQuantity = item.quantity;
+      const manualUnit = item.finalMode === "MANUAL" ? storedFinalUnitPrice(item) : null;
       if (patch.description !== undefined) {
         const description = patch.description.trim();
         if (!description) throw new RuleError("INVALID", "Description is required.", 400);
@@ -622,7 +695,19 @@ export class Store implements Repository {
           : money(item.quantity * item.unitPrice);
       item.suggestedUnitPrice = item.quantity > 0 ? money(suggestedAmount / item.quantity) : item.unitPrice;
       item.suggestedAmount = suggestedAmount;
-      if (!wasManualOverride) item.amount = suggestedAmount;
+      if (item.finalMode === "AUTO") {
+        settleAutoFinal(item);
+      } else if (item.finalMode === "MANUAL") {
+        // A manual Final is left exactly as stored (even a total that is not
+        // unit × qty to the cent). Only a Quantity change moves it: the unit
+        // price stays and the total becomes unit × the new quantity.
+        if (manualUnit !== null && item.quantity !== previousQuantity) {
+          item.unitPrice = manualUnit;
+          item.amount = money(manualUnit * item.quantity);
+        }
+      } else if (!wasManualOverride) {
+        item.amount = suggestedAmount;
+      }
       if (!(wasManualOverride && wasPriceConfirmed)) {
         item.priceReviewStatus = "REVIEW_REQUIRED";
         item.priceConfirmedBy = null;
@@ -710,6 +795,7 @@ export class Store implements Repository {
       }
       item.amount = money(amount);
       item.customAmount = true;
+      item.finalMode = "MANUAL";
       if (item.type === "PRINT") {
         item.suggestedAmount ??= item.printCost != null ? printSellingPriceFromCost(item.printCost, item.markupOverride) : item.amount;
         item.suggestedUnitPrice ??= item.quantity > 0 ? money(item.suggestedAmount / item.quantity) : item.unitPrice;
@@ -738,6 +824,9 @@ export class Store implements Repository {
       }
       // Only the markup moves; no stored price is rewritten here.
       item.markupOverride = markupPercent === null ? null : money(markupPercent);
+      // An explicit-AUTO line follows its new recommendation; a manual Final
+      // (and every row without a stored mode) keeps its price.
+      settleAutoFinal(item);
       item.updatedAt = now();
       item.updatedBy = actor;
       log(db, actor, "billing.markup", "billing_item", item.id, item.markupOverride == null ? "default" : String(item.markupOverride));
@@ -763,6 +852,7 @@ export class Store implements Repository {
       item.amount = money(amount);
       item.unitPrice = money(unitPrice);
       item.customAmount = true;
+      item.finalMode = "MANUAL";
       if (item.type === "PRINT") {
         item.suggestedAmount ??= item.printCost != null ? printSellingPriceFromCost(item.printCost, item.markupOverride) : item.amount;
         item.suggestedUnitPrice ??= item.quantity > 0 ? money(item.suggestedAmount / item.quantity) : item.unitPrice;
@@ -1183,4 +1273,285 @@ export class Store implements Repository {
     });
   }
 
+  /* ------------------------------------------------------ V5 accounting */
+
+  /** Fetches today's official NBC USD/KHR rate into this store. */
+  refreshOfficialRate() {
+    return this.transaction(async (db) => {
+      try {
+        return await fetchAndStoreLatestOfficialRate(db);
+      } catch (error) {
+        throw new RuleError(
+          "EXCHANGE_RATE_REFRESH_FAILED",
+          error instanceof Error ? `NBC rate could not be fetched: ${error.message}` : "NBC rate could not be fetched.",
+          503,
+        );
+      }
+    });
+  }
+
+  /** Money received against a project (a deposit is one kind). */
+  addProjectPayment(input: AddProjectPaymentInput) {
+    return this.transaction((db) => {
+      const project = db.projects.find((p) => p.id === input.projectId && !p.deletedAt);
+      if (!project) throw new RuleError("NOT_FOUND", "Project was not found.", 404);
+      if (!Number.isFinite(input.amount) || input.amount <= 0) {
+        throw new RuleError("INVALID", "A payment must be more than zero.", 400);
+      }
+      if (!["DEPOSIT", "PARTIAL", "FINAL"].includes(input.kind)) {
+        throw new RuleError("INVALID", "Unknown payment type.", 400);
+      }
+      if (input.paidOn && !isIsoDate(input.paidOn)) {
+        throw new RuleError("INVALID", "Payment date must be a valid date.", 400);
+      }
+      const actor = input.actor ?? "Accounting";
+      const payment: ProjectPayment = {
+        id: newId(),
+        projectId: project.id,
+        kind: input.kind,
+        amount: money(input.amount),
+        paidOn: input.paidOn || today(),
+        note: input.note?.trim() || null,
+        createdAt: now(),
+        createdBy: actor,
+        voidedAt: null,
+        voidedBy: null,
+      };
+      (db.projectPayments ??= []).push(payment);
+      log(db, actor, "project.payment", "project", project.id, `${payment.kind} ${payment.amount}`);
+      return payment;
+    });
+  }
+
+  voidProjectPayment(id: string, actor = "Accounting") {
+    return this.transaction((db) => {
+      const payment = (db.projectPayments ?? []).find((p) => p.id === id);
+      if (!payment) throw new RuleError("NOT_FOUND", "Payment was not found.", 404);
+      if (payment.voidedAt) throw new RuleError("ALREADY_VOID", "This payment was already removed.");
+      payment.voidedAt = now();
+      payment.voidedBy = actor;
+      log(db, actor, "project.payment.void", "project", payment.projectId, `${payment.kind} ${payment.amount}`);
+      return payment;
+    });
+  }
+
+  /**
+   * Issues a Tax Invoice for one invoice-ready project, in one step:
+   * the lines are billed on the ledger exactly as the designer priced them,
+   * and everything printed is frozen into the invoice record.
+   */
+  issueTaxInvoice(input: IssueTaxInvoiceInput) {
+    return this.transaction((db) => {
+      const actor = input.actor ?? "Accounting";
+      const snapshotView = db as unknown as Snapshot;
+      const project = pendingProjects(snapshotView).find((candidate) => candidate.id === input.projectId);
+      if (!project) {
+        const exists = db.projects.some((p) => p.id === input.projectId && !p.deletedAt);
+        throw exists
+          ? new RuleError("NO_ITEMS", "There is nothing left to invoice on this project.", 400)
+          : new RuleError("NOT_FOUND", "That project was not found.", 404);
+      }
+      if (project.blocker) {
+        throw new RuleError("NOT_READY", `"${project.name}" is not ready to invoice yet.`, 409);
+      }
+      if (project.items.length > TAX_INVOICE_MAX_LINES) {
+        throw new RuleError(
+          "TOO_MANY_LINES",
+          `The Tax Invoice layout fits ${TAX_INVOICE_MAX_LINES} lines; this project has ${project.items.length}.`,
+          400,
+        );
+      }
+
+      const invoiceNumber = input.invoiceNumber?.trim() ?? "";
+      if (!invoiceNumber || invoiceNumber.length > 40) {
+        throw new RuleError("INVALID", "Enter an invoice number.", 400);
+      }
+      const taken =
+        (db.taxInvoices ?? []).some((t) => t.invoiceNumber.toLowerCase() === invoiceNumber.toLowerCase()) ||
+        db.invoices.some(
+          (i) => i.status !== "VOID" && i.invoiceNumber?.toLowerCase() === invoiceNumber.toLowerCase(),
+        );
+      if (taken) {
+        throw new RuleError("DUPLICATE_INVOICE_NUMBER", `Invoice ${invoiceNumber} already exists.`);
+      }
+      if (!isIsoDate(input.invoiceDate)) throw new RuleError("INVALID", "Enter a valid invoice date.", 400);
+      const rate = Number(input.exchangeRate);
+      if (!Number.isFinite(rate) || rate <= 0) {
+        throw new RuleError("INVALID", "Enter the NBC USD/KHR exchange rate.", 400);
+      }
+      const customer = {
+        companyNameEn: input.customer.companyNameEn?.trim() ?? "",
+        companyNameKm: input.customer.companyNameKm?.trim() ?? "",
+        addressEn: input.customer.addressEn?.trim() ?? "",
+        addressKm: input.customer.addressKm?.trim() ?? "",
+        telephone: input.customer.telephone?.trim() ?? "",
+        vatin: input.customer.vatin?.trim() ?? "",
+      };
+      if (!customer.companyNameEn && !customer.companyNameKm) {
+        throw new RuleError("INVALID", "Enter the customer's legal name.", 400);
+      }
+
+      // The designer's Final amounts are the invoice lines, unchanged.
+      const lines: TaxInvoiceLine[] = project.items.map((entry) => ({
+        billingItemId: entry.item.id,
+        description:
+          entry.item.description.trim() ||
+          entry.service.label ||
+          entry.service.key.charAt(0) + entry.service.key.slice(1).toLowerCase(),
+        quantity: entry.item.quantity,
+        unitPrice: invoiceUnitPrice({
+          quantity: entry.item.quantity,
+          unitPrice: entry.finalUnitPrice,
+          amount: entry.amount as number,
+        }),
+        amount: money(entry.amount as number),
+      }));
+      const vatApplicable = input.vatApplicable !== false;
+      const totals = taxTotals({ lines, vatApplicable, exchangeRate: rate });
+      if (totals.subtotalUsd !== project.total) {
+        // Belt and braces: the invoice must bill exactly the commercial total.
+        throw new RuleError("TOTAL_MISMATCH", "Invoice lines do not add up to the project's Final total.", 409);
+      }
+
+      // Ledger: the same step as "Mark billed", with Accounting's rate.
+      const stamp = now();
+      const projectRow = db.projects.find((p) => p.id === project.id)!;
+      projectRow.billingReadiness = "READY";
+      const ledger: Invoice = {
+        id: newId(),
+        clientId: project.clientId,
+        invoiceNumber,
+        invoiceDate: input.invoiceDate,
+        amount: project.total,
+        exchangeRate: rate,
+        exchangeRateSource: input.exchangeRateSource === "NBC" ? "NBC" : "MANUAL",
+        exchangeRateEffectiveDate: input.exchangeRateEffectiveDate ?? null,
+        exchangeRateFetchedAt: null,
+        status: "ISSUED",
+        paymentDate: null,
+        paymentSlip: null,
+        receiptStatus: "PENDING",
+        createdAt: stamp,
+        createdBy: actor,
+        updatedAt: stamp,
+        updatedBy: actor,
+      };
+      db.invoices.push(ledger);
+      for (const entry of project.items) {
+        const item = requireItem(db, entry.item.id);
+        db.invoiceItems.push({ invoiceId: ledger.id, billingItemId: item.id });
+        item.billingStatus = "INVOICED";
+        item.invoiceId = ledger.id;
+        item.updatedAt = stamp;
+        item.updatedBy = actor;
+      }
+
+      const record: TaxInvoiceRecord = {
+        id: newId(),
+        projectId: project.id,
+        clientId: project.clientId,
+        ledgerInvoiceId: ledger.id,
+        invoiceNumber,
+        invoiceDate: input.invoiceDate,
+        status: "ISSUED",
+        customer,
+        project: { name: project.name, note: project.note },
+        lines,
+        vatApplicable,
+        vatPercent: totals.vatPercent,
+        subtotalUsd: totals.subtotalUsd,
+        vatUsd: totals.vatUsd,
+        totalUsd: totals.totalUsd,
+        exchangeRate: rate,
+        exchangeRateSource: input.exchangeRateSource === "NBC" ? "NBC" : "MANUAL",
+        exchangeRateEffectiveDate: input.exchangeRateEffectiveDate ?? null,
+        totalKhr: totals.totalKhr,
+        issuedAt: stamp,
+        issuedBy: actor,
+        cancelledAt: null,
+        cancelledBy: null,
+        cancellationReason: null,
+      };
+      (db.taxInvoices ??= []).push(record);
+
+      // Remember the legal details for this client's next invoice.
+      const profiles = (db.clientTaxProfiles ??= []);
+      const profile = profiles.find((p) => p.clientId === project.clientId);
+      const nextProfile: ClientTaxProfile = { clientId: project.clientId, ...customer, updatedAt: stamp, updatedBy: actor };
+      if (profile) Object.assign(profile, nextProfile);
+      else profiles.push(nextProfile);
+
+      log(db, actor, "tax_invoice.issue", "tax_invoice", record.id, `${invoiceNumber} ${totals.totalUsd}`);
+      return record;
+    });
+  }
+
+  /**
+   * Cancels an issued Tax Invoice. The record (and its number) is kept and
+   * marked CANCELLED; the project's lines return to Accounting unchanged.
+   */
+  cancelTaxInvoice(id: string, reason: string, actor = "Accounting") {
+    return this.transaction((db) => {
+      const record = (db.taxInvoices ?? []).find((t) => t.id === id);
+      if (!record) throw new RuleError("NOT_FOUND", "Tax invoice was not found.", 404);
+      if (record.status !== "ISSUED") throw new RuleError("ALREADY_CANCELLED", "This tax invoice was already cancelled.");
+      const trimmed = reason.trim();
+      if (!trimmed) throw new RuleError("INVALID", "Enter a reason for cancelling.", 400);
+      const ledger = db.invoices.find((i) => i.id === record.ledgerInvoiceId);
+      if (ledger?.status === "PAID") {
+        throw new RuleError("INVOICE_PAID", "This invoice is paid. Undo the payment before cancelling it.");
+      }
+      if (ledger && ledger.status !== "VOID") {
+        ledger.status = "VOID";
+        ledger.receiptStatus = "NOT_REQUIRED";
+        ledger.updatedAt = now();
+        ledger.updatedBy = actor;
+        for (const link of db.invoiceItems.filter((l) => l.invoiceId === ledger.id)) {
+          const item = db.billingItems.find((i) => i.id === link.billingItemId);
+          if (!item) continue;
+          item.billingStatus = "READY_TO_INVOICE";
+          item.invoiceId = null;
+          item.updatedAt = now();
+          item.updatedBy = actor;
+        }
+        db.invoiceItems = db.invoiceItems.filter((l) => l.invoiceId !== ledger.id);
+      }
+      record.status = "CANCELLED";
+      record.cancelledAt = now();
+      record.cancelledBy = actor;
+      record.cancellationReason = trimmed;
+      log(db, actor, "tax_invoice.cancel", "tax_invoice", record.id, `${record.invoiceNumber}: ${trimmed}`);
+      return record;
+    });
+  }
+}
+
+/** The Excel Tax Invoice has ten line rows. */
+export const TAX_INVOICE_MAX_LINES = 10;
+
+function isIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.valueOf()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+export interface AddProjectPaymentInput {
+  projectId: string;
+  kind: ProjectPaymentKind;
+  amount: number;
+  paidOn?: string;
+  note?: string;
+  actor?: string;
+}
+
+export interface IssueTaxInvoiceInput {
+  projectId: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  customer: Partial<Omit<ClientTaxProfile, "clientId" | "updatedAt" | "updatedBy">>;
+  exchangeRate: number;
+  exchangeRateSource?: "NBC" | "MANUAL";
+  exchangeRateEffectiveDate?: string | null;
+  vatApplicable?: boolean;
+  actor?: string;
 }

@@ -20,6 +20,11 @@ export function getLocalRepository(): Repository {
 }
 
 export async function getRepository(): Promise<Repository> {
+  if (process.env.CIJD_V5_MODE === "1") {
+    // V5's own D1 data. Checked first so V5 can never fall through to V3's data.
+    const { getV5Repository } = await import("@/lib/billing-v5/repository");
+    return getV5Repository();
+  }
   const { dataMode } = await import("@/lib/supabase/config");
   if (dataMode() === "local") return getLocalRepository();
   const { supabaseServerClient } = await import("@/lib/supabase/server");

@@ -95,7 +95,11 @@ export function draftFromItem(entry: BoardItem): ItemDraft {
   // A stored price that equals today's recommendation keeps following the
   // cost. Anything else is someone's price and opens as a manual unit price,
   // so a Quantity change keeps that unit price exactly as saved.
-  const follows = costPriced && !entry.manual && (entry.amount == null || entry.amount === entry.recommended);
+  // A stored AUTO mode (V5) is taken as stored.
+  const follows =
+    costPriced &&
+    !entry.manual &&
+    (entry.item.finalMode === "AUTO" || entry.amount == null || entry.amount === entry.recommended);
   return {
     key: entry.item.id,
     id: entry.item.id,

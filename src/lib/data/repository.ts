@@ -2,6 +2,7 @@ import type {
   BillingStatus,
   Client,
   BillingItem,
+  FinalMode,
   Invoice,
   ItemType,
   Project,
@@ -48,6 +49,8 @@ export interface CreateBillingItemInput {
   printCost?: number;
   priceSource?: string;
   priceReason?: string;
+  /** V5: the Final's source. Omitted keeps the V3 behaviour. */
+  finalMode?: FinalMode;
   actor?: string;
 }
 
@@ -63,6 +66,11 @@ export interface UpdateBillingItemInput {
   note?: string;
   printSize?: string;
   printCost?: number;
+  /**
+   * V5: "AUTO" returns a cost-priced line's Final to Recommended ("Use
+   * recommended"); "MANUAL" marks the current Final as a person's price.
+   */
+  finalMode?: FinalMode;
   actor?: string;
 }
 

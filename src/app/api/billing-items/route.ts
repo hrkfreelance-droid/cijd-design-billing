@@ -1,4 +1,4 @@
-import { handleAs, num, readJson, str } from "@/lib/api";
+import { finalModeOf, handleAs, num, readJson, str } from "@/lib/api";
 import type { BillingStatus, ItemType } from "@/lib/types";
 
 export async function POST(request: Request) {
@@ -18,6 +18,7 @@ export async function POST(request: Request) {
       priceSource: str(body.priceSource),
       priceReason: str(body.priceReason),
       note: str(body.note),
+      finalMode: finalModeOf(body.finalMode),
     }),
   );
 }

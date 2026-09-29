@@ -4,6 +4,9 @@ export type DataMode = "local" | "supabase";
 
 /** Supabase is the only data source allowed by a production runtime. */
 export function supabaseConfig() {
+  // The V5 Worker has its own D1 data and must never reach the V3 database,
+  // even if Supabase variables were present at build or run time.
+  if (process.env.CIJD_V5_MODE === "1") return null;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   return url && anonKey ? { url, anonKey } : null;

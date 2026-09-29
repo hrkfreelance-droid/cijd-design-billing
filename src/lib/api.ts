@@ -70,6 +70,10 @@ export function str(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+export function finalModeOf(value: unknown): "AUTO" | "MANUAL" | undefined {
+  return value === "AUTO" || value === "MANUAL" ? value : undefined;
+}
+
 export function num(value: unknown): number | undefined {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string" && value.trim() !== "") {

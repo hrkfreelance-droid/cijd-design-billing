@@ -10,7 +10,8 @@
  * that what a person selected is what the screen showed them.
  */
 import { isHistoricalRecord, isProductionComplete } from "@/lib/derive";
-import type { BillingItem, Client, Project, Snapshot } from "@/lib/types";
+import type { BillingItem, Client, Project, ProjectPayment, Snapshot } from "@/lib/types";
+import { projectPaymentsWithLegacyDeposit, settlement } from "@/lib/billing-v5/calculation";
 import { markupForCost, printSellingPriceFromCost, projectBalance, roundCents, type ProjectBalance } from "./pricing";
 import { isCostPriced, serviceForItem, type ServiceDefinition } from "./services";
 
@@ -151,7 +152,12 @@ export function toBoardItem(item: BillingItem, snapshot?: Pick<Snapshot, "servic
     recommended,
     margin: cost == null ? null : markupForCost(cost, override),
     finalUnitPrice: storedFinalUnitPrice(item),
-    manual: costPriced && item.amount != null && recommended != null && item.amount !== recommended,
+    // A stored mode (V5) is authoritative; older rows keep the V3 reading.
+    manual:
+      costPriced &&
+      (item.finalMode
+        ? item.finalMode === "MANUAL"
+        : item.amount != null && recommended != null && item.amount !== recommended),
     amount: item.amount,
   };
 }
@@ -223,10 +229,28 @@ function sumCost(items: BoardItem[]): number {
   return roundCents(items.reduce((total, entry) => total + (entry.cost ?? 0), 0));
 }
 
+/**
+ * Final Total → Payments → Balance. A V3 deposit counts as one payment; V5
+ * payments are added to it. Without V5 payments this is exactly the V3
+ * deposit balance.
+ */
+function balanceOf(total: number, project: Project, payments: readonly ProjectPayment[] | undefined): ProjectBalance {
+  const own = projectPaymentsWithLegacyDeposit(project, payments ?? []);
+  const result = settlement(total, own);
+  const legacy = projectBalance(total, project.depositAmount ?? null);
+  return {
+    finalTotal: result.finalTotal,
+    deposit: legacy.deposit,
+    remaining: result.balance,
+    overpaid: result.overpaid,
+    settled: result.paid > 0 && result.balance === 0,
+  };
+}
+
 export function toBoardProject(
   project: Project,
   items: BillingItem[],
-  snapshot: Pick<Snapshot, "serviceTypes">,
+  snapshot: Pick<Snapshot, "serviceTypes"> & { projectPayments?: ProjectPayment[] },
 ): BoardProject {
   const boardItems = items
     .slice()
@@ -248,7 +272,7 @@ export function toBoardProject(
     blockedBy,
     billingReadiness: readiness,
     pricePendingCount: boardItems.filter((entry) => entry.amount === null).length,
-    balance: projectBalance(total, project.depositAmount ?? null),
+    balance: balanceOf(total, project, snapshot.projectPayments),
   };
 }
 

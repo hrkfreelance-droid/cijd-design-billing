@@ -1,4 +1,4 @@
-import { handleAs, num, readJson, str } from "@/lib/api";
+import { finalModeOf, handleAs, num, readJson, str } from "@/lib/api";
 import type { BillingStatus, ItemType } from "@/lib/types";
 
 export async function PATCH(
@@ -20,6 +20,7 @@ export async function PATCH(
       confirmPrice: body.confirmPrice === true,
       printSize: str(body.printSize),
       note: str(body.note),
+      finalMode: finalModeOf(body.finalMode),
     });
   });
 }
