@@ -95,6 +95,7 @@ test("V5: designer → accounting → tax invoice → print → reopen", async (
     await importedRow.getByTestId("v2-open-project").click();
     const existing = page.getByRole("dialog");
     await expect(existing.getByTestId("v2-view-mode")).toBeVisible();
+    await page.waitForTimeout(500); // let the sheet finish opening before the screenshot
     await shot(page, "00-imported-project-en-light");
     await page.keyboard.press("Escape");
     await expect(existing).toHaveCount(0);
@@ -192,6 +193,7 @@ test("V5: designer → accounting → tax invoice → print → reopen", async (
     await expect(rateInput).not.toHaveValue("");
   } else {
     await expect(page.getByText("The NBC rate could not be fetched", { exact: false })).toBeVisible();
+    await rateInput.fill("");
     await rateInput.fill("4105");
     await expect(sheet.getByTestId("v5-rate-source")).toHaveText("Entered by hand");
   }

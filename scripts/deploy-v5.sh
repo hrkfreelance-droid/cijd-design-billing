@@ -48,8 +48,6 @@ npx vinext-cloudflare deploy --config dist/server/wrangler.json
 
 subdomain=${CIJD_WORKERS_SUBDOMAIN:-hrk-freelance}
 url="https://$WORKER.$subdomain.workers.dev"
-echo "== smoke test $url"
-for path in /office-v5 /office-v5/accounting /api/state; do
-  printf '%s %s\n' "$(curl -s -o /dev/null -w '%{http_code}' "$url$path")" "$path"
-done
+echo "== smoke test (V5 up, V3 and V4 unchanged)"
+scripts/v5-smoke.sh "$url"
 echo "V5: $url/office-v5"

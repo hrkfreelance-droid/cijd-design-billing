@@ -72,21 +72,74 @@ one invoice with the next number — run it on a fresh V5 database, before real 
 
 ## Status (2026-09-30)
 
-- Implemented, unit-tested and E2E-verified **locally** (wrangler dev + local D1 + Chromium).
-- **Not deployed**: this session had no Cloudflare credentials and its network policy
-  blocks `api.cloudflare.com`, `*.workers.dev`, Supabase and NBC. Run `npm run deploy:v5`
-  from a machine logged in to the CIJD Cloudflare account.
-- Live V3/V4 could not be reached from the session to re-check them; nothing in this
-  branch deploys to their Workers or touches their databases.
+- V5 implemented; V3 import tool, deploy, smoke, deployed E2E and go-live script ready.
+- All of it rehearsed **locally** (wrangler dev + local D1 + Chromium): import of a V3
+  fixture → verify PASS → deployed-mode E2E PASS → verify PASS → smoke (V5 part) PASS.
+- **Not deployed, real V3 data not yet copied**: the build session had no Cloudflare or
+  Supabase credentials, and its network policy blocks `api.cloudflare.com`,
+  `*.workers.dev`, Supabase and NBC. Run `scripts/v5-go-live.sh` on an authorised machine.
+- Live V3/V4 not reachable from the session; nothing here deploys to or writes them.
 
 ## Verification (local, 2026-09-30)
 
-- `npm run test:unit`: 135/135 pass (108 existing V3 + 27 V5).
+- `npm run test:unit`: 142/142 pass (108 existing V3 + 34 V5, incl. importer on real SQLite).
 - V5 browser E2E (`tests/v5/v5-e2e.spec.ts`): pass — 0 console errors, 0 failed requests.
 - Existing V3 Playwright suite on this branch: 54 pass, 3 skipped, 3 fail. The same 3
   `billing-flow.spec.ts` tests (`designer ready tab…`, `invoice once, pay once`,
   `printing cost persists…`) fail identically on a pristine `feature/billing-v3`
   checkout, so they are pre-existing and not caused by V5.
+
+## V3 → V5 data copy (one time)
+
+`scripts/v5-import/v3-to-v5.ts` (`npm run v5:import`), core in `src/lib/billing-v5/v3-import.ts`.
+
+- Reads V3 from Supabase REST with **GET only** (enforced in code; any other method or
+  URL is refused), every table fully paged, row count checked against Supabase's own
+  total (a short read aborts). Or reads a JSON dump (`--source-file`).
+- Maps rows with V3's own mappers (`src/lib/supabase/rows.ts`), so V5 holds exactly what
+  V3 shows. IDs kept. Prices, unit prices, quantities, costs, markups, memos, statuses,
+  readiness, deposits, ledger entries, invoice links and payments copied as stored.
+  Soft-deleted rows copied as deleted. **No `finalMode` written, nothing recalculated.**
+- Unsafe records are listed: BLOCKING (duplicate/missing id, non-numeric money) stops
+  the import; WARNING (orphans, unknown enum values, sub-cent amounts) are copied as is
+  and listed.
+- Writes only through `/api/v5/import`: V5 Worker only, requires the `V5_IMPORT_TOKEN`
+  secret (absent = endpoint 404), and only into a V5 with **no business data**.
+- Every run writes `v3-backup.json` (raw V3 rows), `v5-plan.json`, `report.md` under
+  `.data/` (git-ignored; contains business data — keep it private).
+- `--verify` compares every V3 client, project and line with V5 field by field
+  (prices, memo, status, deposit, deleted flag). Records created later in V5 are listed
+  as extra and allowed.
+
+## Go-live (authorised machine)
+
+```sh
+npx wrangler login
+export SUPABASE_URL=https://dldfhhcechzhkbvlnzld.supabase.co
+export SUPABASE_SERVICE_ROLE_KEY=…     # Supabase → Project Settings → API; used read-only
+npx playwright install chromium
+scripts/v5-go-live.sh
+```
+
+Deploy → smoke (V5 + V3 + V4) → V3 dry-run report (confirm) → import → verify →
+deployed browser E2E (TEST data, TEST- invoice number, cleaned up) → verify again →
+import token removed → smoke. Logs, reports and screenshots: `.data/v5-go-live/<time>/`.
+
+Individual steps: `npm run deploy:v5`, `scripts/v5-smoke.sh <url>`,
+`npm run v5:import -- [--target <url> --commit|--verify]`,
+`V5_BASE_URL=<url> V5_EXPECT_IMPORTED=1 npm run test:v5:e2e`.
+
+## Rollback (V5 only — V3 and V4 are never involved)
+
+- Code: `npx wrangler deployments list --name cijd-design-billing-v5-preview`, then
+  `npx wrangler rollback <version-id> --name cijd-design-billing-v5-preview`.
+- Data: D1 Time Travel —
+  `npx wrangler d1 time-travel info cijd-design-billing-v5-preview` and
+  `npx wrangler d1 time-travel restore cijd-design-billing-v5-preview --timestamp <before the import>`.
+  V3 still holds the originals; the import can be run again into an emptied V5.
+- Start over: `npx wrangler delete --name cijd-design-billing-v5-preview` and
+  `npx wrangler d1 delete cijd-design-billing-v5-preview`, then `scripts/v5-go-live.sh`.
+- Close the import door at any time: `npx wrangler secret delete V5_IMPORT_TOKEN --name cijd-design-billing-v5-preview`.
 
 ## Decisions to confirm
 
