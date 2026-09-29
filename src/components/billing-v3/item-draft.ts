@@ -363,6 +363,11 @@ export function withService(draft: ItemDraft, serviceKey: ServiceKey, serviceTyp
     if (next.finalMode === "AUTO") next = { ...next, finalMode: "UNIT" };
     return next;
   }
+  // A line with no price yet starts following its recommendation; a price a
+  // person already typed is theirs and stays manual.
+  if (next.finalMode !== "AUTO" && !next.finalPrice.trim() && !next.finalUnitPrice.trim()) {
+    next = { ...next, finalMode: "AUTO" };
+  }
   return recomputeCost(next, serviceTypes);
 }
 

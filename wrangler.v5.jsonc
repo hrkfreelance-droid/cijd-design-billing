@@ -1,0 +1,34 @@
+{
+  // CIJD Billing V5 — its own Worker and its own D1 database.
+  // Never the V3 Worker (cijd-design-billing-preview) or V4
+  // (cijd-design-billing-v4-preview). No Supabase variables: V5 cannot reach V3's data.
+  // Deploy with scripts/deploy-v5.sh.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cijd-design-billing-v5-preview",
+  "compatibility_date": "2026-08-31",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "./worker/index.ts",
+  "assets": {
+    "directory": "dist/client",
+    "not_found_handling": "none",
+    "binding": "ASSETS"
+  },
+  "workers_dev": true,
+  "vars": {
+    "CIJD_V5_MODE": "1",
+    "CIJD_PILOT_MODE": "1",
+    "CIJD_PREVIEW_MODE": "1"
+  },
+  "d1_databases": [
+    {
+      "binding": "V5_DB",
+      "database_name": "cijd-design-billing-v5-preview",
+      // Replaced by scripts/deploy-v5.sh with the id of the V5 database it creates.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations-v5"
+    }
+  ],
+  "cache": {
+    "enabled": true
+  }
+}

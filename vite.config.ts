@@ -9,6 +9,8 @@ export default defineConfig({
       cache: { cdn: cdnAdapter() },
     }),
     cloudflare({
+      // V5 builds with wrangler.v5.jsonc; unset keeps the V3 default.
+      ...(process.env.CIJD_WRANGLER_CONFIG ? { configPath: process.env.CIJD_WRANGLER_CONFIG } : {}),
       viteEnvironment: {
         name: "rsc",
         childEnvironments: ["ssr"],

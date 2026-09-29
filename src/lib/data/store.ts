@@ -531,7 +531,11 @@ export class Store implements Repository {
         // Only a costed line can follow a recommendation; anything else is a
         // price a person set.
         item.finalMode = type === "PRINT" && printCost !== null ? input.finalMode : "MANUAL";
-        if (item.finalMode === "MANUAL") item.customAmount = amount !== null;
+        if (item.finalMode === "MANUAL") {
+          item.customAmount = amount !== null;
+          // Store the Unit Final with the total, so Quantity can keep it.
+          if (amount !== null && input.unitPrice === undefined && quantity > 0) item.unitPrice = money(amount / quantity);
+        }
         settleAutoFinal(item);
       }
       db.billingItems.push(item);

@@ -73,3 +73,6 @@ next-env.d.ts
 /.claude/
 /var/
 /.next-review/
+
+# V5 deploy copy with the real D1 id (scripts/deploy-v5.sh)
+/wrangler.v5.deploy.jsonc

@@ -17,14 +17,14 @@ import {
   settlement,
   taxTotals,
   toCents,
-  useRecommended,
+  applyRecommended,
   validateLine,
   validatePayment,
   type LineState,
 } from "../../src/lib/billing-v5/calculation.ts";
 
 function printLine(cost: number, quantity = 1): LineState {
-  return useRecommended({
+  return applyRecommended({
     costPriced: true,
     quantity,
     costTotal: cost,
@@ -101,7 +101,7 @@ test("quantity: Unit Final 305 × 2 = 610, × 3 = 915, Unit Final unchanged", ()
 
 test("AUTO reset: Use Recommended returns to AUTO and then follows cost", () => {
   let line = setManualTotal(printLine(120), 150);
-  line = useRecommended(line);
+  line = applyRecommended(line);
   assert.equal(line.finalMode, "AUTO");
   assert.equal(line.finalTotal, 156);
   line = changeCost(line, 80);
@@ -202,4 +202,18 @@ test("invoice numbers continue after the paper series", () => {
   assert.equal(nextTaxInvoiceNumber(2026, []), "CIJDTI2026081");
   assert.equal(nextTaxInvoiceNumber(2026, ["CIJDTI2026081", "CIJDTI2026090"]), "CIJDTI2026091");
   assert.equal(nextTaxInvoiceNumber(2027, ["CIJDTI2026090"]), "CIJDTI2027001");
+});
+
+test("editor: a fresh line switched to Printing follows Recommended; a typed price stays manual", async () => {
+  const { blankDraft, withService, withUnitCost, withQuantity, withFinalTotal, draftFinal } = await import(
+    "../../src/components/billing-v3/item-draft.ts"
+  );
+  let fresh = withService(blankDraft("DESIGN"), "PRINTING");
+  assert.equal(fresh.finalMode, "AUTO");
+  fresh = withUnitCost(withQuantity(fresh, "500"), "0.24");
+  assert.equal(draftFinal(fresh), 156);
+
+  const typed = withService(withFinalTotal(blankDraft("DESIGN"), "150"), "PRINTING");
+  assert.notEqual(typed.finalMode, "AUTO");
+  assert.equal(draftFinal(typed), 150);
 });

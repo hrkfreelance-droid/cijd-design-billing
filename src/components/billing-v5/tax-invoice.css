@@ -1,0 +1,79 @@
+/*
+ * The CIJD Tax Invoice, as built for V4 (workbook sheet CIJDTI2026080).
+ * Rules are V4's, scoped under .v5-invoice so they never touch the V3 UI.
+ * Khmer is self-hosted (Noto Sans Khmer, Moul) after the Khmer OS faces the
+ * workbook names, so it renders on machines without those fonts installed.
+ */
+
+/* V5 screens: V3's font stack, with a Khmer face for customer names/addresses
+   and the KH language. Latin and Japanese text still use the fonts before it. */
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica,
+    "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", Arial, "Noto Sans Khmer", sans-serif;
+}
+
+.v5-invoice .invoice-sheet { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; padding: 19.05mm 17.78mm; overflow: hidden; color: #000; background: #fff; box-shadow: 0 8px 36px #0002; font-family: Arial, "Noto Sans Khmer", sans-serif; font-size: 8pt; line-height: 1.3; }
+.v5-invoice .khmer { font-family: "Khmer OS Content", "Khmer Sangam MN", "Khmer MN", "Noto Sans Khmer", Arial, sans-serif; }
+.v5-invoice .invoice-company { position: relative; height: 35mm; text-align: center; }
+.v5-invoice .company-name { position: absolute; top: 0; left: 0; width: 41mm; height: 12mm; display: flex; align-items: center; }
+.v5-invoice .company-name img { width: 41mm; height: auto; object-fit: contain; }
+.v5-invoice .company-title { min-height: 12mm; text-align: center; }
+.v5-invoice .company-title strong, .v5-invoice .company-title span { display: block; }
+.v5-invoice .company-title strong { font-family: "Khmer OS Muol Light", "Khmer Sangam MN", "Moul", sans-serif; font-size: 9pt; font-weight: 400; }
+.v5-invoice .company-title span { margin-top: .5mm; font-family: Arial, sans-serif; font-size: 7pt; }
+.v5-invoice .company-address { width: 145mm; margin: 1mm auto 0; font-size: 8pt; line-height: 1.25; }
+.v5-invoice .company-address p { margin: 0; }
+.v5-invoice .invoice-title { height: 16mm; text-align: center; }
+.v5-invoice .invoice-title strong, .v5-invoice .invoice-title span { display: block; }
+.v5-invoice .invoice-title strong { font-family: "Khmer OS Muol Light", "Khmer Sangam MN", "Moul", sans-serif; font-size: 16pt; font-weight: 400; }
+.v5-invoice .invoice-title span { margin-top: 1mm; font-family: Arial, sans-serif; font-size: 13pt; font-weight: 700; }
+.v5-invoice .invoice-parties { display: grid; grid-template-columns: 66% 34%; min-height: 36mm; }
+.v5-invoice .customer-block, .v5-invoice .invoice-meta { position: relative; font-size: 8pt; line-height: 1.36; }
+.v5-invoice .customer-block p, .v5-invoice .invoice-meta p { margin: 0; }
+.v5-invoice .invoice-meta { padding-left: 4mm; }
+.v5-invoice .invoice-meta label { position: absolute; right: 0; bottom: 2mm; display: flex; gap: 8mm; align-items: baseline; color: #000; font-family: Arial, sans-serif; font-size: 8pt; }
+.v5-invoice .invoice-meta label b { min-width: 24mm; padding: 1mm 2mm; border: 1px solid #000; text-align: center; }
+.v5-invoice .invoice-lines { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.v5-invoice .invoice-lines .col-no { width: 4.66%; }
+.v5-invoice .invoice-lines .col-description { width: 51.74%; }
+.v5-invoice .invoice-lines .col-number { width: 14.53%; }
+.v5-invoice .invoice-lines th, .v5-invoice .invoice-lines td { border: .45pt solid #000; padding: .8mm 1mm; }
+.v5-invoice .invoice-lines thead tr:first-child { height: 5.84mm; font-size: 8pt; }
+.v5-invoice .invoice-lines thead tr:last-child { height: 5.84mm; font-size: 8pt; }
+.v5-invoice .invoice-lines thead th { text-align: center; }
+.v5-invoice .invoice-lines tbody tr { height: 5.63mm; }
+.v5-invoice .invoice-lines tbody td:first-child, .v5-invoice .invoice-lines tbody td:nth-child(3) { text-align: center; }
+.v5-invoice .invoice-lines tbody td:nth-child(4), .v5-invoice .invoice-lines tbody td:nth-child(5), .v5-invoice .invoice-lines tfoot td { text-align: right; }
+.v5-invoice .accounting { display: flex; align-items: baseline; justify-content: space-between; gap: 1mm; }
+.v5-invoice .accounting i { font-style: normal; font-weight: 400; }
+.v5-invoice .accounting b { font-weight: 400; }
+.v5-invoice .invoice-lines tfoot tr { height: 11.13mm; }
+.v5-invoice .invoice-lines tfoot th { position: relative; padding-right: 39mm; text-align: right; }
+.v5-invoice .invoice-lines tfoot th span, .v5-invoice .invoice-lines tfoot th small { display: block; font-size: 8pt; }
+.v5-invoice .invoice-lines tfoot td { font-weight: 700; }
+.v5-invoice .bank-accounts { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; height: 27mm; padding-top: 3mm; font-size: 8pt; line-height: 1.35; }
+.v5-invoice .bank-accounts p { margin: 0; }
+.v5-invoice .invoice-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 22mm; text-align: center; font-size: 8pt; }
+.v5-invoice .invoice-signatures div { padding-top: 5mm; border-top: 1px solid #000; }
+.v5-invoice .invoice-signatures b, .v5-invoice .invoice-signatures span { display: block; }
+.v5-invoice .invoice-signatures span { font-family: Arial, sans-serif; font-weight: 400; }
+.v5-invoice .cancelled-watermark { position: absolute; z-index: 3; top: 128mm; left: 25mm; transform: rotate(-24deg); color: #b6202042; font-size: 42pt; font-weight: 900; letter-spacing: .12em; pointer-events: none; }
+.v5-invoice .draft-watermark { position: absolute; z-index: 3; top: 128mm; left: 48mm; transform: rotate(-24deg); color: #1d4ed833; font-size: 48pt; font-weight: 900; letter-spacing: .12em; pointer-events: none; }
+
+/* The sheet is a fixed A4 page; on a narrow screen it is scaled down to fit. */
+.v5-invoice-fit { overflow: hidden; }
+.v5-invoice-fit > .v5-invoice { transform-origin: top left; }
+
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+  /* The hidden page around the sheet must not add a blank second page. */
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; height: 297mm !important; overflow: hidden !important; }
+  body * { visibility: hidden; }
+  .v5-print-root, .v5-print-root * { visibility: visible; }
+  .v5-print-root { position: absolute; inset: 0 auto auto 0; width: 210mm; }
+  .v5-no-print { display: none !important; }
+  .v5-invoice .invoice-sheet { width: 210mm; min-height: 297mm; margin: 0; box-shadow: none; page-break-after: avoid; }
+  .v5-invoice .invoice-signatures { break-inside: avoid; page-break-inside: avoid; }
+  .v5-invoice-fit, .v5-invoice-fit > .v5-invoice { transform: none !important; height: auto !important; width: auto !important; overflow: visible !important; }
+}

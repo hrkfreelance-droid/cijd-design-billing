@@ -168,7 +168,7 @@ export function setManualTotal(state: LineState, total: number): LineState {
 }
 
 /** "Use recommended": Final = Recommended and the line follows it again. */
-export function useRecommended(state: LineState): LineState {
+export function applyRecommended(state: LineState): LineState {
   return settle({ ...state, finalMode: "AUTO" });
 }
 

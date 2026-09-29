@@ -9,6 +9,7 @@ import { MoonIcon, SunIcon } from "@/components/icons";
 import { useData, useI18n, useSession, useTheme } from "@/components/providers";
 import { Button, IconButton } from "@/components/ui";
 import { canAny, homeFor } from "@/lib/auth/roles";
+import { useV5T } from "@/lib/billing-v5/i18n";
 
 /**
  * Billing V2 is one workspace, not a set of them.
@@ -24,8 +25,16 @@ const TABS = [
   { href: "/office-v3/archive", key: "v2.nav.archive" },
 ] as const;
 
-export function BillingV3Shell({ children }: { children: ReactNode }) {
+/**
+ * V5 is V3 plus one place, Accounting, on its own base path. Everything else
+ * about the chrome is this same component. A Tax Invoice page is a document,
+ * so it is shown without the chrome.
+ */
+export type ShellVariant = "v3" | "v5";
+
+export function BillingV3Shell({ children, variant = "v3" }: { children: ReactNode; variant?: ShellVariant }) {
   const { user, ready } = useSession();
+  const pathname = usePathname();
   const router = useRouter();
   const allowed = !!user && canAny(user.role, ["billing:read", "billing:price:write"]);
 
@@ -35,9 +44,13 @@ export function BillingV3Shell({ children }: { children: ReactNode }) {
     else if (!allowed) router.replace(homeFor(user.role));
   }, [ready, user, allowed, router]);
 
+  if (variant === "v5" && pathname.startsWith("/office-v5/tax-invoices/")) {
+    return <div className="min-h-dvh bg-bg">{ready && allowed ? <Content>{children}</Content> : null}</div>;
+  }
+
   return (
     <div className="min-h-dvh bg-bg">
-      <Header />
+      <Header variant={variant} />
       <main className="mx-auto max-w-[960px]">
         {ready && allowed ? <Content>{children}</Content> : <BoardSkeleton />}
       </main>
@@ -45,13 +58,23 @@ export function BillingV3Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function Header() {
+function Header({ variant }: { variant: ShellVariant }) {
   const pathname = usePathname();
   const { t } = useI18n();
+  const v5t = useV5T();
+  const base = variant === "v5" ? "/office-v5" : "/office-v3";
+  const links =
+    variant === "v5"
+      ? [
+          { href: base, label: t("v2.nav.billing") },
+          { href: `${base}/accounting`, label: v5t("nav.accounting") },
+          { href: `${base}/archive`, label: t("v2.nav.archive") },
+        ]
+      : TABS.map(({ href, key }) => ({ href, label: t(key) }));
 
   const tabs = (
     <>
-      {TABS.map(({ href, key }) => {
+      {links.map(({ href, label }) => {
         const active = pathname === href;
         return (
           <Link
@@ -62,7 +85,7 @@ function Header() {
               active ? "border-text text-text" : "border-transparent text-muted hover:text-text"
             }`}
           >
-            {t(key)}
+            {label}
           </Link>
         );
       })}
@@ -73,7 +96,7 @@ function Header() {
     <header className="header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
       <div className="mx-auto flex h-[52px] max-w-[960px] items-stretch gap-7 px-5 sm:px-8">
         <Link
-          href="/office-v3"
+          href={base}
           className="flex shrink-0 items-center text-[15px] font-semibold tracking-[-0.015em]"
           data-testid="v2-brand"
         >
