@@ -79,6 +79,15 @@ one invoice with the next number — run it on a fresh V5 database, before real 
 - Live V3/V4 could not be reached from the session to re-check them; nothing in this
   branch deploys to their Workers or touches their databases.
 
+## Verification (local, 2026-09-30)
+
+- `npm run test:unit`: 135/135 pass (108 existing V3 + 27 V5).
+- V5 browser E2E (`tests/v5/v5-e2e.spec.ts`): pass — 0 console errors, 0 failed requests.
+- Existing V3 Playwright suite on this branch: 54 pass, 3 skipped, 3 fail. The same 3
+  `billing-flow.spec.ts` tests (`designer ready tab…`, `invoice once, pay once`,
+  `printing cost persists…`) fail identically on a pristine `feature/billing-v3`
+  checkout, so they are pre-existing and not caused by V5.
+
 ## Decisions to confirm
 
 - **VAT not applicable** toggle prints VAT 0% (Khmer ០%). Default is 10%.

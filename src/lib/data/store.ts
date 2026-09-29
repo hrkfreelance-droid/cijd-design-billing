@@ -799,7 +799,8 @@ export class Store implements Repository {
       }
       item.amount = money(amount);
       item.customAmount = true;
-      item.finalMode = "MANUAL";
+      // V5 rows store their mode; V3 rows keep the V3 (inferred) reading.
+      if (item.finalMode) item.finalMode = "MANUAL";
       if (item.type === "PRINT") {
         item.suggestedAmount ??= item.printCost != null ? printSellingPriceFromCost(item.printCost, item.markupOverride) : item.amount;
         item.suggestedUnitPrice ??= item.quantity > 0 ? money(item.suggestedAmount / item.quantity) : item.unitPrice;
@@ -856,7 +857,7 @@ export class Store implements Repository {
       item.amount = money(amount);
       item.unitPrice = money(unitPrice);
       item.customAmount = true;
-      item.finalMode = "MANUAL";
+      if (item.finalMode) item.finalMode = "MANUAL";
       if (item.type === "PRINT") {
         item.suggestedAmount ??= item.printCost != null ? printSellingPriceFromCost(item.printCost, item.markupOverride) : item.amount;
         item.suggestedUnitPrice ??= item.quantity > 0 ? money(item.suggestedAmount / item.quantity) : item.unitPrice;
