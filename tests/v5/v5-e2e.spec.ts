@@ -1,6 +1,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
+import { taxTotals } from "../../src/lib/billing-v5/calculation";
+
 /**
  * CIJD Billing V5, end to end through the real screens:
  * Designer → Invoice Ready → Accounting → Tax Invoice → Print / PDF → reopen.
@@ -8,13 +10,20 @@ import { expect, test, type Page } from "@playwright/test";
  * Expected figures (from the V5 calculation layer):
  *   Logo design  Qty 2  × $305.00 (manual)         = $610.00
  *   Flyers A5    Qty 500 × $0.24 cost = $120 → +30% = $156.00 (AUTO)
- *   Subtotal $766.00 · VAT 10% $76.60 · Grand total $842.60 · × 4105 = 3,458,873 KHR
+ *   Subtotal $766.00 · VAT 10% $76.60 · Grand total $842.60 · × rate (4105 locally → 3,458,873 KHR)
+ *
+ * Against the deployed V5 (V5_BASE_URL set) everything it creates is named
+ * TEST, the invoice uses a TEST- number (no real CIJDTI number is used up), and
+ * it cleans up after itself: the TEST invoice is cancelled, the TEST project
+ * deleted and the TEST client deactivated. Imported V3 records are only read.
  */
 
 const SHOTS = process.env.V5_SHOTS_DIR ?? "test-results/v5-shots";
 const RUN = Date.now().toString(36).slice(-5);
-const CLIENT = `E2E Test Customer ${RUN}`;
-const PROJECT = `V5 E2E Brochure ${RUN}`;
+const DEPLOYED = !!process.env.V5_BASE_URL;
+const CLIENT = `TEST E2E Customer ${RUN}`;
+const PROJECT = `TEST V5 E2E Brochure ${RUN}`;
+
 const MEMO = "Deliver by Friday.\nInvoice to the Khmer company name.";
 
 const problems: string[] = [];
@@ -33,7 +42,7 @@ function watch(page: Page) {
   });
 }
 
-async function prefs(page: Page, locale: "en" | "ja", theme: "light" | "dark") {
+async function prefs(page: Page, locale: "en" | "ja" | "kh", theme: "light" | "dark") {
   await page.evaluate(
     ([l, th]) => {
       localStorage.setItem("cijd.locale", l);
@@ -51,7 +60,8 @@ async function shot(page: Page, name: string) {
 async function state(page: Page) {
   const body = await (await page.request.get("/api/state")).json();
   return body.data as {
-    projects: { id: string; name: string }[];
+    clients: { id: string; name: string }[];
+    projects: { id: string; name: string; clientId: string; note?: string }[];
     billingItems: { id: string; projectId: string; description: string; quantity: number; unitPrice: number; amount: number; finalMode?: string; billingStatus: string; markupOverride?: number | null }[];
     taxInvoices: { id: string; invoiceNumber: string; project: { name: string }; lines: unknown[]; totalKhr: number }[];
   };
@@ -66,6 +76,29 @@ test("V5: designer → accounting → tax invoice → print → reopen", async (
   // V5 shows V3's tabs plus Accounting.
   const nav = page.getByRole("navigation", { name: "Billing" }).first();
   await expect(nav.getByRole("link")).toHaveText(["Billing", "Accounting", "Archive"]);
+
+  /* ------------------------------------------- imported V3 data (read only) */
+  const fingerprint = async () => {
+    const snap = await state(page);
+    const testProjects = new Set(snap.projects.filter((p) => p.name.startsWith("TEST")).map((p) => p.id));
+    return JSON.stringify({
+      projects: snap.projects.filter((p) => !testProjects.has(p.id)).map((p) => [p.id, p.name, p.note ?? ""]).sort(),
+      lines: snap.billingItems.filter((i) => !testProjects.has(i.projectId)).map((i) => [i.id, i.quantity, i.unitPrice, i.amount, i.billingStatus, i.finalMode ?? null]).sort(),
+    });
+  };
+  const importedBefore = await fingerprint();
+  const imported = (await state(page)).projects.filter((p) => !p.name.startsWith("TEST"));
+  if (process.env.V5_EXPECT_IMPORTED === "1") expect(imported.length, "V5 holds the imported V3 projects").toBeGreaterThan(0);
+  const importedRow = page.getByTestId("v2-project-row").filter({ hasNotText: "TEST" }).first();
+  if (await importedRow.count()) {
+    // Open an existing project exactly as a designer would, change nothing, close it.
+    await importedRow.getByTestId("v2-open-project").click();
+    const existing = page.getByRole("dialog");
+    await expect(existing.getByTestId("v2-view-mode")).toBeVisible();
+    await shot(page, "00-imported-project-en-light");
+    await page.keyboard.press("Escape");
+    await expect(existing).toHaveCount(0);
+  }
 
   /* ---------------------------------------------------------- designer */
   await page.getByTestId("v2-new-project").click();
@@ -143,21 +176,46 @@ test("V5: designer → accounting → tax invoice → print → reopen", async (
   // Prepare Tax Invoice: known data is prefilled.
   await sheet.getByTestId("v5-prepare").click();
   await expect(sheet.getByTestId("v5-name-en")).toHaveValue(CLIENT);
-  await expect(sheet.getByTestId("v5-rate-input")).toHaveValue("4105");
-  await expect(sheet.getByTestId("v5-rate-source")).toContainText("NBC");
   await expect(sheet.getByTestId("v5-warn-vatin")).toBeVisible();
+
+  // Exchange rate: fetch NBC; if NBC cannot be reached, the rate is typed by hand.
+  const rateInput = sheet.getByTestId("v5-rate-input");
+  const before = await rateInput.inputValue();
+  const [fetched] = await Promise.all([
+    page.waitForResponse((response) => response.url().endsWith("/api/v5/exchange-rate")),
+    sheet.getByTestId("v5-fetch-rate").click(),
+  ]);
+  expect(fetched.ok()).toBeTruthy();
+  const nbcReached = ((await fetched.json()) as { data: { fetched: boolean } }).data.fetched;
+  if (nbcReached) {
+    await expect(sheet.getByTestId("v5-rate-source")).toContainText("NBC ·");
+    await expect(rateInput).not.toHaveValue("");
+  } else {
+    await expect(page.getByText("The NBC rate could not be fetched", { exact: false })).toBeVisible();
+    await rateInput.fill("4105");
+    await expect(sheet.getByTestId("v5-rate-source")).toHaveText("Entered by hand");
+  }
+  const rate = Number(await rateInput.inputValue());
+  const expectedKhr = taxTotals({ lines: [{ amount: 610 }, { amount: 156 }], vatApplicable: true, exchangeRate: rate }).totalKhr.toLocaleString("en-US");
+  console.log(`exchange rate: ${rate} (${nbcReached ? "NBC" : "manual fallback"}; prefilled "${before}") → ${expectedKhr} KHR`);
+
   await sheet.getByTestId("v5-name-km").fill("ក្រុមហ៊ុន តេស្ត ឯ.ក");
   await sheet.getByTestId("v5-address-en").fill("#12, Street 51, Phnom Penh");
   await sheet.getByTestId("v5-address-km").fill("ផ្ទះលេខ ១២ ផ្លូវ៥១ រាជធានីភ្នំពេញ");
   await sheet.getByTestId("v5-phone").fill("012 345 678");
   await sheet.getByTestId("v5-vatin").fill("K001-123456789");
+  if (DEPLOYED) {
+    // The deployed V5 holds real data: never use up a real CIJDTI number.
+    await sheet.getByTestId("v5-invoice-number").fill(`TEST-${RUN}`);
+  } else {
+    expect(await sheet.getByTestId("v5-invoice-number").inputValue()).toMatch(/^CIJDTI\d{7}$/);
+  }
   const invoiceNumber = await sheet.getByTestId("v5-invoice-number").inputValue();
-  expect(invoiceNumber).toMatch(/^CIJDTI\d{7}$/);
 
   await expect(sheet.getByTestId("v5-subtotal")).toHaveText("$766.00");
   await expect(sheet.getByTestId("v5-vat")).toHaveText("$76.60");
   await expect(sheet.getByTestId("v5-total-usd")).toHaveText("$842.60");
-  await expect(sheet.getByTestId("v5-total-khr")).toHaveText("3,458,873 ៛");
+  await expect(sheet.getByTestId("v5-total-khr")).toHaveText(`${expectedKhr} ៛`);
   await shot(page, "05-prepare-en-light");
 
   await sheet.getByTestId("v5-preview").click();
@@ -184,7 +242,7 @@ test("V5: designer → accounting → tax invoice → print → reopen", async (
   await expect(doc.getByTestId("tax-invoice-subtotal")).toContainText("766.00");
   await expect(doc.getByTestId("tax-invoice-vat")).toContainText("76.60");
   await expect(doc.getByTestId("tax-invoice-total-usd")).toContainText("842.60");
-  await expect(doc.getByTestId("tax-invoice-total-khr")).toHaveText("3,458,873");
+  await expect(doc.getByTestId("tax-invoice-total-khr")).toHaveText(expectedKhr);
   await expect(doc.getByTestId("tax-invoice-customer")).toContainText("K001-123456789");
   await expect(doc).toContainText("វិក្កយបត្រអាករ");
   await expect(doc).toContainText("TAX INVOICE");
@@ -218,7 +276,7 @@ test("V5: designer → accounting → tax invoice → print → reopen", async (
   await page.goto(invoiceUrl);
   await expect(page.getByTestId("v5-invoice-heading")).toHaveText(invoiceNumber);
   await expect(page.getByTestId("v5-invoice-status")).toHaveText("Issued");
-  await expect(page.getByTestId("tax-invoice-total-khr")).toHaveText("3,458,873");
+  await expect(page.getByTestId("tax-invoice-total-khr")).toHaveText(expectedKhr);
   data = await state(page);
   const issued = data.taxInvoices.find((entry) => entry.invoiceNumber === invoiceNumber)!;
   expect(issued.project.name).toBe(PROJECT);
@@ -241,7 +299,7 @@ test("V5: designer → accounting → tax invoice → print → reopen", async (
 
   /* ------------------------------------------- languages and themes */
   for (const [locale, theme] of [["ja", "light"], ["ja", "dark"], ["en", "dark"], ["kh", "light"]] as const) {
-    await prefs(page, locale as "en", theme);
+    await prefs(page, locale, theme);
     for (const [path, name] of [["/office-v5", "billing"], ["/office-v5/accounting", "accounting"], ["/office-v5/archive", "archive"], [invoiceUrl, "invoice"]] as const) {
       await page.goto(path);
       await expect(page.locator("html")).toHaveAttribute("lang", locale === "kh" ? "km" : locale);
@@ -264,6 +322,25 @@ test("V5: designer → accounting → tax invoice → print → reopen", async (
     expect(overflow, `${name} scrolls sideways`).toBeLessThanOrEqual(0);
     await shot(page, `10-${name}-phone`);
   }
+
+  /* ------------------------------------------------------------- cleanup */
+  // TEST data leaves nothing behind but a cancelled TEST- invoice record.
+  await page.setViewportSize({ width: 1360, height: 900 });
+  await prefs(page, "en", "light");
+  await page.goto(invoiceUrl);
+  await page.getByTestId("v5-invoice-cancel").click();
+  await page.getByTestId("v5-cancel-reason").fill("E2E test cleanup");
+  await page.getByTestId("v5-confirm-cancel-confirm").click();
+  await expect(page.getByTestId("v5-invoice-status")).toHaveText("Cancelled");
+  const removed = await page.request.delete(`/api/billing-v2/projects/${project.id}`);
+  expect(removed.ok()).toBeTruthy();
+  const testClient = (await state(page)).clients.find((entry) => entry.name === CLIENT)!;
+  expect((await page.request.patch(`/api/clients/${testClient.id}`, { data: { active: false } })).ok()).toBeTruthy();
+  await page.goto("/office-v5");
+  await expect(page.getByText(PROJECT)).toHaveCount(0);
+
+  // Imported records were only read.
+  expect(await fingerprint()).toBe(importedBefore);
 
   expect(problems, problems.join("\n")).toEqual([]);
 });

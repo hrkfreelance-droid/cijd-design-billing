@@ -74,3 +74,14 @@ export function buildV5Seed(): Database {
 export function getV5Repository(): Store {
   return new Store(d1Persistence(v5Database(), buildV5Seed));
 }
+
+/** Direct access for the one-time V3 import (read, replace, read back). */
+export function getV5Persistence() {
+  return d1Persistence(v5Database(), buildV5Seed);
+}
+
+export function v5Secret(name: string): string | undefined {
+  const env = (globalThis as Record<string, unknown>)[ENV_KEY] as Record<string, unknown> | undefined;
+  const value = env?.[name] ?? process.env[name];
+  return typeof value === "string" && value ? value : undefined;
+}

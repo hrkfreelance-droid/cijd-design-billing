@@ -366,7 +366,14 @@ function AccountingProjectModal({
   const fetchRate = async () => {
     setFetching(true);
     try {
-      const fetched = await api<ExchangeRate>("/api/v5/exchange-rate", { method: "POST" });
+      const result = await api<{ fetched: true; rate: ExchangeRate } | { fetched: false; message: string }>("/api/v5/exchange-rate", {
+        method: "POST",
+      });
+      if (!result.fetched) {
+        toast(t("prepare.fetchFailed"), "error");
+        return;
+      }
+      const fetched = result.rate;
       setForm((current) => ({ ...current, rate: String(fetched.rate), rateSource: "NBC", rateDate: fetched.effectiveDate }));
     } catch {
       toast(t("prepare.fetchFailed"), "error");

@@ -19,4 +19,5 @@ npx wrangler d1 migrations apply cijd-design-billing-v5-preview --local \
   --config dist/server/wrangler.json --persist-to "$PERSIST"
 exec npx wrangler dev --config dist/server/wrangler.json --persist-to "$PERSIST" \
   --port "${V5_PORT:-8787}" --ip 127.0.0.1 \
-  --var CIJD_TEST_MODE:1 --var CIJD_TEST_NBC_RATE:4105 --var CIJD_TEST_NBC_RATE_DATE:2026-09-29
+  --var CIJD_TEST_MODE:1 --var CIJD_TEST_NBC_RATE:4105 --var CIJD_TEST_NBC_RATE_DATE:2026-09-29 \
+  ${V5_IMPORT_TOKEN:+--var V5_IMPORT_TOKEN:$V5_IMPORT_TOKEN}
