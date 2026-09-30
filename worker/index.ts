@@ -1,6 +1,6 @@
 import handler from "vinext/server/fetch-handler";
 
-import { setV5Env } from "../src/lib/billing-v5/repository";
+import { getV5Repository, setV5Env } from "../src/lib/billing-v5/repository";
 import {
   refreshNbcExchangeRate,
   type ExchangeRateWorkerEnv,
@@ -35,9 +35,17 @@ const worker = {
   },
 
   scheduled(_controller: unknown, env: WorkerEnv, ctx: WorkerContext) {
-    // V5 reads its NBC rate on demand from Accounting; the V3 refresh writes
-    // to Supabase and must never run from the V5 Worker.
-    if (isV5(env)) return;
+    // V5 keeps its own NBC history in its own D1 (the rate for an invoice
+    // date comes from it). The V3 refresh writes to Supabase and never runs here.
+    if (isV5(env)) {
+      setV5Env(env);
+      ctx.waitUntil(
+        getV5Repository()
+          .refreshOfficialRate()
+          .catch((error) => console.error("[v5 exchange-rate] scheduled refresh failed", error)),
+      );
+      return;
+    }
     ctx.waitUntil(
       refreshNbcExchangeRate(env, { force: true }).catch((error) => {
         console.error("[exchange-rate] scheduled refresh failed", error);

@@ -50,6 +50,11 @@ const COLLECTIONS = [
   "projectPayments",
   "clientTaxProfiles",
   "taxInvoices",
+  "customers",
+  "products",
+  "billingAllocations",
+  "invoicePayments",
+  "invoiceRevisions",
 ] as const satisfies readonly (keyof Database)[];
 
 export class ConflictError extends RuleError {
@@ -194,6 +199,18 @@ export function d1Persistence(
             )
             // First write wins: the archive keeps the invoice as it was issued.
             .bind(invoice.id, invoice.invoiceNumber, JSON.stringify(invoice), invoice.issuedAt, token),
+        );
+      }
+
+      // Every invoice revision, as recorded. Insert-only (see migrations-v5/0002).
+      for (const revision of next.invoiceRevisions ?? []) {
+        statements.push(
+          db
+            .prepare(
+              `INSERT OR IGNORE INTO v5_invoice_revisions (id, invoice_id, revision, action, changed_at, changed_by, snapshot)
+               SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${mine}`,
+            )
+            .bind(revision.id, revision.invoiceId, revision.revision, revision.action, revision.changedAt, revision.changedBy, JSON.stringify(revision), token),
         );
       }
 

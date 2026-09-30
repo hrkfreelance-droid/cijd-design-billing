@@ -51,6 +51,11 @@ export function buildV5Seed(): Database {
     projectPayments: [],
     clientTaxProfiles: [],
     taxInvoices: [],
+    customers: [],
+    products: [],
+    billingAllocations: [],
+    invoicePayments: [],
+    invoiceRevisions: [],
   };
   // Local E2E runs offline; an explicit test rate keeps it deterministic.
   const testRate = Number(process.env.CIJD_TEST_NBC_RATE);

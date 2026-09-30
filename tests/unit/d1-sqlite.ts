@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 
 import type { D1DatabaseLike, D1PreparedStatementLike } from "../../src/lib/billing-v5/d1-persistence.ts";
@@ -10,32 +10,46 @@ import type { D1DatabaseLike, D1PreparedStatementLike } from "../../src/lib/bill
  */
 export function sqliteD1(): D1DatabaseLike & { raw: DatabaseSync } {
   const raw = new DatabaseSync(":memory:");
-  raw.exec(readFileSync(new URL("../../migrations-v5/0001_v5_state.sql", import.meta.url), "utf8"));
+  const dir = new URL("../../migrations-v5/", import.meta.url);
+  for (const file of readdirSync(dir).filter((name) => name.endsWith(".sql")).sort()) {
+    raw.exec(readFileSync(new URL(file, dir), "utf8"));
+  }
+
+  let queue: Promise<unknown> = Promise.resolve();
+  const bound = new WeakMap<D1PreparedStatementLike, { sql: string; args: () => never[] }>();
+  const sqlOf = (entry: D1PreparedStatementLike) => bound.get(entry)!.sql;
+  const argsOf = (entry: D1PreparedStatementLike) => bound.get(entry)!.args();
 
   function statement(sql: string, values: unknown[] = []): D1PreparedStatementLike {
     const args = () => values.map((value) => (value === undefined ? null : value)) as never[];
-    return {
+    const self: D1PreparedStatementLike = {
       bind: (...next: unknown[]) => statement(sql, next),
       first: async <T>() => (raw.prepare(sql).get(...args()) as T | undefined) ?? null,
       all: async <T>() => ({ results: raw.prepare(sql).all(...args()) as T[] }),
       run: async () => ({ meta: { changes: Number(raw.prepare(sql).run(...args()).changes) } }),
     };
+    bound.set(self, { sql, args });
+    return self;
   }
 
   return {
     raw,
     prepare: (sql: string) => statement(sql),
-    async batch(statements) {
-      raw.exec("BEGIN");
-      try {
-        const results = [];
-        for (const entry of statements) results.push(await entry.run());
-        raw.exec("COMMIT");
-        return results;
-      } catch (error) {
-        raw.exec("ROLLBACK");
-        throw error;
-      }
+    // D1 runs each batch as one transaction, one batch at a time.
+    batch(statements) {
+      const run = queue.then(() => {
+        raw.exec("BEGIN");
+        try {
+          const results = statements.map((entry) => ({ meta: { changes: Number(raw.prepare(sqlOf(entry)).run(...argsOf(entry)).changes) } }));
+          raw.exec("COMMIT");
+          return results;
+        } catch (error) {
+          raw.exec("ROLLBACK");
+          throw error;
+        }
+      });
+      queue = run.catch(() => undefined);
+      return run;
     },
   };
 }

@@ -1,12 +1,9 @@
 import type {
   BillingItem,
   BillingStatus,
-  ClientTaxProfile,
   ProductionStatus,
   ProjectPayment,
   ProjectPaymentKind,
-  TaxInvoiceLine,
-  TaxInvoiceRecord,
   User,
   Client,
   Database,
@@ -41,8 +38,21 @@ import {
 import { roundMoney } from "@/lib/format";
 import { printSellingPriceFromCost } from "@/lib/printing-pricing";
 import { finalPriceConsistent } from "@/lib/billing-v2/pricing";
-import { pendingProjects, storedFinalUnitPrice } from "@/lib/billing-v2/board";
-import { invoiceUnitPrice, taxTotals } from "@/lib/billing-v5/calculation";
+import { storedFinalUnitPrice } from "@/lib/billing-v2/board";
+import {
+  addInvoicePayment,
+  backfillInvoiceManagement,
+  cancelInvoice,
+  editInvoice,
+  issueInvoice,
+  saveCustomer,
+  saveProduct,
+  voidInvoicePayment,
+  type CustomerInput,
+  type InvoiceInput,
+  type ProductInput,
+} from "@/lib/billing-v5/invoicing";
+import { rateForDate } from "@/lib/billing-v5/ontology";
 import {
   ensureCurrentExchangeRate,
   ExchangeRateUnavailableError,
@@ -186,6 +196,9 @@ function migrate(db: Database): Database {
     raw.deliveredBy = delivered ? (raw.deliveredBy ?? raw.updatedBy) : null;
     delete raw.status;
   }
+  // V5: invoices issued before invoice management get their allocations and
+  // first revision, derived from what they record (additive, idempotent).
+  backfillInvoiceManagement(db);
   return db;
 }
 
@@ -240,6 +253,12 @@ export class Store implements Repository {
             projectPayments: db.projectPayments ?? [],
             clientTaxProfiles: db.clientTaxProfiles ?? [],
             taxInvoices: db.taxInvoices,
+            customers: db.customers ?? [],
+            products: db.products ?? [],
+            billingAllocations: db.billingAllocations ?? [],
+            invoicePayments: db.invoicePayments ?? [],
+            invoiceRevisions: db.invoiceRevisions ?? [],
+            exchangeRates: db.exchangeRates,
           }
         : {}),
     };
@@ -1340,199 +1359,44 @@ export class Store implements Repository {
     });
   }
 
-  /**
-   * Issues a Tax Invoice for one invoice-ready project, in one step:
-   * the lines are billed on the ledger exactly as the designer priced them,
-   * and everything printed is frozen into the invoice record.
-   */
-  issueTaxInvoice(input: IssueTaxInvoiceInput) {
-    return this.transaction((db) => {
-      const actor = input.actor ?? "Accounting";
-      const snapshotView = db as unknown as Snapshot;
-      const project = pendingProjects(snapshotView).find((candidate) => candidate.id === input.projectId);
-      if (!project) {
-        const exists = db.projects.some((p) => p.id === input.projectId && !p.deletedAt);
-        throw exists
-          ? new RuleError("NO_ITEMS", "There is nothing left to invoice on this project.", 400)
-          : new RuleError("NOT_FOUND", "That project was not found.", 404);
-      }
-      if (project.blocker) {
-        throw new RuleError("NOT_READY", `"${project.name}" is not ready to invoice yet.`, 409);
-      }
-      if (project.items.length > TAX_INVOICE_MAX_LINES) {
-        throw new RuleError(
-          "TOO_MANY_LINES",
-          `The Tax Invoice layout fits ${TAX_INVOICE_MAX_LINES} lines; this project has ${project.items.length}.`,
-          400,
-        );
-      }
+  /* ------------------------------------------------- invoice management */
+  // The rules live in src/lib/billing-v5/invoicing.ts; each call here runs
+  // them in one transaction under the D1 version lock.
 
-      const invoiceNumber = input.invoiceNumber?.trim() ?? "";
-      if (!invoiceNumber || invoiceNumber.length > 40) {
-        throw new RuleError("INVALID", "Enter an invoice number.", 400);
-      }
-      const taken =
-        (db.taxInvoices ?? []).some((t) => t.invoiceNumber.toLowerCase() === invoiceNumber.toLowerCase()) ||
-        db.invoices.some(
-          (i) => i.status !== "VOID" && i.invoiceNumber?.toLowerCase() === invoiceNumber.toLowerCase(),
-        );
-      if (taken) {
-        throw new RuleError("DUPLICATE_INVOICE_NUMBER", `Invoice ${invoiceNumber} already exists.`);
-      }
-      if (!isIsoDate(input.invoiceDate)) throw new RuleError("INVALID", "Enter a valid invoice date.", 400);
-      const rate = Number(input.exchangeRate);
-      if (!Number.isFinite(rate) || rate <= 0) {
-        throw new RuleError("INVALID", "Enter the NBC USD/KHR exchange rate.", 400);
-      }
-      const customer = {
-        companyNameEn: input.customer.companyNameEn?.trim() ?? "",
-        companyNameKm: input.customer.companyNameKm?.trim() ?? "",
-        addressEn: input.customer.addressEn?.trim() ?? "",
-        addressKm: input.customer.addressKm?.trim() ?? "",
-        telephone: input.customer.telephone?.trim() ?? "",
-        vatin: input.customer.vatin?.trim() ?? "",
-      };
-      if (!customer.companyNameEn && !customer.companyNameKm) {
-        throw new RuleError("INVALID", "Enter the customer's legal name.", 400);
-      }
-
-      // The designer's Final amounts are the invoice lines, unchanged.
-      const lines: TaxInvoiceLine[] = project.items.map((entry) => ({
-        billingItemId: entry.item.id,
-        description:
-          entry.item.description.trim() ||
-          entry.service.label ||
-          entry.service.key.charAt(0) + entry.service.key.slice(1).toLowerCase(),
-        quantity: entry.item.quantity,
-        unitPrice: invoiceUnitPrice({
-          quantity: entry.item.quantity,
-          unitPrice: entry.finalUnitPrice,
-          amount: entry.amount as number,
-        }),
-        amount: money(entry.amount as number),
-      }));
-      const vatApplicable = input.vatApplicable !== false;
-      const totals = taxTotals({ lines, vatApplicable, exchangeRate: rate });
-      if (totals.subtotalUsd !== project.total) {
-        // Belt and braces: the invoice must bill exactly the commercial total.
-        throw new RuleError("TOTAL_MISMATCH", "Invoice lines do not add up to the project's Final total.", 409);
-      }
-
-      // Ledger: the same step as "Mark billed", with Accounting's rate.
-      const stamp = now();
-      const projectRow = db.projects.find((p) => p.id === project.id)!;
-      projectRow.billingReadiness = "READY";
-      const ledger: Invoice = {
-        id: newId(),
-        clientId: project.clientId,
-        invoiceNumber,
-        invoiceDate: input.invoiceDate,
-        amount: project.total,
-        exchangeRate: rate,
-        exchangeRateSource: input.exchangeRateSource === "NBC" ? "NBC" : "MANUAL",
-        exchangeRateEffectiveDate: input.exchangeRateEffectiveDate ?? null,
-        exchangeRateFetchedAt: null,
-        status: "ISSUED",
-        paymentDate: null,
-        paymentSlip: null,
-        receiptStatus: "PENDING",
-        createdAt: stamp,
-        createdBy: actor,
-        updatedAt: stamp,
-        updatedBy: actor,
-      };
-      db.invoices.push(ledger);
-      for (const entry of project.items) {
-        const item = requireItem(db, entry.item.id);
-        db.invoiceItems.push({ invoiceId: ledger.id, billingItemId: item.id });
-        item.billingStatus = "INVOICED";
-        item.invoiceId = ledger.id;
-        item.updatedAt = stamp;
-        item.updatedBy = actor;
-      }
-
-      const record: TaxInvoiceRecord = {
-        id: newId(),
-        projectId: project.id,
-        clientId: project.clientId,
-        ledgerInvoiceId: ledger.id,
-        invoiceNumber,
-        invoiceDate: input.invoiceDate,
-        status: "ISSUED",
-        customer,
-        project: { name: project.name, note: project.note },
-        lines,
-        vatApplicable,
-        vatPercent: totals.vatPercent,
-        subtotalUsd: totals.subtotalUsd,
-        vatUsd: totals.vatUsd,
-        totalUsd: totals.totalUsd,
-        exchangeRate: rate,
-        exchangeRateSource: input.exchangeRateSource === "NBC" ? "NBC" : "MANUAL",
-        exchangeRateEffectiveDate: input.exchangeRateEffectiveDate ?? null,
-        totalKhr: totals.totalKhr,
-        issuedAt: stamp,
-        issuedBy: actor,
-        cancelledAt: null,
-        cancelledBy: null,
-        cancellationReason: null,
-      };
-      (db.taxInvoices ??= []).push(record);
-
-      // Remember the legal details for this client's next invoice.
-      const profiles = (db.clientTaxProfiles ??= []);
-      const profile = profiles.find((p) => p.clientId === project.clientId);
-      const nextProfile: ClientTaxProfile = { clientId: project.clientId, ...customer, updatedAt: stamp, updatedBy: actor };
-      if (profile) Object.assign(profile, nextProfile);
-      else profiles.push(nextProfile);
-
-      log(db, actor, "tax_invoice.issue", "tax_invoice", record.id, `${invoiceNumber} ${totals.totalUsd}`);
-      return record;
-    });
+  saveCustomer(input: CustomerInput) {
+    return this.transaction((db) => saveCustomer(db, input));
   }
 
-  /**
-   * Cancels an issued Tax Invoice. The record (and its number) is kept and
-   * marked CANCELLED; the project's lines return to Accounting unchanged.
-   */
+  saveProduct(input: ProductInput) {
+    return this.transaction((db) => saveProduct(db, input));
+  }
+
+  issueInvoice(input: InvoiceInput) {
+    return this.transaction((db) => issueInvoice(db, input));
+  }
+
+  editInvoice(id: string, input: InvoiceInput) {
+    return this.transaction((db) => editInvoice(db, id, input));
+  }
+
+  /** Cancels an issued Tax Invoice. The record (and its number) is kept. */
   cancelTaxInvoice(id: string, reason: string, actor = "Accounting") {
-    return this.transaction((db) => {
-      const record = (db.taxInvoices ?? []).find((t) => t.id === id);
-      if (!record) throw new RuleError("NOT_FOUND", "Tax invoice was not found.", 404);
-      if (record.status !== "ISSUED") throw new RuleError("ALREADY_CANCELLED", "This tax invoice was already cancelled.");
-      const trimmed = reason.trim();
-      if (!trimmed) throw new RuleError("INVALID", "Enter a reason for cancelling.", 400);
-      const ledger = db.invoices.find((i) => i.id === record.ledgerInvoiceId);
-      if (ledger?.status === "PAID") {
-        throw new RuleError("INVOICE_PAID", "This invoice is paid. Undo the payment before cancelling it.");
-      }
-      if (ledger && ledger.status !== "VOID") {
-        ledger.status = "VOID";
-        ledger.receiptStatus = "NOT_REQUIRED";
-        ledger.updatedAt = now();
-        ledger.updatedBy = actor;
-        for (const link of db.invoiceItems.filter((l) => l.invoiceId === ledger.id)) {
-          const item = db.billingItems.find((i) => i.id === link.billingItemId);
-          if (!item) continue;
-          item.billingStatus = "READY_TO_INVOICE";
-          item.invoiceId = null;
-          item.updatedAt = now();
-          item.updatedBy = actor;
-        }
-        db.invoiceItems = db.invoiceItems.filter((l) => l.invoiceId !== ledger.id);
-      }
-      record.status = "CANCELLED";
-      record.cancelledAt = now();
-      record.cancelledBy = actor;
-      record.cancellationReason = trimmed;
-      log(db, actor, "tax_invoice.cancel", "tax_invoice", record.id, `${record.invoiceNumber}: ${trimmed}`);
-      return record;
-    });
+    return this.transaction((db) => cancelInvoice(db, id, reason, actor));
+  }
+
+  addInvoicePayment(input: { invoiceId: string; amount: number; paidOn?: string; note?: string; actor: string }) {
+    return this.transaction((db) => addInvoicePayment(db, input));
+  }
+
+  voidInvoicePayment(id: string, reason: string, actor = "Accounting") {
+    return this.transaction((db) => voidInvoicePayment(db, id, reason, actor));
+  }
+
+  /** The stored official NBC rate for an invoice date, or null. */
+  async rateForDate(date: string) {
+    return rateForDate((await this.load()).exchangeRates, date);
   }
 }
-
-/** The Excel Tax Invoice has ten line rows. */
-export const TAX_INVOICE_MAX_LINES = 10;
 
 function isIsoDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -1549,14 +1413,3 @@ export interface AddProjectPaymentInput {
   actor?: string;
 }
 
-export interface IssueTaxInvoiceInput {
-  projectId: string;
-  invoiceNumber: string;
-  invoiceDate: string;
-  customer: Partial<Omit<ClientTaxProfile, "clientId" | "updatedAt" | "updatedBy">>;
-  exchangeRate: number;
-  exchangeRateSource?: "NBC" | "MANUAL";
-  exchangeRateEffectiveDate?: string | null;
-  vatApplicable?: boolean;
-  actor?: string;
-}

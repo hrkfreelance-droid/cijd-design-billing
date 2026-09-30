@@ -14,6 +14,11 @@
     "binding": "ASSETS"
   },
   "workers_dev": true,
+  // NBC USD/KHR into V5's own D1, as V3 does into Supabase (UTC; Phnom Penh
+  // 16:35 / 16:50 / 17:05 on weekdays and an 08:00 daily check).
+  "triggers": {
+    "crons": ["35 9 * * 1-5", "50 9 * * 1-5", "5 10 * * 1-5", "0 1 * * *"]
+  },
   "vars": {
     "CIJD_V5_MODE": "1",
     "CIJD_PILOT_MODE": "1",

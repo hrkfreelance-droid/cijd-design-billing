@@ -282,6 +282,18 @@ function prepareItems(db: Database, input: InvoiceInput, excludeInvoiceId: strin
   return { lines, perBilling, projectIds };
 }
 
+function checkDiscountAndDeposit(input: InvoiceInput, subtotal: number) {
+  const deposit = input.depositUsd ?? 0;
+  if (!Number.isFinite(deposit) || deposit < 0) throw new RuleError("INVALID", "The deposit must be zero or more.", 400);
+  const discount = input.discount;
+  if (!discount) return;
+  if (!Number.isFinite(discount.value) || discount.value < 0) throw new RuleError("INVALID", "The discount must be zero or more.", 400);
+  if (discount.type === "PERCENT" && discount.value > 100) throw new RuleError("INVALID", "A discount cannot be more than 100%.", 400);
+  if (discount.type === "FIXED" && toCents(discount.value) > toCents(subtotal)) {
+    throw new RuleError("INVALID", "The discount is more than the subtotal.", 400);
+  }
+}
+
 function resolveRate(db: Database, date: string, provided: RateInput | null | undefined): { rate: number; source: "NBC" | "MANUAL"; effectiveDate: string | null } {
   if (provided?.source === "MANUAL") {
     const rate = Number(provided.rate);
@@ -382,6 +394,7 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
   const customer = customerSnapshot(input.customer);
   if (!customer.companyNameEn && !customer.companyNameKm) throw new RuleError("INVALID", "Enter the customer's legal name.", 400);
   const { lines, perBilling, projectIds } = prepareItems(db, input, null);
+  checkDiscountAndDeposit(input, lines.reduce((sum, line) => sum + line.amount, 0));
   const rate = resolveRate(db, input.invoiceDate, input.exchangeRate);
   const totals = invoiceTotals({ lines, discount: input.discount, vatApplicable: input.vatApplicable !== false, exchangeRate: rate.rate, deposit: input.depositUsd });
   if (input.depositUsd && toCents(input.depositUsd) > toCents(totals.totalUsd)) {
@@ -470,6 +483,7 @@ export function editInvoice(db: Database, invoiceId: string, input: InvoiceInput
   const previous = JSON.parse(JSON.stringify(record)) as TaxInvoiceRecord;
   const { lines, perBilling, projectIds } = prepareItems(db, input, record.id);
   // The rate belongs to the invoice date: kept as saved unless the date changes.
+  checkDiscountAndDeposit(input, lines.reduce((sum, line) => sum + line.amount, 0));
   const rate = input.invoiceDate === record.invoiceDate
     ? { rate: record.exchangeRate, source: record.exchangeRateSource, effectiveDate: record.exchangeRateEffectiveDate }
     : resolveRate(db, input.invoiceDate, input.exchangeRate);

@@ -153,18 +153,36 @@ async function readyProject() {
   return { ...env, design, print };
 }
 
-const ISSUE = {
-  invoiceNumber: "CIJDTI2026081",
-  invoiceDate: "2026-09-29",
-  customer: { companyNameEn: "E2E Test Customer Co., Ltd.", companyNameKm: "ក្រុមហ៊ុន តេស្ត", addressEn: "Phnom Penh", addressKm: "ភ្នំពេញ", telephone: "012 345 678", vatin: "K001-123456789" },
-  exchangeRate: 4105,
-  exchangeRateSource: "NBC" as const,
-  exchangeRateEffectiveDate: "2026-09-29",
-};
+/** Stores an official NBC rate in V5's history, as the daily cron does. */
+export async function storeRate(d1: ReturnType<typeof sqliteD1>, effectiveDate: string, rate: number) {
+  const persistence = d1Persistence(d1, buildV5Seed);
+  const db = (await persistence.read())!;
+  db.exchangeRates.push({ id: `nbc-${effectiveDate}`, currencyPair: "USD/KHR", rate, source: "NBC", effectiveDate, fetchedAt: `${effectiveDate}T10:00:00Z` });
+  await persistence.write(db);
+}
+
+const CUSTOMER = { companyNameEn: "E2E Test Customer Co., Ltd.", companyNameKm: "ក្រុមហ៊ុន តេស្ត", addressEn: "Phnom Penh", addressKm: "ភ្នំពេញ", telephone: "012 345 678", vatin: "K001-123456789" };
+
+function input(env: Awaited<ReturnType<typeof readyProject>>, extra: Record<string, unknown> = {}) {
+  return {
+    customerId: env.client.id,
+    invoiceDate: "2026-09-29",
+    customer: CUSTOMER,
+    items: [
+      { billingItemId: env.design.id, description: "Logo design", quantity: 2, unitPrice: 305, amount: 610 },
+      { billingItemId: env.print.id, description: "Flyers A5", quantity: 500, unitPrice: 0.31, amount: 156 },
+    ],
+    actor: "Accounting",
+    ...extra,
+  };
+}
 
 test("issue: Final amounts become the lines; VAT, USD and KHR; snapshot survives later edits", async () => {
-  const { open, project, client, design } = await readyProject();
-  const issued = await open().issueTaxInvoice({ projectId: project.id, ...ISSUE });
+  const env = await readyProject();
+  const { open, project, client, design, d1 } = env;
+  await storeRate(d1, "2026-09-29", 4105);
+  const issued = await open().issueInvoice(input(env));
+  assert.equal(issued.invoiceNumber, "CIJDTI2026081");
   assert.deepEqual(
     issued.lines.map(({ description, quantity, unitPrice, amount }) => ({ description, quantity, unitPrice, amount })),
     [
@@ -176,6 +194,7 @@ test("issue: Final amounts become the lines; VAT, USD and KHR; snapshot survives
   assert.equal(issued.vatUsd, 76.6);
   assert.equal(issued.totalUsd, 842.6);
   assert.equal(issued.totalKhr, 3458873);
+  assert.equal(issued.exchangeRateSource, "NBC");
 
   // Billed: the lines are locked and the project leaves the to-invoice list.
   const snap = await open().getSnapshot();
@@ -189,31 +208,31 @@ test("issue: Final amounts become the lines; VAT, USD and KHR; snapshot survives
   assert.deepEqual(reopened, issued);
   assert.equal(reopened.project.name, "Test project");
 
-  // The customer's legal details are remembered for next time.
-  assert.equal((await open().getSnapshot()).clientTaxProfiles![0].vatin, "K001-123456789");
+  // The customer's legal details went to the Customer Master.
+  assert.equal((await open().getSnapshot()).customers![0].vatin, "K001-123456789");
 });
 
-test("issue is refused for a duplicate number, a missing rate, or unready work", async () => {
-  const { open, project } = await readyProject();
-  await rejectsWith(open().issueTaxInvoice({ projectId: project.id, ...ISSUE, exchangeRate: 0 }), "INVALID");
-  await rejectsWith(open().issueTaxInvoice({ projectId: project.id, ...ISSUE, customer: {} }), "INVALID");
-  await open().issueTaxInvoice({ projectId: project.id, ...ISSUE });
+test("issue is refused without a rate, a legal name, or ready work; the number is the system's", async () => {
+  const env = await readyProject();
+  const { open, d1 } = env;
+  await rejectsWith(open().issueInvoice(input(env)), "RATE_REQUIRED"); // no NBC rate stored for the date
+  await rejectsWith(open().issueInvoice(input(env, { exchangeRate: { rate: 0, source: "MANUAL" } })), "INVALID");
+  await rejectsWith(open().issueInvoice(input(env, { customer: {} , exchangeRate: { rate: 4105, source: "MANUAL" } })), "INVALID");
+  const manual = await open().issueInvoice(input(env, { invoiceNumber: "WHATEVER-1", exchangeRate: { rate: 4105, source: "MANUAL" } }));
+  assert.equal(manual.invoiceNumber, "CIJDTI2026081"); // a requested number is not used
+  assert.equal(manual.exchangeRateSource, "MANUAL");
+  await storeRate(d1, "2026-09-29", 4105);
 
-  const other = await readyProject();
-  await other.open().issueTaxInvoice({ projectId: other.project.id, ...ISSUE });
-  // Same number again in the same database.
-  const again = await other.open().createProject({ clientId: other.client.id, name: "Second" });
-  await other.open().createBillingItem({ projectId: again.id, description: "x", type: "DESIGN", serviceType: "DESIGN", quantity: 1, amount: 10, finalMode: "MANUAL" });
-  await other.open().setProjectBillingReadiness(again.id, "READY");
-  await rejectsWith(other.open().issueTaxInvoice({ projectId: again.id, ...ISSUE }), "DUPLICATE_INVOICE_NUMBER");
-
-  const unready = await other.open().createProject({ clientId: other.client.id, name: "Unpriced" });
-  await rejectsWith(other.open().issueTaxInvoice({ projectId: unready.id, ...ISSUE, invoiceNumber: "CIJDTI2026099" }), "NOT_READY");
+  const unready = await open().createProject({ clientId: env.client.id, name: "Unpriced" });
+  const line = await open().createBillingItem({ projectId: unready.id, description: "x", type: "DESIGN", serviceType: "DESIGN", quantity: 1, finalMode: "MANUAL" });
+  await rejectsWith(open().issueInvoice({ ...input(env), items: [{ billingItemId: line.id, description: "x", quantity: 1, unitPrice: 0 }] }), "NOT_READY");
 });
 
-test("the issued invoice is archived immutably in D1", async () => {
-  const { open, project, d1 } = await readyProject();
-  const issued = await open().issueTaxInvoice({ projectId: project.id, ...ISSUE });
+test("the issued invoice is archived immutably in D1; cancel keeps the record", async () => {
+  const env = await readyProject();
+  const { open, project, d1 } = env;
+  await storeRate(d1, "2026-09-29", 4105);
+  const issued = await open().issueInvoice(input(env));
   const row = d1.raw.prepare("SELECT snapshot FROM v5_tax_invoice_archive WHERE id = ?").get(issued.id) as { snapshot: string };
   assert.deepEqual(JSON.parse(row.snapshot), issued);
   assert.throws(() => d1.raw.prepare("UPDATE v5_tax_invoice_archive SET snapshot = '{}'").run(), /immutable/);
@@ -223,6 +242,7 @@ test("the issued invoice is archived immutably in D1", async () => {
   await open().cancelTaxInvoice(issued.id, "Wrong customer name");
   const snap = await open().getSnapshot();
   assert.equal(snap.taxInvoices![0].status, "CANCELLED");
+  assert.equal(snap.taxInvoices![0].invoiceNumber, "CIJDTI2026081");
   assert.ok(snap.billingItems.filter((entry) => entry.projectId === project.id).every((entry) => entry.billingStatus === "READY_TO_INVOICE"));
   assert.equal((d1.raw.prepare("SELECT count(*) AS n FROM v5_tax_invoice_archive").get() as { n: number }).n, 1);
 });
