@@ -44,7 +44,7 @@ echo "== migrations (V5 D1 only)"
 npx wrangler d1 migrations apply "$DB" --remote --config dist/server/wrangler.json
 
 echo "== deploy $WORKER"
-npx vinext-cloudflare deploy --config dist/server/wrangler.json
+npx wrangler deploy --config dist/server/wrangler.json
 
 subdomain=${CIJD_WORKERS_SUBDOMAIN:-hrk-freelance}
 url="https://$WORKER.$subdomain.workers.dev"
