@@ -262,6 +262,12 @@ export interface Database {
   projectPayments?: ProjectPayment[];
   clientTaxProfiles?: ClientTaxProfile[];
   taxInvoices?: TaxInvoiceRecord[];
+  /** V5 invoice management. */
+  customers?: Customer[];
+  products?: Product[];
+  billingAllocations?: BillingAllocation[];
+  invoicePayments?: InvoicePayment[];
+  invoiceRevisions?: InvoiceRevision[];
 }
 
 /* ------------------------------------------------------------- V5 accounting */
@@ -298,13 +304,112 @@ export interface ClientTaxProfile {
   updatedBy: string;
 }
 
+/**
+ * One printed line of a Tax Invoice (an Invoice Item). It is a snapshot: a
+ * later change to the billing line or the product never reaches it.
+ */
 export interface TaxInvoiceLine {
-  billingItemId: string;
+  /** The billing line it bills (allocated from); null for a free line. */
+  billingItemId: string | null;
+  /** The Product Master entry it was picked from, if any. */
+  productId?: string | null;
+  productCode?: string | null;
   description: string;
   quantity: number;
+  unit?: string | null;
   unitPrice: number;
-  /** The designer's Final line amount, carried over unchanged. */
+  /** Line amount. From a billing line it is the amount allocated from it. */
   amount: number;
+}
+
+/* ------------------------------------------------------- invoice management */
+
+/**
+ * Customer Master. One per client (same id): the client is who the work is
+ * for, the customer is the legal identity an invoice is addressed to.
+ */
+export interface Customer {
+  id: string;
+  customerCode: string;
+  companyNameEn: string;
+  companyNameKm: string;
+  addressEn: string;
+  addressKm: string;
+  telephone: string;
+  vatin: string;
+  contactPerson: string;
+  email: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface Product {
+  id: string;
+  productCode: string;
+  description: string;
+  defaultUnitPrice: number | null;
+  unit: string;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+/**
+ * How much of a billing line one invoice bills. Many-to-many: several lines
+ * on one invoice, one line over several invoices. Never deleted — a cancelled
+ * or edited invoice voids its allocations.
+ */
+export interface BillingAllocation {
+  id: string;
+  billingItemId: string;
+  invoiceId: string;
+  amount: number;
+  createdAt: string;
+  createdBy: string;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+}
+
+/** Money received for an invoice. A deposit is one kind. Voided, never deleted. */
+export type InvoicePaymentKind = "DEPOSIT" | "PAYMENT";
+
+export interface InvoicePayment {
+  id: string;
+  invoiceId: string;
+  kind: InvoicePaymentKind;
+  amount: number;
+  paidOn: string;
+  note?: string | null;
+  createdAt: string;
+  createdBy: string;
+  voidedAt?: string | null;
+  voidedBy?: string | null;
+  voidReason?: string | null;
+}
+
+export type InvoiceRevisionAction = "ISSUE" | "EDIT" | "CANCEL";
+
+/** The audit trail of an invoice: each change keeps what was there before. */
+export interface InvoiceRevision {
+  id: string;
+  invoiceId: string;
+  revision: number;
+  action: InvoiceRevisionAction;
+  changedAt: string;
+  changedBy: string;
+  reason: string | null;
+  /** The invoice as it was before this change; null for ISSUE. */
+  previousSnapshot: TaxInvoiceRecord | null;
+}
+
+export type DiscountType = "FIXED" | "PERCENT";
+export interface InvoiceDiscount {
+  type: DiscountType;
+  /** Dollars for FIXED, percent for PERCENT. */
+  value: number;
 }
 
 /**
@@ -313,7 +418,9 @@ export interface TaxInvoiceLine {
  */
 export interface TaxInvoiceRecord {
   id: string;
+  /** The project it was raised from; the first one when it bills several. */
   projectId: string;
+  projectIds?: string[];
   clientId: string;
   /** The internal ledger entry that billed the project's lines. */
   ledgerInvoiceId: string;
@@ -326,14 +433,26 @@ export interface TaxInvoiceRecord {
   vatApplicable: boolean;
   vatPercent: number;
   subtotalUsd: number;
+  /** Invoice-level discount; absent on invoices issued before discounts existed. */
+  discount?: InvoiceDiscount | null;
+  discountUsd?: number;
+  /** Subtotal − discount: the amount VAT is charged on. */
+  taxableUsd?: number;
   vatUsd: number;
   totalUsd: number;
   exchangeRate: number;
   exchangeRateSource: "NBC" | "MANUAL";
   exchangeRateEffectiveDate: string | null;
   totalKhr: number;
+  /** Deposit shown on the invoice (Grand Total − Deposit = Balance Due). */
+  depositUsd?: number;
   issuedAt: string;
   issuedBy: string;
+  /** 1 at issue; each edit adds one. Absent on older invoices (= 1). */
+  revision?: number;
+  updatedAt?: string;
+  updatedBy?: string;
+  note?: string | null;
   cancelledAt?: string | null;
   cancelledBy?: string | null;
   cancellationReason?: string | null;
@@ -359,4 +478,11 @@ export interface Snapshot {
   projectPayments?: ProjectPayment[];
   clientTaxProfiles?: ClientTaxProfile[];
   taxInvoices?: TaxInvoiceRecord[];
+  customers?: Customer[];
+  products?: Product[];
+  billingAllocations?: BillingAllocation[];
+  invoicePayments?: InvoicePayment[];
+  invoiceRevisions?: InvoiceRevision[];
+  /** Stored NBC history (rate for an invoice date). */
+  exchangeRates?: ExchangeRate[];
 }

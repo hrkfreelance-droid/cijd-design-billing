@@ -366,3 +366,121 @@ export function nextTaxInvoiceNumber(year: number, existing: readonly string[]):
   }
   return formatTaxInvoiceNumber(year, max + 1);
 }
+
+/* --------------------------------------------------- invoice management */
+
+/**
+ * Where an invoice discount sits relative to VAT. No CIJD invoice, workbook
+ * sheet or earlier version has a discount, so there is no existing rule to
+ * follow; a trade discount reduces the taxable amount, so VAT is charged on
+ * Subtotal − Discount. Changing this one constant changes the order everywhere.
+ */
+export const DISCOUNT_ORDER = "BEFORE_VAT" as const;
+
+export interface InvoiceDiscountInput {
+  type: "FIXED" | "PERCENT";
+  value: number;
+}
+
+export interface InvoiceTotalsInput {
+  lines: readonly { amount: number }[];
+  discount?: InvoiceDiscountInput | null;
+  vatApplicable: boolean;
+  exchangeRate: number;
+  /** Deposit shown on the invoice; it never changes the tax. */
+  deposit?: number;
+}
+
+export interface InvoiceTotals extends TaxTotals {
+  discountUsd: number;
+  taxableUsd: number;
+  depositUsd: number;
+  balanceDueUsd: number;
+}
+
+/** Discount in cents: FIXED is capped at the subtotal; PERCENT rounds half-up. */
+export function discountCents(subtotalCents: number, discount: InvoiceDiscountInput | null | undefined): number {
+  if (!discount || !Number.isFinite(discount.value) || discount.value <= 0) return 0;
+  const raw = discount.type === "PERCENT" ? Math.round((subtotalCents * Math.min(discount.value, 100)) / 100) : toCents(discount.value);
+  return Math.min(raw, subtotalCents);
+}
+
+/**
+ * Subtotal (Σ lines) → Discount → Taxable → VAT 10% → Grand Total USD →
+ * × rate → Grand Total KHR; then Deposit → Balance Due. With no discount and
+ * no deposit this is exactly `taxTotals`.
+ */
+export function invoiceTotals(input: InvoiceTotalsInput): InvoiceTotals {
+  const subtotalCents = input.lines.reduce((sum, line) => sum + toCents(line.amount), 0);
+  const discount = discountCents(subtotalCents, input.discount);
+  const taxableCents = subtotalCents - discount;
+  const vatPercent = input.vatApplicable ? VAT_PERCENT : 0;
+  const vatCents = Math.round((taxableCents * vatPercent) / 100);
+  const totalCents = taxableCents + vatCents;
+  const rateScaled = Math.round((Math.max(input.exchangeRate, 0) + Number.EPSILON) * 10_000);
+  const khr = Number((BigInt(totalCents) * BigInt(rateScaled) + BigInt(500_000)) / BigInt(1_000_000));
+  const depositCents = Math.min(Math.max(toCents(input.deposit ?? 0), 0), totalCents);
+  return {
+    subtotalUsd: fromCents(subtotalCents),
+    discountUsd: fromCents(discount),
+    taxableUsd: fromCents(taxableCents),
+    vatPercent,
+    vatUsd: fromCents(vatCents),
+    totalUsd: fromCents(totalCents),
+    totalKhr: khr,
+    depositUsd: fromCents(depositCents),
+    balanceDueUsd: fromCents(totalCents - depositCents),
+  };
+}
+
+export type CollectionStatus = "UNPAID" | "PARTIALLY_PAID" | "PAID";
+
+export interface Collection {
+  totalUsd: number;
+  paidUsd: number;
+  outstandingUsd: number;
+  status: CollectionStatus;
+}
+
+/** Paid = Σ valid payments; Outstanding = Total − Paid; PAID once nothing is outstanding. */
+export function collection(totalUsd: number, payments: readonly PaymentLike[]): Collection {
+  const totalCents = toCents(totalUsd);
+  const paidCents = payments
+    .filter((payment) => !payment.voidedAt && Number.isFinite(payment.amount) && payment.amount > 0)
+    .reduce((sum, payment) => sum + toCents(payment.amount), 0);
+  const outstanding = Math.max(totalCents - paidCents, 0);
+  return {
+    totalUsd: fromCents(totalCents),
+    paidUsd: fromCents(paidCents),
+    outstandingUsd: fromCents(outstanding),
+    status: paidCents === 0 ? (totalCents === 0 ? "PAID" : "UNPAID") : outstanding === 0 ? "PAID" : "PARTIALLY_PAID",
+  };
+}
+
+/** A billing line's amounts: what it bills, what invoices took, what is left. */
+export interface BillingRemaining {
+  originalUsd: number;
+  invoicedUsd: number;
+  remainingUsd: number;
+}
+
+export function billingRemaining(original: number, allocations: readonly { amount: number; voidedAt?: string | null }[]): BillingRemaining {
+  const originalCents = toCents(Math.max(original, 0));
+  const invoicedCents = allocations.filter((a) => !a.voidedAt).reduce((sum, a) => sum + toCents(a.amount), 0);
+  return {
+    originalUsd: fromCents(originalCents),
+    invoicedUsd: fromCents(invoicedCents),
+    remainingUsd: fromCents(Math.max(originalCents - invoicedCents, 0)),
+  };
+}
+
+/** Sequential codes for masters: C0001, P0001 … (the next after the highest). */
+export function nextCode(prefix: string, existing: readonly string[], digits = 4): string {
+  let max = 0;
+  for (const code of existing) {
+    if (!code.startsWith(prefix)) continue;
+    const n = Number(code.slice(prefix.length));
+    if (Number.isInteger(n) && n > max) max = n;
+  }
+  return `${prefix}${String(max + 1).padStart(digits, "0")}`;
+}
