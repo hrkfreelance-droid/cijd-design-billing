@@ -6,24 +6,26 @@ export const dynamic = "force-dynamic";
 
 /**
  * The official NBC USD/KHR rate for an invoice date, from V5's stored NBC
- * history. For today (Phnom Penh) a missing rate is fetched first. `rate: null`
- * means there is no official rate for that date: Accounting enters it by hand.
+ * history (see `officialRateForDate`: exact valid_date, or a rate NBC was seen
+ * still reporting on that date — no look-back window). For today (Phnom Penh)
+ * NBC is asked first. `rate: null` = no rate can be established for that date:
+ * Accounting enters it by hand. `fetched: false` = the NBC request failed.
  */
 export async function GET(request: Request) {
   const date = new URL(request.url).searchParams.get("date") ?? phnomPenhDate();
   return handleV5(["invoice:write", "payment:write"], async (store) => {
-    let rate = await store.rateForDate(date);
+    let found = await store.rateForDate(date);
     let fetched: boolean | null = null;
-    if (!rate && date === phnomPenhDate()) {
+    if (found?.basis !== "EXACT" && date === phnomPenhDate()) {
       try {
         await store.refreshOfficialRate();
         fetched = true;
       } catch {
         fetched = false;
       }
-      rate = await store.rateForDate(date);
+      found = await store.rateForDate(date);
     }
-    return { date, rate, fetched };
+    return { date, rate: found?.rate ?? null, basis: found?.basis ?? null, fetched };
   });
 }
 

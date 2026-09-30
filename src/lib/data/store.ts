@@ -52,7 +52,7 @@ import {
   type InvoiceInput,
   type ProductInput,
 } from "@/lib/billing-v5/invoicing";
-import { rateForDate } from "@/lib/billing-v5/ontology";
+import { officialRateForDate } from "@/lib/billing-v5/ontology";
 import {
   ensureCurrentExchangeRate,
   ExchangeRateUnavailableError,
@@ -1393,8 +1393,9 @@ export class Store implements Repository {
   }
 
   /** The stored official NBC rate for an invoice date, or null. */
+  /** The NBC rate for an invoice date, with how it was established (EXACT / IN_EFFECT), or null. */
   async rateForDate(date: string) {
-    return rateForDate((await this.load()).exchangeRates, date);
+    return officialRateForDate((await this.load()).exchangeRates, date);
   }
 }
 

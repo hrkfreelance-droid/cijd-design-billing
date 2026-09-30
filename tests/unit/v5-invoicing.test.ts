@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { d1Persistence } from "../../src/lib/billing-v5/d1-persistence.ts";
-import { invoiceTotals } from "../../src/lib/billing-v5/calculation.ts";
-import { billingState, eligibleBilling, invoiceCollection } from "../../src/lib/billing-v5/ontology.ts";
+import { DISCOUNT_VAT_POLICY, DiscountPolicyUnresolvedError, invoiceTotals } from "../../src/lib/billing-v5/calculation.ts";
+import { billingState, eligibleBilling, invoiceCollection, officialRateForDate } from "../../src/lib/billing-v5/ontology.ts";
 import { buildV5Seed } from "../../src/lib/billing-v5/repository.ts";
 import { RuleError } from "../../src/lib/data/repository.ts";
 import { Store } from "../../src/lib/data/store.ts";
@@ -130,22 +130,39 @@ test("double billing under a race: the second writer cannot commit, and its retr
   assert.equal((await t.snap()).taxInvoices!.filter((invoice) => invoice.status === "ISSUED").length, 1);
 });
 
-test("discount (fixed / percent) is taken before VAT; deposit gives Balance Due", async () => {
+test("D. discount/VAT order is an explicit, unresolved policy: no hidden default; no-discount VAT 10% unchanged", async () => {
+  // The policy is not decided: nothing may pick BEFORE or AFTER VAT silently.
+  assert.equal(DISCOUNT_VAT_POLICY, null);
+  const lines = [{ amount: 400 }];
+  assert.throws(() => invoiceTotals({ lines, discount: { type: "FIXED", value: 40 }, vatApplicable: true, exchangeRate: 4105 }), DiscountPolicyUnresolvedError);
+  assert.throws(() => invoiceTotals({ lines, discount: { type: "PERCENT", value: 10 }, vatApplicable: true, exchangeRate: 4105, discountPolicy: null }), DiscountPolicyUnresolvedError);
+  // No discount (absent, zero): no policy needed, exactly the existing VAT 10% totals.
+  for (const discount of [undefined, null, { type: "FIXED" as const, value: 0 }]) {
+    const plain = invoiceTotals({ lines, discount, vatApplicable: true, exchangeRate: 4105, deposit: 100 });
+    assert.deepEqual(
+      [plain.subtotalUsd, plain.discountUsd, plain.taxableUsd, plain.vatUsd, plain.totalUsd, plain.totalKhr, plain.balanceDueUsd, plain.discountPolicy],
+      [400, 0, 400, 40, 440, 1806200, 340, null],
+    );
+  }
+  // Both candidate orders are implemented and only used when named explicitly.
+  const before = invoiceTotals({ lines, discount: { type: "FIXED", value: 40 }, vatApplicable: true, exchangeRate: 4105, deposit: 100, discountPolicy: "DISCOUNT_BEFORE_VAT" });
+  assert.deepEqual([before.discountUsd, before.taxableUsd, before.vatUsd, before.totalUsd, before.balanceDueUsd], [40, 360, 36, 396, 296]);
+  const after = invoiceTotals({ lines, discount: { type: "FIXED", value: 40 }, vatApplicable: true, exchangeRate: 4105, deposit: 100, discountPolicy: "DISCOUNT_AFTER_VAT" });
+  assert.deepEqual([after.discountUsd, after.taxableUsd, after.vatUsd, after.totalUsd, after.balanceDueUsd], [40, 400, 40, 400, 300]);
+  const pct = invoiceTotals({ lines: [{ amount: 333.33 }], discount: { type: "PERCENT", value: 12.5 }, vatApplicable: true, exchangeRate: 4105, discountPolicy: "DISCOUNT_BEFORE_VAT" });
+  assert.deepEqual([pct.discountUsd, pct.taxableUsd, pct.vatUsd, pct.totalUsd], [41.67, 291.66, 29.17, 320.83]);
+
+  // The server refuses a discounted invoice while the policy is unresolved.
   const t = await env();
   const { line } = await t.billing("TEST Discount", 1000);
-  const fixed = await t.issue([{ billingItemId: line.id, amount: 400 }], { discount: { type: "FIXED", value: 40 }, depositUsd: 100 });
-  assert.deepEqual(
-    [fixed.subtotalUsd, fixed.discountUsd, fixed.taxableUsd, fixed.vatUsd, fixed.totalUsd, fixed.depositUsd],
-    [400, 40, 360, 36, 396, 100],
-  );
-  assert.equal(invoiceTotals({ lines: fixed.lines, discount: fixed.discount, vatApplicable: true, exchangeRate: 4105, deposit: 100 }).balanceDueUsd, 296);
-  const pct = await t.issue([{ billingItemId: line.id, amount: 333.33 }], { discount: { type: "PERCENT", value: 12.5 } });
-  assert.deepEqual([pct.discountUsd, pct.taxableUsd, pct.vatUsd, pct.totalUsd], [41.67, 291.66, 29.17, 320.83]);
-  await rejectsWith(t.issue([{ billingItemId: line.id, amount: 10 }], { discount: { type: "FIXED", value: 11 } }), "INVALID");
+  await rejectsWith(t.issue([{ billingItemId: line.id, amount: 400 }], { discount: { type: "FIXED", value: 40 } }), "DISCOUNT_POLICY_UNRESOLVED");
+  await rejectsWith(t.issue([{ billingItemId: line.id, amount: 400 }], { discount: { type: "PERCENT", value: 5 } }), "DISCOUNT_POLICY_UNRESOLVED");
   await rejectsWith(t.issue([{ billingItemId: line.id, amount: 10 }], { discount: { type: "PERCENT", value: 101 } }), "INVALID");
-  // An invoice without a discount totals exactly as before.
-  const plain = await t.issue([{ description: "TEST free line", quantity: 2, unitPrice: 50 }]);
-  assert.deepEqual([plain.subtotalUsd, plain.discountUsd, plain.vatUsd, plain.totalUsd], [100, 0, 10, 110]);
+  assert.equal((await t.snap()).taxInvoices!.length, 0); // nothing issued, no number used
+  // Without a discount: VAT 10% exactly as before, deposit → Balance Due.
+  const plain = await t.issue([{ billingItemId: line.id, amount: 400 }], { depositUsd: 100 });
+  assert.deepEqual([plain.subtotalUsd, plain.discountUsd, plain.vatUsd, plain.totalUsd, plain.depositUsd, plain.discountPolicy], [400, 0, 40, 440, 100, null]);
+  assert.equal(plain.invoiceNumber, "CIJDTI2026081");
 });
 
 test("payments: deposit, partial, final → collected; overpayment refused; voids keep history", async () => {
@@ -167,44 +184,84 @@ test("payments: deposit, partial, final → collected; overpayment refused; void
   await rejectsWith(t.open().cancelTaxInvoice(invoice.id, "x"), "INVOICE_PAID");
 });
 
-test("edit: same date keeps the saved rate; a new date takes that date's rate; number fixed; history kept", async () => {
+test("A. edit with the invoice date unchanged never changes the saved rate; number fixed; history kept", async () => {
   const t = await env();
   const { line } = await t.billing("TEST Edit", 1000);
   const invoice = await t.issue([{ billingItemId: line.id, amount: 500, description: "First" }]);
-  assert.equal(invoice.exchangeRate, 4105);
+  assert.deepEqual([invoice.exchangeRate, invoice.exchangeRateSource, invoice.exchangeRateBasis, invoice.exchangeRateForDate], [4105, "NBC", "EXACT", "2026-09-29"]);
   const base = { customerId: t.client.id, customer: CUSTOMER, actor: "TEST" };
 
-  // A newer rate appears; editing without changing the date keeps 4105.
+  // NBC's stored rate for that same date changes (re-fetched), and a newer one appears:
+  // an edit that keeps the date keeps 4105, even when it sends another rate.
+  await t.edit((db) => {
+    db.exchangeRates.find((r) => r.effectiveDate === "2026-09-29")!.rate = 4999;
+  });
   await t.rate("2026-10-01", 4200);
-  const same = await t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-09-29", items: [{ billingItemId: line.id, description: "First, corrected", quantity: 1, unitPrice: 600, amount: 600 }], discount: { type: "FIXED", value: 10 }, reason: "TEST price" });
-  assert.equal(same.exchangeRate, 4105);
+  const same = await t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-09-29", exchangeRate: { rate: 1, source: "MANUAL" }, items: [{ billingItemId: line.id, description: "First, corrected", quantity: 1, unitPrice: 600, amount: 600 }], reason: "TEST price" });
+  assert.deepEqual([same.exchangeRate, same.exchangeRateSource, same.exchangeRateEffectiveDate, same.exchangeRateBasis], [4105, "NBC", "2026-09-29", "EXACT"]);
   assert.equal(same.invoiceNumber, invoice.invoiceNumber);
   assert.equal(same.revision, 2);
-  assert.equal(same.totalUsd, 649); // (600 − 10) × 1.1
+  assert.deepEqual([same.totalUsd, same.totalKhr], [660, 2709300]); // 600 × 1.1 × 4105
 
-  // A new date takes the official rate for that date.
-  const moved = await t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-10-02", items: same.lines.map((l) => ({ ...l, billingItemId: l.billingItemId ?? undefined })), discount: same.discount });
-  assert.equal(moved.exchangeRate, 4200);
-  assert.equal(moved.exchangeRateEffectiveDate, "2026-10-01");
-  // No official rate for a date: the rate must be entered by hand.
-  await rejectsWith(t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-11-30", items: [{ billingItemId: line.id, description: "x", quantity: 1, unitPrice: 600, amount: 600 }] }), "RATE_REQUIRED");
-  const manual = await t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-11-30", exchangeRate: { rate: 4150, source: "MANUAL" }, items: [{ billingItemId: line.id, description: "x", quantity: 1, unitPrice: 600, amount: 600 }] });
-  assert.equal(manual.exchangeRateSource, "MANUAL");
-
-  await rejectsWith(t.open().editInvoice(invoice.id, { ...base, invoiceNumber: "CIJDTI2026999", invoiceDate: "2026-11-30", items: [{ billingItemId: line.id, description: "x", quantity: 1, unitPrice: 600, amount: 600 }] }), "NUMBER_IMMUTABLE");
-  await rejectsWith(t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-11-30", items: [{ billingItemId: line.id, description: "x", quantity: 1, unitPrice: 1001, amount: 1001 }] }), "OVER_ALLOCATION");
+  await rejectsWith(t.open().editInvoice(invoice.id, { ...base, invoiceNumber: "CIJDTI2026999", invoiceDate: "2026-09-29", items: [{ billingItemId: line.id, description: "x", quantity: 1, unitPrice: 600, amount: 600 }] }), "NUMBER_IMMUTABLE");
+  await rejectsWith(t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-09-29", items: [{ billingItemId: line.id, description: "x", quantity: 1, unitPrice: 1001, amount: 1001 }] }), "OVER_ALLOCATION");
 
   const s = await t.snap();
   const revisions = s.invoiceRevisions!.filter((r) => r.invoiceId === invoice.id).sort((a, b) => a.revision - b.revision);
-  assert.deepEqual(revisions.map((r) => [r.revision, r.action]), [[1, "ISSUE"], [2, "EDIT"], [3, "EDIT"], [4, "EDIT"]]);
+  assert.deepEqual(revisions.map((r) => [r.revision, r.action]), [[1, "ISSUE"], [2, "EDIT"]]);
   assert.equal(revisions[1].previousSnapshot!.lines[0].description, "First");
   assert.equal(revisions[1].reason, "TEST price");
-  // The allocation follows the edit: $600 billed, $400 left.
   assert.equal(billingState(s, s.billingItems.find((i) => i.id === line.id)!).remainingUsd, 400);
-  // Revisions are also written to an insert-only D1 table.
-  assert.equal((t.d1.raw.prepare("SELECT count(*) AS n FROM v5_invoice_revisions WHERE invoice_id = ?").get(invoice.id) as { n: number }).n, 4);
+  assert.equal((t.d1.raw.prepare("SELECT count(*) AS n FROM v5_invoice_revisions WHERE invoice_id = ?").get(invoice.id) as { n: number }).n, 2);
   assert.throws(() => t.d1.raw.prepare("DELETE FROM v5_invoice_revisions").run(), /immutable/);
   assert.throws(() => t.d1.raw.prepare("UPDATE v5_invoice_revisions SET action = 'X'").run(), /immutable/);
+});
+
+test("B. date changed and NBC has a rate for exactly that date → that rate", async () => {
+  const t = await env();
+  const { line } = await t.billing("TEST Rate B", 1000);
+  const invoice = await t.issue([{ billingItemId: line.id, amount: 500 }]);
+  await t.rate("2026-10-01", 4200);
+  await t.rate("2026-10-02", 4210);
+  const moved = await t.open().editInvoice(invoice.id, { customerId: t.client.id, customer: CUSTOMER, actor: "TEST", invoiceDate: "2026-10-01", items: [{ billingItemId: line.id, description: "Work", quantity: 1, unitPrice: 500, amount: 500 }] });
+  assert.deepEqual([moved.exchangeRate, moved.exchangeRateSource, moved.exchangeRateEffectiveDate, moved.exchangeRateBasis, moved.exchangeRateForDate], [4200, "NBC", "2026-10-01", "EXACT", "2026-10-01"]);
+  assert.equal(moved.totalKhr, 2310000); // 550 × 4200
+});
+
+test("C. date changed and NBC has no rate for that date → no look-back, manual rate required and saved for that date", async () => {
+  const t = await env();
+  const { line } = await t.billing("TEST Rate C", 1000);
+  const invoice = await t.issue([{ billingItemId: line.id, amount: 500 }]);
+  const base = { customerId: t.client.id, customer: CUSTOMER, actor: "TEST", items: [{ billingItemId: line.id, description: "Work", quantity: 1, unitPrice: 500, amount: 500 }] };
+  // 2026-09-30 is one day after a stored rate, but NBC was never seen reporting it on the 30th.
+  assert.equal(officialRateForDate((await t.snap()).exchangeRates ?? [], "2026-09-30"), null);
+  await rejectsWith(t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-09-30" }), "RATE_REQUIRED");
+  await rejectsWith(t.issue([{ description: "TEST", quantity: 1, unitPrice: 1 }], { invoiceDate: "2026-10-03" }), "RATE_REQUIRED");
+  // Refused edits change nothing.
+  assert.equal((await t.snap()).taxInvoices!.find((i) => i.id === invoice.id)!.exchangeRate, 4105);
+  const manual = await t.open().editInvoice(invoice.id, { ...base, invoiceDate: "2026-09-30", exchangeRate: { rate: 4150, source: "MANUAL" } });
+  assert.deepEqual(
+    [manual.exchangeRate, manual.exchangeRateSource, manual.exchangeRateEffectiveDate, manual.exchangeRateBasis, manual.exchangeRateForDate, manual.invoiceDate],
+    [4150, "MANUAL", null, "MANUAL", "2026-09-30", "2026-09-30"],
+  );
+  // A manual rate is refused when NBC has a rate for the date.
+  await rejectsWith(t.issue([{ description: "TEST", quantity: 1, unitPrice: 1 }], { exchangeRate: { rate: 4000, source: "MANUAL" } }), "RATE_AVAILABLE");
+});
+
+test("NBC effective-date semantics: a rate NBC still reported on the invoice date applies (IN_EFFECT); otherwise none", () => {
+  const nbc = (effectiveDate: string, rate: number, fetchedAt: string) => ({ id: effectiveDate, currencyPair: "USD/KHR" as const, rate, source: "NBC" as const, effectiveDate, fetchedAt });
+  // Friday 2 Oct's rate; NBC still reported it as latest on Saturday 08:00 Phnom Penh (01:00Z).
+  const rates = [nbc("2026-10-02", 4100, "2026-10-03T01:00:00Z"), nbc("2026-10-05", 4110, "2026-10-05T03:00:00Z")];
+  assert.deepEqual(officialRateForDate(rates, "2026-10-02")?.basis, "EXACT");
+  assert.deepEqual([officialRateForDate(rates, "2026-10-03")?.rate.rate, officialRateForDate(rates, "2026-10-03")?.basis], [4100, "IN_EFFECT"]);
+  // Sunday: nobody saw NBC on the 4th → no rate, whatever the gap.
+  assert.equal(officialRateForDate(rates, "2026-10-04"), null);
+  // Phnom Penh date, not UTC: 17:30Z on the 3rd is already the 4th in Phnom Penh.
+  assert.equal(officialRateForDate([nbc("2026-10-02", 4100, "2026-10-03T17:30:00Z")], "2026-10-04")?.basis, "IN_EFFECT");
+  // A future valid_date never applies to an earlier date; nothing before the first rate.
+  assert.equal(officialRateForDate(rates, "2026-10-01"), null);
+  // Only NBC USD/KHR rates, never another source.
+  assert.equal(officialRateForDate([{ ...nbc("2026-10-02", 4100, "2026-10-02T03:00:00Z"), source: "MANUAL" as unknown as "NBC" }], "2026-10-02"), null);
 });
 
 test("invoices cannot be deleted: there is no delete operation or route", async () => {

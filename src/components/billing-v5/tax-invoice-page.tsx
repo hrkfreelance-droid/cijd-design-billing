@@ -9,7 +9,7 @@ import { Button, Input } from "@/components/ui";
 import { useAction } from "@/components/use-action";
 import { toCents } from "@/lib/billing-v5/calculation";
 import { useV5T, type V5Key } from "@/lib/billing-v5/i18n";
-import { invoiceCollection } from "@/lib/billing-v5/ontology";
+import { invoiceCollection, LEDGER_PAYMENT_PREFIX } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
 import type { Snapshot, TaxInvoiceRecord } from "@/lib/types";
@@ -191,12 +191,12 @@ function Payments({
             <li key={payment.id} className={`grid grid-cols-[6.5rem_minmax(0,1fr)_auto_auto] items-baseline gap-x-3 border-b border-line py-2.5 text-[13px] ${payment.voidedAt ? "text-faint" : ""}`} data-testid="v5-invoice-payment">
               <span className="tnum text-muted">{payment.paidOn}</span>
               <span className="min-w-0 truncate">
-                {t(payment.kind === "DEPOSIT" ? "detail.deposit" : "detail.payment")}
+                {t(payment.kind === "DEPOSIT" ? "detail.deposit" : payment.id.startsWith(LEDGER_PAYMENT_PREFIX) ? "detail.ledgerPaid" : "detail.payment")}
                 {payment.note && payment.note !== "Deposit" && <span className="text-muted"> · {payment.note}</span>}
                 {payment.voidedAt && <span className="block text-[12px]">{t("detail.voided")}: {payment.voidReason}</span>}
               </span>
               <span className={`tnum font-medium ${payment.voidedAt ? "line-through" : ""}`}>{moneyExact(payment.amount)}</span>
-              {!payment.voidedAt && payment.kind === "PAYMENT" && invoice.status === "ISSUED" ? (
+              {!payment.voidedAt && payment.kind === "PAYMENT" && !payment.id.startsWith(LEDGER_PAYMENT_PREFIX) && invoice.status === "ISSUED" ? (
                 <button type="button" onClick={() => setVoiding(payment.id)} className="text-[12.5px] text-muted hover:text-danger" data-testid="v5-payment-void">{t("detail.void")}</button>
               ) : (
                 <span />

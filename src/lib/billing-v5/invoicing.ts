@@ -24,8 +24,8 @@ import type {
   TaxInvoiceLine,
   TaxInvoiceRecord,
 } from "../types";
-import { collection, invoiceTotals, nextCode, nextTaxInvoiceNumber, roundMoney, toCents } from "./calculation";
-import { billingState, customerFor, rateForDate, readyProjectIds } from "./ontology";
+import { DiscountPolicyUnresolvedError, invoiceTotals, nextCode, nextTaxInvoiceNumber, roundMoney, toCents } from "./calculation";
+import { billingState, customerFor, invoiceCollection, officialRateForDate, readyProjectIds } from "./ontology";
 
 const newId = () => globalThis.crypto.randomUUID();
 const now = () => new Date().toISOString();
@@ -282,29 +282,54 @@ function prepareItems(db: Database, input: InvoiceInput, excludeInvoiceId: strin
   return { lines, perBilling, projectIds };
 }
 
-function checkDiscountAndDeposit(input: InvoiceInput, subtotal: number) {
+function checkDiscountAndDeposit(input: InvoiceInput) {
   const deposit = input.depositUsd ?? 0;
   if (!Number.isFinite(deposit) || deposit < 0) throw new RuleError("INVALID", "The deposit must be zero or more.", 400);
   const discount = input.discount;
   if (!discount) return;
   if (!Number.isFinite(discount.value) || discount.value < 0) throw new RuleError("INVALID", "The discount must be zero or more.", 400);
   if (discount.type === "PERCENT" && discount.value > 100) throw new RuleError("INVALID", "A discount cannot be more than 100%.", 400);
-  if (discount.type === "FIXED" && toCents(discount.value) > toCents(subtotal)) {
-    throw new RuleError("INVALID", "The discount is more than the subtotal.", 400);
-  }
 }
 
-function resolveRate(db: Database, date: string, provided: RateInput | null | undefined): { rate: number; source: "NBC" | "MANUAL"; effectiveDate: string | null } {
+/**
+ * Invoice totals, with the discount/VAT order left to `DISCOUNT_VAT_POLICY`.
+ * While that policy is unresolved an invoice with a discount is refused.
+ */
+function totalsFor(input: InvoiceInput, lines: readonly { amount: number }[], exchangeRate: number) {
+  let totals;
+  try {
+    totals = invoiceTotals({ lines, discount: input.discount, vatApplicable: input.vatApplicable !== false, exchangeRate, deposit: input.depositUsd });
+  } catch (error) {
+    if (error instanceof DiscountPolicyUnresolvedError) throw new RuleError(error.code, error.message, 409);
+    throw error;
+  }
+  if (input.discount?.type === "FIXED" && toCents(input.discount.value) > toCents(totals.discountUsd)) {
+    throw new RuleError("INVALID", "The discount is more than the amount it applies to.", 400);
+  }
+  return totals;
+}
+
+type ResolvedRate = { rate: number; source: "NBC" | "MANUAL"; effectiveDate: string | null; basis: "EXACT" | "IN_EFFECT" | "MANUAL"; forDate: string };
+
+/**
+ * The rate for the invoice date (see `officialRateForDate`). A MANUAL rate is
+ * accepted only when no NBC rate can be established for that date; it is
+ * saved with the invoice date it was entered for.
+ */
+function resolveRate(db: Database, date: string, provided: RateInput | null | undefined): ResolvedRate {
+  const official = officialRateForDate(db.exchangeRates, date);
   if (provided?.source === "MANUAL") {
+    if (official) {
+      throw new RuleError("RATE_AVAILABLE", `The NBC rate for ${date} is ${official.rate.rate}. A rate is entered by hand only when NBC has none.`, 409);
+    }
     const rate = Number(provided.rate);
     if (!Number.isFinite(rate) || rate <= 0) throw new RuleError("INVALID", "Enter the exchange rate.", 400);
-    return { rate, source: "MANUAL", effectiveDate: null };
+    return { rate, source: "MANUAL", effectiveDate: null, basis: "MANUAL", forDate: date };
   }
-  const official = rateForDate(db.exchangeRates, date);
   if (!official) {
-    throw new RuleError("RATE_REQUIRED", `No NBC rate is stored for ${date}. Fetch it, or enter the rate by hand.`, 409);
+    throw new RuleError("RATE_REQUIRED", `No NBC rate can be established for ${date}. Enter the rate by hand.`, 409);
   }
-  return { rate: official.rate, source: "NBC", effectiveDate: official.effectiveDate };
+  return { rate: official.rate.rate, source: "NBC", effectiveDate: official.rate.effectiveDate, basis: official.basis, forDate: date };
 }
 
 function syncAllocations(db: Database, invoiceId: string, perBilling: Map<string, number>, actor: string) {
@@ -414,9 +439,9 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
   const customer = customerSnapshot(input.customer);
   if (!customer.companyNameEn && !customer.companyNameKm) throw new RuleError("INVALID", "Enter the customer's legal name.", 400);
   const { lines, perBilling, projectIds } = prepareItems(db, input, null);
-  checkDiscountAndDeposit(input, lines.reduce((sum, line) => sum + line.amount, 0));
+  checkDiscountAndDeposit(input);
   const rate = resolveRate(db, input.invoiceDate, input.exchangeRate);
-  const totals = invoiceTotals({ lines, discount: input.discount, vatApplicable: input.vatApplicable !== false, exchangeRate: rate.rate, deposit: input.depositUsd });
+  const totals = totalsFor(input, lines, rate.rate);
   if (input.depositUsd && toCents(input.depositUsd) > toCents(totals.totalUsd)) {
     throw new RuleError("INVALID", "The deposit is more than the invoice total.", 400);
   }
@@ -459,12 +484,15 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
     subtotalUsd: totals.subtotalUsd,
     discount: totals.discountUsd > 0 ? input.discount ?? null : null,
     discountUsd: totals.discountUsd,
+    discountPolicy: totals.discountPolicy,
     taxableUsd: totals.taxableUsd,
     vatUsd: totals.vatUsd,
     totalUsd: totals.totalUsd,
     exchangeRate: rate.rate,
     exchangeRateSource: rate.source,
     exchangeRateEffectiveDate: rate.effectiveDate,
+    exchangeRateBasis: rate.basis,
+    exchangeRateForDate: rate.forDate,
     totalKhr: totals.totalKhr,
     depositUsd: totals.depositUsd,
     issuedAt: at,
@@ -503,11 +531,11 @@ export function editInvoice(db: Database, invoiceId: string, input: InvoiceInput
   const previous = JSON.parse(JSON.stringify(record)) as TaxInvoiceRecord;
   const { lines, perBilling, projectIds } = prepareItems(db, input, record.id);
   // The rate belongs to the invoice date: kept as saved unless the date changes.
-  checkDiscountAndDeposit(input, lines.reduce((sum, line) => sum + line.amount, 0));
+  checkDiscountAndDeposit(input);
   const rate = input.invoiceDate === record.invoiceDate
-    ? { rate: record.exchangeRate, source: record.exchangeRateSource, effectiveDate: record.exchangeRateEffectiveDate }
+    ? { rate: record.exchangeRate, source: record.exchangeRateSource, effectiveDate: record.exchangeRateEffectiveDate, basis: record.exchangeRateBasis, forDate: record.exchangeRateForDate }
     : resolveRate(db, input.invoiceDate, input.exchangeRate);
-  const totals = invoiceTotals({ lines, discount: input.discount, vatApplicable: input.vatApplicable !== false, exchangeRate: rate.rate, deposit: input.depositUsd });
+  const totals = totalsFor(input, lines, rate.rate);
   if (input.depositUsd && toCents(input.depositUsd) > toCents(totals.totalUsd)) {
     throw new RuleError("INVALID", "The deposit is more than the invoice total.", 400);
   }
@@ -531,12 +559,15 @@ export function editInvoice(db: Database, invoiceId: string, input: InvoiceInput
     subtotalUsd: totals.subtotalUsd,
     discount: totals.discountUsd > 0 ? input.discount ?? null : null,
     discountUsd: totals.discountUsd,
+    discountPolicy: totals.discountPolicy,
     taxableUsd: totals.taxableUsd,
     vatUsd: totals.vatUsd,
     totalUsd: totals.totalUsd,
     exchangeRate: rate.rate,
     exchangeRateSource: rate.source,
     exchangeRateEffectiveDate: rate.effectiveDate,
+    exchangeRateBasis: rate.basis,
+    exchangeRateForDate: rate.forDate,
     totalKhr: totals.totalKhr,
     depositUsd: totals.depositUsd,
     revision: (record.revision ?? 1) + 1,
@@ -611,7 +642,7 @@ export function addInvoicePayment(db: Database, input: { invoiceId: string; amou
   if (!Number.isFinite(amount) || amount <= 0) throw new RuleError("INVALID", "A payment must be more than zero.", 400);
   const paidOn = input.paidOn || new Date().toISOString().slice(0, 10);
   if (!isIsoDate(paidOn)) throw new RuleError("INVALID", "Payment date must be a valid date.", 400);
-  const state = collection(record.totalUsd, db.invoicePayments!.filter((p) => p.invoiceId === record.id));
+  const state = invoiceCollection(db, record);
   if (toCents(amount) > toCents(state.outstandingUsd)) {
     throw new RuleError("OVERPAYMENT", `Only $${state.outstandingUsd.toFixed(2)} is outstanding.`, 409);
   }

@@ -11,7 +11,7 @@ import { useAction } from "@/components/use-action";
 import { selectableClients } from "@/lib/billing-v2/board";
 import { serviceForItem, serviceLabel } from "@/lib/billing-v2/services";
 import { storedFinalUnitPrice } from "@/lib/billing-v2/board";
-import { invoiceTotals, invoiceUnitPrice, roundMoney, toCents } from "@/lib/billing-v5/calculation";
+import { DISCOUNT_VAT_POLICY, invoiceTotals, invoiceUnitPrice, roundMoney, toCents } from "@/lib/billing-v5/calculation";
 import { useV5T } from "@/lib/billing-v5/i18n";
 import { billingState, customerFor, unappliedProjectDeposit } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
@@ -39,6 +39,13 @@ type CustomerFields = { companyNameEn: string; companyNameKm: string; addressEn:
 let keySeq = 0;
 const nextKey = () => `row-${++keySeq}`;
 const num = (value: string) => (value.trim() === "" ? Number.NaN : Number(value));
+
+/** `/api/v5/exchange-rate?date=`: the NBC rate for that date, or null (enter by hand). */
+type RateAnswer = { rate: ExchangeRate | null; basis: "EXACT" | "IN_EFFECT" | null; fetched: boolean | null };
+const rateState = (answer: RateAnswer) =>
+  answer.rate
+    ? { value: String(answer.rate.rate), source: "NBC" as const, effectiveDate: answer.rate.effectiveDate, state: "found" as const }
+    : { value: "", source: "MANUAL" as const, effectiveDate: null, state: answer.fetched === false ? ("failed" as const) : ("none" as const) };
 
 function rowAmount(row: Row): number {
   if (row.billingItemId) return roundMoney(num(row.amount));
@@ -115,7 +122,7 @@ export function InvoiceEditor(props: EditorProps) {
     const suggested = unappliedProjectDeposit(snapshot, projectIds);
     return suggested > 0 ? suggested.toFixed(2) : "";
   });
-  const [rate, setRate] = useState<{ value: string; source: "NBC" | "MANUAL"; effectiveDate: string | null; state: "kept" | "loading" | "found" | "none" }>(
+  const [rate, setRate] = useState<{ value: string; source: "NBC" | "MANUAL"; effectiveDate: string | null; state: "kept" | "loading" | "found" | "none" | "failed" }>(
     editing
       ? { value: String(editing.exchangeRate), source: editing.exchangeRateSource, effectiveDate: editing.exchangeRateEffectiveDate, state: "kept" }
       : { value: "", source: "NBC", effectiveDate: null, state: "loading" },
@@ -134,13 +141,9 @@ export function InvoiceEditor(props: EditorProps) {
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
     setRate((current) => ({ ...current, state: "loading" }));
-    api<{ rate: ExchangeRate | null }>(`/api/v5/exchange-rate?date=${date}`)
-      .then((result) => {
-        setRate(result.rate
-          ? { value: String(result.rate.rate), source: "NBC", effectiveDate: result.rate.effectiveDate, state: "found" }
-          : { value: "", source: "MANUAL", effectiveDate: null, state: "none" });
-      })
-      .catch(() => setRate({ value: "", source: "MANUAL", effectiveDate: null, state: "none" }));
+    api<RateAnswer>(`/api/v5/exchange-rate?date=${date}`)
+      .then((result) => setRate(rateState(result)))
+      .catch(() => setRate({ value: "", source: "MANUAL", effectiveDate: null, state: "failed" }));
   };
   const changeDate = (date: string) => {
     setInvoiceDate(date);
@@ -150,14 +153,11 @@ export function InvoiceEditor(props: EditorProps) {
   useEffect(() => {
     if (editing) return;
     let live = true;
-    api<{ rate: ExchangeRate | null }>(`/api/v5/exchange-rate?date=${phnomPenhDate()}`)
+    api<RateAnswer>(`/api/v5/exchange-rate?date=${phnomPenhDate()}`)
       .then((result) => {
-        if (!live) return;
-        setRate((current) => current.state !== "loading" ? current : result.rate
-          ? { value: String(result.rate.rate), source: "NBC", effectiveDate: result.rate.effectiveDate, state: "found" }
-          : { value: "", source: "MANUAL", effectiveDate: null, state: "none" });
+        if (live) setRate((current) => (current.state !== "loading" ? current : rateState(result)));
       })
-      .catch(() => live && setRate((current) => (current.state !== "loading" ? current : { value: "", source: "MANUAL", effectiveDate: null, state: "none" })));
+      .catch(() => live && setRate((current) => (current.state !== "loading" ? current : { value: "", source: "MANUAL", effectiveDate: null, state: "failed" })));
     return () => {
       live = false;
     };
@@ -165,7 +165,8 @@ export function InvoiceEditor(props: EditorProps) {
 
   const lines = rows.map((row) => ({ amount: Number.isFinite(rowAmount(row)) ? rowAmount(row) : 0 }));
   const rateNumber = num(rate.value);
-  const discount = discountType === "NONE" ? null : { type: discountType, value: num(discountValue) };
+  // No discount until accounting confirms where it sits relative to VAT.
+  const discount = discountType === "NONE" || !DISCOUNT_VAT_POLICY ? null : { type: discountType, value: num(discountValue) };
   const totals = invoiceTotals({
     lines,
     discount: discount && Number.isFinite(discount.value) ? discount : null,
@@ -193,7 +194,7 @@ export function InvoiceEditor(props: EditorProps) {
     return null;
   };
   if (rows.some((row) => rowError(row))) errors.push(t("editor.lines"));
-  if (discount && (!(discount.value >= 0) || (discount.type === "PERCENT" && discount.value > 100) || (discount.type === "FIXED" && toCents(discount.value) > toCents(totals.subtotalUsd)))) errors.push(t("editor.discount"));
+  if (discount && (!(discount.value >= 0) || (discount.type === "PERCENT" && discount.value > 100) || (discount.type === "FIXED" && toCents(discount.value) > toCents(totals.discountUsd)))) errors.push(t("editor.discount"));
   if (deposit.trim() && !(num(deposit) >= 0 && toCents(num(deposit)) <= toCents(totals.totalUsd))) errors.push(t("editor.deposit"));
   const valid = errors.length === 0;
 
@@ -378,13 +379,17 @@ export function InvoiceEditor(props: EditorProps) {
                   <Input
                     inputMode="decimal"
                     value={rate.value}
-                    disabled={rate.state === "kept" || rate.state === "loading"}
-                    onChange={(event) => setRate({ value: event.target.value, source: "MANUAL", effectiveDate: null, state: "none" })}
+                    disabled={rate.state === "kept" || rate.state === "loading" || rate.state === "found"}
+                    onChange={(event) => setRate((current) => ({ value: event.target.value, source: "MANUAL", effectiveDate: null, state: current.state }))}
                     aria-invalid={!(rateNumber > 0) || undefined}
                     className={`tnum text-right ${!(rateNumber > 0) && rate.state !== "loading" ? "!border-danger" : ""}`}
                     data-testid="v5-rate-input"
                   />
-                  {rate.state === "none" && !rate.value && <span className="mt-1 block text-[12px] text-pending" data-testid="v5-rate-none">{t("editor.rateNone")}</span>}
+                  {(rate.state === "none" || rate.state === "failed") && (
+                    <span className="mt-1 block text-[12px] text-pending" data-testid="v5-rate-none">
+                      {t(rate.state === "failed" ? "editor.rateFailed" : "editor.rateNone", { date: invoiceDate })}
+                    </span>
+                  )}
                 </label>
                 <label className="flex items-center gap-2.5 sm:col-span-2">
                   <Checkbox checked={vatApplicable} onChange={setVatApplicable} label={t("prepare.vat")} />
@@ -453,7 +458,7 @@ export function InvoiceEditor(props: EditorProps) {
             <div className="grid content-start gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.discount")}</span>
-                <Select value={discountType} onChange={(event) => setDiscountType(event.target.value as typeof discountType)} data-testid="v5-discount-type">
+                <Select value={discountType} disabled={!DISCOUNT_VAT_POLICY} onChange={(event) => setDiscountType(event.target.value as typeof discountType)} data-testid="v5-discount-type">
                   <option value="NONE">{t("editor.discountNone")}</option>
                   <option value="FIXED">{t("editor.discountFixed")}</option>
                   <option value="PERCENT">{t("editor.discountPercent")}</option>
@@ -461,8 +466,11 @@ export function InvoiceEditor(props: EditorProps) {
               </label>
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-muted">&nbsp;</span>
-                <Input inputMode="decimal" value={discountValue} disabled={discountType === "NONE"} onChange={(event) => setDiscountValue(event.target.value)} className="tnum text-right" aria-label={t("editor.discount")} data-testid="v5-discount-value" />
+                <Input inputMode="decimal" value={discountValue} disabled={discountType === "NONE" || !DISCOUNT_VAT_POLICY} onChange={(event) => setDiscountValue(event.target.value)} className="tnum text-right" aria-label={t("editor.discount")} data-testid="v5-discount-value" />
               </label>
+              {!DISCOUNT_VAT_POLICY && (
+                <span className="-mt-1 block text-[12px] text-faint sm:col-span-2" data-testid="v5-discount-unavailable">{t("editor.discountUnavailable")}</span>
+              )}
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.deposit")}</span>
                 <Input inputMode="decimal" value={deposit} placeholder="0.00" onChange={(event) => setDeposit(event.target.value)} className="tnum text-right" data-testid="v5-deposit" />

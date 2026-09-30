@@ -436,6 +436,8 @@ export interface TaxInvoiceRecord {
   /** Invoice-level discount; absent on invoices issued before discounts existed. */
   discount?: InvoiceDiscount | null;
   discountUsd?: number;
+  /** Discount/VAT order the totals were calculated with (only when discounted). */
+  discountPolicy?: "DISCOUNT_BEFORE_VAT" | "DISCOUNT_AFTER_VAT" | null;
   /** Subtotal − discount: the amount VAT is charged on. */
   taxableUsd?: number;
   vatUsd: number;
@@ -443,6 +445,16 @@ export interface TaxInvoiceRecord {
   exchangeRate: number;
   exchangeRateSource: "NBC" | "MANUAL";
   exchangeRateEffectiveDate: string | null;
+  /**
+   * How the rate was established for the invoice date: EXACT (NBC rate with
+   * valid_date = invoice date), IN_EFFECT (NBC rate whose valid_date precedes
+   * the invoice date and that NBC still reported as current on or after it),
+   * or MANUAL (entered because no NBC rate could be established). Absent on
+   * invoices issued before this was recorded.
+   */
+  exchangeRateBasis?: "EXACT" | "IN_EFFECT" | "MANUAL";
+  /** The invoice date the rate was established for. */
+  exchangeRateForDate?: string;
   totalKhr: number;
   /** Deposit shown on the invoice (Grand Total − Deposit = Balance Due). */
   depositUsd?: number;

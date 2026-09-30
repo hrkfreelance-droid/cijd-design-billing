@@ -79,13 +79,23 @@ BillingAllocation · InvoicePayment (DEPOSIT | PAYMENT) · ExchangeRate · Invoi
   refuses over-allocation and double billing inside one Store transaction (optimistic
   version lock ⇒ race safe). Billing state: UNBILLED / PARTIALLY_INVOICED /
   FULLY_INVOICED / LEGACY_BILLED (billed in V3, not eligible) / NOT_READY.
-- **Discount** FIXED or PERCENT, applied **before VAT** (`DISCOUNT_ORDER`; no existing
-  rule — see Decisions).
+- **Discount** FIXED or PERCENT — **disabled until accounting decides the order**:
+  `DISCOUNT_VAT_POLICY = null` in `calculation.ts`. Both orders are implemented
+  (`DISCOUNT_BEFORE_VAT`, `DISCOUNT_AFTER_VAT`) but neither is a default; the server
+  refuses a discounted invoice (`DISCOUNT_POLICY_UNRESOLVED`) and the editor greys the
+  control out. Invoices without a discount: VAT 10% exactly as before.
 - **Deposit** on the invoice = a DEPOSIT payment; printed as Deposit, Balance Due =
   Grand Total − Deposit. Separate from billing allocation.
-- **Exchange rate follows the invoice date**: newest stored NBC rate on or before the date
-  (≤ 7 days old); re-read only when the date changes. No NBC rate → manual rate required,
-  stored as MANUAL. The V5 Worker cron refreshes NBC into V5's D1.
+- **Exchange rate follows the invoice date** (`officialRateForDate`, ontology.ts):
+  EXACT = stored NBC rate with valid_date = invoice date; IN_EFFECT = the previous
+  valid_date, only if NBC was seen still reporting it as latest on/after the invoice date
+  (Phnom Penh). **No look-back window.** Otherwise the editor says so and the rate is
+  entered by hand, saved as MANUAL with the invoice date (`exchangeRateForDate`,
+  `exchangeRateBasis`). MANUAL is refused when NBC has the rate (`RATE_AVAILABLE`). An edit
+  that keeps the date never changes the saved rate. NBC/MEF's API only returns the latest
+  rate, so V5's cron (and the editor, for today) stores it daily.
+- **Invoices marked paid before IMS** (ledger entry PAID) count as collected: a
+  read-only derived payment (`ledger:<id>`), nothing written.
 - **Edit**: every issue/edit/cancel writes an immutable revision (`v5_invoice_revisions`,
   insert-only with no-update/no-delete triggers) holding the previous snapshot. The
   number never changes; the first issue stays in `v5_tax_invoice_archive`.
@@ -101,7 +111,7 @@ BillingAllocation · InvoicePayment (DEPOSIT | PAYMENT) · ExchangeRate · Invoi
 ## Commands
 
 ```sh
-npm run test:unit        # 154 unit tests (V3 + V5 calculation, store, invoicing on real SQLite)
+npm run test:unit        # 159 unit tests (V3 + V5 calculation, store, invoicing on real SQLite)
 npm run dev:v5           # build V5 + fresh local D1 + wrangler dev on :8787
 PW_EXECUTABLE=/path/to/chromium npm run test:v5:e2e   # full browser E2E against :8787
 npm run deploy:v5        # deploy V5 (needs Cloudflare auth: wrangler login or API token)
@@ -189,10 +199,16 @@ Individual steps: `npm run deploy:v5`, `scripts/v5-smoke.sh <url>`,
 
 ## Decisions to confirm
 
-- **Discount is applied before VAT** (VAT on the discounted amount). No discount existed in
-  code or in the real invoices; change `DISCOUNT_ORDER` in `calculation.ts` if the
-  accountant says otherwise.
-- **QR**: the current template has no QR, so none was added.
+- **BLOCKER — Discount/VAT order** is unresolved (no discount in any branch, document or
+  in the 77 sheets of "Tax Invoice CIJD 2026" — V4 `work/tax-invoice-audit.json`). Set
+  `DISCOUNT_VAT_POLICY` in a reviewed commit once accounting decides; until then
+  discounts are off.
+- **QR — verified absent**: no QR asset, component, dependency or text in any branch
+  (V2–V5, main, gh-pages); the V4 template (`v4-app/src/ui/invoice-document.tsx`) has
+  only the logo image. Nothing was added. (The original .xlsx workbook's embedded
+  images were not in the repository and could not be checked.)
+- A weekend/holiday invoice date gets NBC's rate only if a check ran on that date
+  (the daily 08:00 cron); otherwise it is entered by hand.
 
 - **VAT not applicable** toggle prints VAT 0% (Khmer ០%). Default is 10%.
 - **Balance** is commercial (Final total, before VAT).

@@ -13,6 +13,7 @@
  */
 import { pendingProjects } from "../billing-v2/board";
 import { isHistoricalRecord } from "../derive";
+import { phnomPenhDate } from "../exchange-rate";
 import type {
   BillingAllocation,
   BillingItem,
@@ -32,6 +33,7 @@ type Data = Pick<Snapshot, "clients" | "projects" | "billingItems" | "serviceTyp
   customers?: Customer[];
   clientTaxProfiles?: ClientTaxProfile[];
   projectPayments?: Snapshot["projectPayments"];
+  invoices?: Snapshot["invoices"];
 };
 
 export interface BillingState extends BillingRemaining {
@@ -91,8 +93,38 @@ export function eligibleBilling(data: Data): BillingState[] {
 }
 
 export function invoiceCollection(data: Data, invoice: TaxInvoiceRecord): Collection & { payments: InvoicePayment[] } {
-  const payments = (data.invoicePayments ?? []).filter((payment) => payment.invoiceId === invoice.id);
+  const own = (data.invoicePayments ?? []).filter((payment) => payment.invoiceId === invoice.id);
+  const payments = [...own, ...ledgerPaid(data, invoice, own)];
   return { ...collection(invoice.status === "CANCELLED" ? 0 : invoice.totalUsd, payments), payments };
+}
+
+/** Id prefix of the read-only payment derived from a ledger entry marked paid. */
+export const LEDGER_PAYMENT_PREFIX = "ledger:";
+
+/**
+ * An invoice whose ledger entry was marked PAID before invoice management
+ * (Billing's "confirm payment") is collected in full: that status is the
+ * recorded fact. It shows as one read-only payment for what is otherwise
+ * outstanding; nothing is written, and the ledger entry is not touched.
+ */
+function ledgerPaid(data: Data, invoice: TaxInvoiceRecord, own: readonly InvoicePayment[]): InvoicePayment[] {
+  if (invoice.status === "CANCELLED" || !invoice.ledgerInvoiceId) return [];
+  const ledger = (data.invoices ?? []).find((entry) => entry.id === invoice.ledgerInvoiceId);
+  if (!ledger || ledger.status !== "PAID") return [];
+  const paid = collection(invoice.totalUsd, own);
+  if (paid.outstandingUsd <= 0) return [];
+  return [{
+    id: `${LEDGER_PAYMENT_PREFIX}${ledger.id}`,
+    invoiceId: invoice.id,
+    kind: "PAYMENT",
+    amount: paid.outstandingUsd,
+    paidOn: ledger.paymentDate ?? "",
+    note: ledger.paymentSlip ?? null,
+    createdAt: ledger.updatedAt,
+    createdBy: ledger.updatedBy,
+    voidedAt: null,
+    voidedBy: null,
+  }];
 }
 
 /** The Customer Master record for a client, or one derived from what V5 already knows. */
@@ -120,18 +152,42 @@ export function customerFor(data: Data, clientId: string): Customer {
 }
 
 /**
- * The official NBC rate for a date: the newest stored rate on or before it
- * (weekends and holidays use the last working day), but never one more than
- * `maxAgeDays` older than the date — then there is no official rate for it.
+ * The official NBC USD/KHR rate for an invoice date — never a guess.
+ *
+ * NBC/MEF's API (`data.mef.gov.kh/api/v1/realtime-api/exchange-rate`) only
+ * answers "the latest published rate", with `valid_date` = the date from which
+ * that rate applies (it can be tomorrow's working day, published the afternoon
+ * before). It cannot be asked for a past date. Each stored rate keeps in
+ * `fetchedAt` the last time NBC still reported it as its latest rate
+ * (`fetchAndStoreLatestOfficialRate` overwrites it on every successful check).
+ *
+ * 1. EXACT: a stored rate whose valid_date is the invoice date.
+ * 2. IN_EFFECT: the newest stored rate with valid_date before the invoice date,
+ *    ONLY when NBC was seen still reporting it as its latest rate on or after
+ *    the invoice date (Phnom Penh). Then no other rate applied that day
+ *    (weekends and holidays, the existing rule in HANDOFF_NBC_RATE_OPERATIONS).
+ * 3. Otherwise null: the rate cannot be established. There is no
+ *    look-back window — Accounting enters the rate by hand (MANUAL).
  */
-export function rateForDate(rates: readonly ExchangeRate[], date: string, maxAgeDays = 7): ExchangeRate | null {
-  const candidates = rates
-    .filter((rate) => rate.source === "NBC" && rate.currencyPair === "USD/KHR" && rate.effectiveDate <= date)
-    .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.fetchedAt.localeCompare(a.fetchedAt));
-  const best = candidates[0];
-  if (!best) return null;
-  const age = (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${best.effectiveDate}T00:00:00Z`)) / 86_400_000;
-  return age <= maxAgeDays ? best : null;
+export type RateBasis = "EXACT" | "IN_EFFECT";
+
+export function officialRateForDate(rates: readonly ExchangeRate[], date: string): { rate: ExchangeRate; basis: RateBasis } | null {
+  const official = rates.filter((rate) => rate.source === "NBC" && rate.currencyPair === "USD/KHR" && Number.isFinite(rate.rate) && rate.rate > 0);
+  const exact = official
+    .filter((rate) => rate.effectiveDate === date)
+    .sort((a, b) => b.fetchedAt.localeCompare(a.fetchedAt))[0];
+  if (exact) return { rate: exact, basis: "EXACT" };
+  const previous = official
+    .filter((rate) => rate.effectiveDate < date)
+    .sort((a, b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.fetchedAt.localeCompare(a.fetchedAt))[0];
+  if (!previous) return null;
+  const seen = Date.parse(previous.fetchedAt);
+  if (!Number.isFinite(seen) || phnomPenhDate(new Date(seen)) < date) return null;
+  return { rate: previous, basis: "IN_EFFECT" };
+}
+
+export function rateForDate(rates: readonly ExchangeRate[], date: string): ExchangeRate | null {
+  return officialRateForDate(rates, date)?.rate ?? null;
 }
 
 /** Deposits received on a project (V3 deposit + V5 project payments) not yet put on an invoice. */
