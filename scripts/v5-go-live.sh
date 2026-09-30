@@ -45,9 +45,10 @@ fi
 step "4/6 import into V5 and verify"
 V5_IMPORT_TOKEN=$(node -e 'console.log(require("crypto").randomBytes(32).toString("hex"))')
 export V5_IMPORT_TOKEN
-remove_token() { echo y | npx wrangler secret delete V5_IMPORT_TOKEN --name "$WORKER" >/dev/null 2>&1 || true; }
+remove_token() { echo y | npx wrangler secret delete V5_IMPORT_TOKEN --config dist/server/wrangler.json >/dev/null 2>&1 || true; }
 trap remove_token EXIT
-printf '%s' "$V5_IMPORT_TOKEN" | npx wrangler secret put V5_IMPORT_TOKEN --name "$WORKER"
+printf '%s' "$V5_IMPORT_TOKEN" | npx wrangler secret put V5_IMPORT_TOKEN --config dist/server/wrangler.json
+npx wrangler secret list --config dist/server/wrangler.json | grep -q '"name": "V5_IMPORT_TOKEN"' || { echo "V5_IMPORT_TOKEN was not attached to the deployed V5 Worker." >&2; exit 1; }
 for i in $(seq 1 20); do
   [ "$(curl -s -o /dev/null -w '%{http_code}' -H "authorization: Bearer $V5_IMPORT_TOKEN" "$V5_URL/api/v5/import")" = 200 ] && break
   sleep 3
