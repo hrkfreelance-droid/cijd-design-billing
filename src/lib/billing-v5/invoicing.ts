@@ -219,6 +219,7 @@ function prepareItems(db: Database, input: InvoiceInput, excludeInvoiceId: strin
   if (!Array.isArray(input.items) || input.items.length === 0) throw new RuleError("NO_ITEMS", "Add at least one line.", 400);
   if (input.items.length > MAX_INVOICE_ITEMS) throw new RuleError("TOO_MANY_LINES", `An invoice holds at most ${MAX_INVOICE_ITEMS} lines.`, 400);
   const ready = readyProjectIds(db as never);
+  const previous = excludeInvoiceId ? db.taxInvoices?.find((invoice) => invoice.id === excludeInvoiceId) : undefined;
   const lines: TaxInvoiceLine[] = [];
   const perBilling = new Map<string, number>();
   const projectIds: string[] = [];
@@ -234,6 +235,7 @@ function prepareItems(db: Database, input: InvoiceInput, excludeInvoiceId: strin
     if (!Number.isFinite(amount) || amount < 0) throw new RuleError("INVALID", `"${description}": amount must be zero or more.`, 400);
 
     let billingItemId: string | null = null;
+    let projectName: string | undefined;
     if (raw.billingItemId) {
       const item = db.billingItems.find((entry) => entry.id === raw.billingItemId && !entry.deletedAt);
       if (!item) throw new RuleError("NOT_FOUND", `Billing line ${raw.billingItemId} was not found.`, 404);
@@ -246,6 +248,10 @@ function prepareItems(db: Database, input: InvoiceInput, excludeInvoiceId: strin
       if (state.legacyBilled) throw new RuleError("ALREADY_BILLED", `"${item.description}" was already billed.`);
       if (state.state === "NOT_READY") throw new RuleError("NOT_READY", `"${item.description}" is not ready to bill yet.`, 409);
       billingItemId = item.id;
+      // A snapshot: an invoice being edited keeps the name it already printed
+      // for this billing line; a later project rename never reaches it.
+      const printed = previous?.lines.find((line) => line.billingItemId === item.id);
+      projectName = printed ? printed.projectName : project.name.trim() || undefined;
       perBilling.set(item.id, money((perBilling.get(item.id) ?? 0) + amount));
       if (!projectIds.includes(project.id)) projectIds.push(project.id);
     }
@@ -255,6 +261,7 @@ function prepareItems(db: Database, input: InvoiceInput, excludeInvoiceId: strin
       billingItemId,
       productId: product?.id ?? null,
       productCode: product?.productCode ?? null,
+      ...(projectName ? { projectName } : {}),
       description,
       quantity,
       unit: raw.unit?.trim() || product?.unit || null,

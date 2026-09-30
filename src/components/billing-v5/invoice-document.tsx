@@ -46,6 +46,8 @@ function Accounting({ value, blank = false }: { value?: number; blank?: boolean 
 }
 
 export const INVOICE_ROWS = 10;
+/** A line with its project name above the description is this much taller than a ruled row. */
+const PROJECT_LINE_ROWS = 0.5;
 
 export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
   // Ten ruled rows as on the workbook. Each extra totals row (discount,
@@ -53,7 +55,10 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
   // keeps its height; an invoice with more lines than fit flows onto a further
   // page (header repeated, totals and signatures kept together).
   const extras = ((invoice.discountUsd ?? 0) > 0 ? 1 : 0) + ((invoice.depositUsd ?? 0) > 0 ? 2 : 0);
-  const ruled = INVOICE_ROWS - extras;
+  // Lines that also print their project name are taller: they give up empty
+  // ruled rows too, so the page never outgrows A4.
+  const named = invoice.lines.filter((line) => line.projectName).length;
+  const ruled = INVOICE_ROWS - extras - Math.ceil(named * PROJECT_LINE_ROWS);
   const long = invoice.lines.length > ruled;
   const rows = [
     ...invoice.lines,
@@ -141,7 +146,10 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
             {rows.map((line, index) => (
               <tr key={line ? `${line.billingItemId}-${index}` : `empty-${index}`} data-testid={line ? "tax-invoice-line" : undefined}>
                 <td>{line ? index + 1 : ""}</td>
-                <td>{line?.description ?? ""}</td>
+                <td>
+                  {line?.projectName && <span className="line-project" data-testid="tax-invoice-line-project">{line.projectName}</span>}
+                  {line?.description ?? ""}
+                </td>
                 <td>{line ? line.quantity : ""}</td>
                 <td><Accounting value={line?.unitPrice} blank={!line} /></td>
                 <td><Accounting value={line?.amount} blank={!line} /></td>

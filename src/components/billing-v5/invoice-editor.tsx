@@ -163,6 +163,14 @@ export function InvoiceEditor(props: EditorProps) {
     };
   }, [editing]);
 
+  // The draft shows the project name the server will snapshot (an edit keeps the printed one).
+  const previewProjectName = (billingItemId: string | null | undefined) => {
+    if (!billingItemId) return undefined;
+    const printed = editing?.lines.find((line) => line.billingItemId === billingItemId);
+    if (printed) return printed.projectName;
+    const item = snapshot.billingItems.find((entry) => entry.id === billingItemId);
+    return snapshot.projects.find((project) => project.id === item?.projectId)?.name.trim() || undefined;
+  };
   const lines = rows.map((row) => ({ amount: Number.isFinite(rowAmount(row)) ? rowAmount(row) : 0 }));
   const rateNumber = num(rate.value);
   const discount = discountType === "NONE" ? null : { type: discountType, value: num(discountValue) };
@@ -218,7 +226,7 @@ export function InvoiceEditor(props: EditorProps) {
   const view_: InvoiceView = {
     projectId: projectIds[0] ?? "", projectIds, clientId: customerId, invoiceNumber: editing?.invoiceNumber ?? "", invoiceDate,
     status: "ISSUED", customer, project: { name: "", note: "" },
-    lines: rows.map((row) => ({ billingItemId: row.billingItemId, productId: row.productId, description: row.description, quantity: num(row.quantity) || 0, unit: row.unit || null, unitPrice: roundMoney(num(row.unitPrice) || 0), amount: rowAmount(row) || 0 })),
+    lines: rows.map((row) => ({ billingItemId: row.billingItemId, productId: row.productId, projectName: previewProjectName(row.billingItemId), description: row.description, quantity: num(row.quantity) || 0, unit: row.unit || null, unitPrice: roundMoney(num(row.unitPrice) || 0), amount: rowAmount(row) || 0 })),
     vatApplicable, vatPercent: totals.vatPercent, subtotalUsd: totals.subtotalUsd, discount: totals.discountUsd > 0 ? discount : null,
     discountUsd: totals.discountUsd, taxableUsd: totals.taxableUsd, vatUsd: totals.vatUsd, totalUsd: totals.totalUsd,
     exchangeRate: rateNumber || 0, exchangeRateSource: rate.source, exchangeRateEffectiveDate: rate.effectiveDate, totalKhr: totals.totalKhr,

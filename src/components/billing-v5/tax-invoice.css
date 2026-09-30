@@ -43,6 +43,7 @@ body {
 .v5-invoice .invoice-lines thead tr:last-child { height: 5.84mm; font-size: 8pt; }
 .v5-invoice .invoice-lines thead th { text-align: center; }
 .v5-invoice .invoice-lines tbody tr { height: 5.63mm; }
+.v5-invoice .invoice-lines .line-project { display: block; height: 2.6mm; overflow: hidden; font-size: 6.5pt; line-height: 2.6mm; color: #444; white-space: nowrap; text-overflow: ellipsis; }
 .v5-invoice .invoice-lines tbody td:first-child, .v5-invoice .invoice-lines tbody td:nth-child(3) { text-align: center; }
 .v5-invoice .invoice-lines tbody td:nth-child(4), .v5-invoice .invoice-lines tbody td:nth-child(5), .v5-invoice .invoice-lines tfoot td { text-align: right; }
 .v5-invoice .accounting { display: flex; align-items: baseline; justify-content: space-between; gap: 1mm; }

@@ -314,6 +314,12 @@ export interface TaxInvoiceLine {
   /** The Product Master entry it was picked from, if any. */
   productId?: string | null;
   productCode?: string | null;
+  /**
+   * Name of the project the billing line belongs to, as it was when the line
+   * was first put on this invoice. Absent on free lines and on invoices issued
+   * before it was recorded (those print the description only).
+   */
+  projectName?: string;
   description: string;
   quantity: number;
   unit?: string | null;

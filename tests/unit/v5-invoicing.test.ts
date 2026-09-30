@@ -86,6 +86,40 @@ test("several billings of one customer on one invoice; another customer's billin
   await rejectsWith(t.issue([{ billingItemId: c.line.id, amount: 50 }]), "DIFFERENT_CUSTOMER");
 });
 
+test("each billed line keeps its project name as issued; free lines and older invoices have none", async () => {
+  const t = await env();
+  const a = await t.billing("TEST Project A", 100);
+  const b = await t.billing("TEST Project B", 250);
+  const invoice = await t.issue([
+    { billingItemId: a.line.id, amount: 100, description: "Printing" },
+    { billingItemId: b.line.id, amount: 250, description: "A3 custom" },
+    { description: "TEST free", quantity: 1, unitPrice: 5 },
+  ]);
+  assert.deepEqual(invoice.lines.map((line) => [line.projectName, line.description]), [["TEST Project A", "Printing"], ["TEST Project B", "A3 custom"], [undefined, "TEST free"]]);
+  assert.deepEqual([invoice.subtotalUsd, invoice.vatUsd, invoice.totalUsd], [355, 35.5, 390.5]); // totals as before
+
+  // A later project rename never reaches the issued invoice, nor an edit of it.
+  await t.open().updateProject(a.project.id, { name: "TEST Project A renamed" });
+  assert.equal((await t.snap()).taxInvoices!.find((i) => i.id === invoice.id)!.lines[0].projectName, "TEST Project A");
+  const edited = await t.open().editInvoice(invoice.id, {
+    customerId: t.client.id, customer: CUSTOMER, actor: "TEST", invoiceDate: invoice.invoiceDate,
+    items: invoice.lines.map((line) => ({ ...line, billingItemId: line.billingItemId ?? undefined })),
+  });
+  assert.equal(edited.lines[0].projectName, "TEST Project A");
+
+  // An invoice issued before project names were recorded keeps printing the description only.
+  await t.edit((db) => {
+    const stored = db.taxInvoices!.find((i) => i.id === invoice.id)!;
+    for (const line of stored.lines) delete line.projectName;
+  });
+  const legacy = await t.open().editInvoice(invoice.id, {
+    customerId: t.client.id, customer: CUSTOMER, actor: "TEST", invoiceDate: invoice.invoiceDate,
+    items: invoice.lines.map((line) => ({ ...line, projectName: undefined, billingItemId: line.billingItemId ?? undefined })),
+  });
+  assert.deepEqual(legacy.lines.map((line) => line.projectName), [undefined, undefined, undefined]);
+  assert.equal(legacy.totalUsd, 390.5);
+});
+
 test("partial billing: $1,000 → $300 → $300 → $400 → fully invoiced; over-allocation refused", async () => {
   const t = await env();
   const { line } = await t.billing("TEST Website", 1000);

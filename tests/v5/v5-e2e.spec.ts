@@ -235,6 +235,8 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(editor.getByTestId("tax-invoice-number")).toHaveText("DRAFT");
   await expect(editor.getByTestId("tax-invoice-discount")).toContainText("(20.00)");
   await expect(editor.getByTestId("tax-invoice-balance-due")).toContainText("1,237.60");
+  // Several projects on one invoice: each billed line shows its project above the description.
+  await expect(editor.getByTestId("tax-invoice-line-project")).toHaveText([PROJECT, PROJECT, WEBSITE]);
   await shot(page, "05-preview-en-light");
   await editor.getByTestId("v5-issue").click();
   // The free line is not in the Product List: asked, never added silently.
@@ -250,6 +252,8 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   const doc = page.getByTestId("tax-invoice-sheet");
   await expect(doc.getByTestId("tax-invoice-number")).toHaveText(number);
   await expect(doc.getByTestId("tax-invoice-line")).toHaveCount(5);
+  await expect(doc.getByTestId("tax-invoice-line-project")).toHaveText([PROJECT, PROJECT, WEBSITE]); // product and free lines: none
+  await expect(doc.getByTestId("tax-invoice-line").nth(0)).toContainText("Logo design");
   await expect(doc.getByTestId("tax-invoice-subtotal")).toContainText("1,236.00");
   await expect(doc.getByTestId("tax-invoice-discount")).toContainText("(20.00)");
   await expect(doc.getByTestId("tax-invoice-vat")).toContainText("121.60");
@@ -304,6 +308,13 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(page.getByTestId("v5-print")).toBeHidden();
   await expect(page.getByTestId("v5-invoice-payments")).toBeHidden();
   await page.screenshot({ path: `${SHOTS}/07-print-media.png`, fullPage: true });
+  // The two-line project cells never push the signatures off the one A4 page.
+  const fit = await page.evaluate(() => {
+    const sheet = document.querySelector(".invoice-sheet")!.getBoundingClientRect();
+    const signatures = document.querySelector(".invoice-signatures")!.getBoundingClientRect();
+    return { inside: signatures.bottom <= sheet.bottom + 0.5, long: document.querySelector(".invoice-sheet")!.classList.contains("long") };
+  });
+  expect(fit).toEqual({ inside: true, long: false });
   const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
   writeFileSync(`${SHOTS}/tax-invoice.pdf`, pdf);
   expect((pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(1);
