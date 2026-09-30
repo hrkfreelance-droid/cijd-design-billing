@@ -38,12 +38,13 @@ exec > >(tee -a "$RUN/deploy.log") 2>&1
 export WRANGLER_LOG_PATH="${WRANGLER_LOG_PATH:-.wrangler/logs}"
 
 step() { printf '\n==== %s\n' "$*"; }
-die() { echo "STOP: $*" >&2; exit 1; }
 PRE_VERSION=""
+DEPLOYING=0
+die() { echo "STOP: $*" >&2; [ "$DEPLOYING" = 1 ] && rollback_hint; exit 1; }
 rollback_hint() {
   echo
   echo "ROLLBACK (V5 only):"
-  [ -n "$PRE_VERSION" ] && echo "  npx wrangler rollback $PRE_VERSION --name $WORKER"
+  [ -n "$PRE_VERSION" ] && [ "$PRE_VERSION" != none ] && echo "  npx wrangler rollback $PRE_VERSION --name $WORKER"
   echo "  or: git checkout $TAG && npm run deploy:v5"
   echo "  Migration 0002 only added v5_invoice_revisions; the old code runs on it unchanged."
   echo "Reports: $RUN"
@@ -83,7 +84,6 @@ latest_version() { node -e 'const d=JSON.parse(require("fs").readFileSync(proces
 PRE_VERSION=$(latest_version "$RUN/pre-deployments-$WORKER.json" | cut -d+ -f1)
 echo "V5 Worker $WORKER version before: $PRE_VERSION"
 echo "V3 version: $(latest_version "$RUN/pre-deployments-$V3_WORKER.json")   V4 version: $(latest_version "$RUN/pre-deployments-$V4_WORKER.json")"
-trap rollback_hint ERR
 
 DB_ID=$(npx wrangler d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const db=JSON.parse(s).find(d=>d.name===process.argv[1]);console.log(db?db.uuid:"")})' "$DB")
 [ -n "$DB_ID" ] || die "D1 '$DB' does not exist: V5 was never deployed. Run scripts/v5-go-live.sh (first deploy + V3 import) instead."
@@ -94,6 +94,8 @@ npm run -s v5:reconcile -- --save "$V5_URL" "$RUN/before.json"
 for u in "$V3_URL/office-v3" "$V4_URL/"; do echo "GET $u → $(curl -s -m 30 -o /dev/null -w '%{http_code}' "$u")"; done
 
 step "4/7 deploy V5 only"
+DEPLOYING=1
+trap rollback_hint ERR
 scripts/deploy-v5.sh
 
 step "5/7 migrations and data reconciliation"
