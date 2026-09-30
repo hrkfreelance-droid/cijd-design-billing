@@ -386,6 +386,26 @@ function upsertCustomerMaster(db: Database, customerId: string, fields: TaxInvoi
   if (!same) saveCustomer(db, { id: customerId, ...fields, actor });
 }
 
+/**
+ * Clients named "TEST …" are test records. Their invoices are numbered in a
+ * separate TEST-CIJDTI series, so testing on the live V5 never uses up (or
+ * leaves gaps in) the real CIJDTI sequence.
+ */
+export function isTestCustomer(name: string): boolean {
+  return /^TEST\b/i.test(name.trim());
+}
+
+export const TEST_NUMBER_PREFIX = "TEST-";
+
+function nextInvoiceNumber(db: Database, year: number, test: boolean): string {
+  const numbers = db.taxInvoices!.map((invoice) => invoice.invoiceNumber);
+  if (!test) return nextTaxInvoiceNumber(year, numbers);
+  const testNumbers = numbers.filter((n) => n.startsWith(TEST_NUMBER_PREFIX)).map((n) => n.slice(TEST_NUMBER_PREFIX.length));
+  const prefix = `CIJDTI${year}`;
+  const max = testNumbers.filter((n) => n.startsWith(prefix)).reduce((m, n) => Math.max(m, Number(n.slice(prefix.length)) || 0), 0);
+  return `${TEST_NUMBER_PREFIX}${prefix}${String(max + 1).padStart(3, "0")}`;
+}
+
 export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecord {
   ensureCollections(db);
   const client = db.clients.find((entry) => entry.id === input.customerId);
@@ -405,7 +425,7 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
   // number ever used (cancelled ones included). Unique under the D1 lock and
   // the archive's UNIQUE(invoice_number).
   const year = Number(input.invoiceDate.slice(0, 4));
-  const invoiceNumber = nextTaxInvoiceNumber(year, db.taxInvoices!.map((invoice) => invoice.invoiceNumber));
+  const invoiceNumber = nextInvoiceNumber(db, year, isTestCustomer(client.name));
   const at = now();
   const id = newId();
 

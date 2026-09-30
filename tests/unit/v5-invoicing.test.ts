@@ -30,7 +30,7 @@ async function env() {
   await rate("2026-09-29", 4105);
   await rate("2026-12-30", 4110);
   await rate("2027-01-04", 4120);
-  const client = await open().createClient({ name: "TEST Customer" });
+  const client = await open().createClient({ name: "Unit Customer" });
   /** A ready project with one Design line at `amount`. */
   const billing = async (name: string, amount: number, clientId = client.id) => {
     const project = await open().createProject({ clientId, name });
@@ -225,6 +225,17 @@ test("numbers run per year: 2026 continues after the paper series, 2027 restarts
   const d = await free("2027-01-04");
   const e = await free("2027-01-04");
   assert.deepEqual([a, b, c, d, e].map((i) => i.invoiceNumber), ["CIJDTI2026081", "CIJDTI2026082", "CIJDTI2026083", "CIJDTI2027001", "CIJDTI2027002"]);
+});
+
+test("TEST customers are numbered in their own series and never touch the real sequence", async () => {
+  const t = await env();
+  const testClient = await t.open().createClient({ name: "TEST E2E Customer" });
+  const testInvoice = (date: string) =>
+    t.open().issueInvoice({ customerId: testClient.id, invoiceDate: date, customer: CUSTOMER, items: [{ description: "TEST", quantity: 1, unitPrice: 1 }], actor: "TEST" });
+  assert.equal((await testInvoice("2026-09-29")).invoiceNumber, "TEST-CIJDTI2026001");
+  assert.equal((await testInvoice("2026-09-29")).invoiceNumber, "TEST-CIJDTI2026002");
+  assert.equal((await t.issue([{ description: "Real", quantity: 1, unitPrice: 1 }])).invoiceNumber, "CIJDTI2026081");
+  assert.equal((await testInvoice("2027-01-04")).invoiceNumber, "TEST-CIJDTI2027001");
 });
 
 test("master edits never reach issued invoices", async () => {

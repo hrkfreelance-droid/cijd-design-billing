@@ -12,7 +12,10 @@ export type InvoiceView = Omit<TaxInvoiceRecord, "id" | "ledgerInvoiceId" | "iss
   draft?: boolean;
 };
 
-const usd = (value: number) => value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usd = (value: number) =>
+  value < 0
+    ? `(${Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+    : value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const khr = (value: number | null) => (value == null ? "—" : value.toLocaleString("en-US", { maximumFractionDigits: 0 }));
 
 function dateText(value: string) {
@@ -44,14 +47,23 @@ function Accounting({ value, blank = false }: { value?: number; blank?: boolean 
 export const INVOICE_ROWS = 10;
 
 export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
+  // Ten ruled rows as on the workbook. Each extra totals row (discount,
+  // deposit, balance due) takes the place of one empty ruled row, so the page
+  // keeps its height; an invoice with more lines than fit flows onto a further
+  // page (header repeated, totals and signatures kept together).
+  const extras = ((invoice.discountUsd ?? 0) > 0 ? 1 : 0) + ((invoice.depositUsd ?? 0) > 0 ? 2 : 0);
+  const ruled = INVOICE_ROWS - extras;
+  const long = invoice.lines.length > ruled;
   const rows = [
     ...invoice.lines,
-    ...Array.from({ length: Math.max(0, INVOICE_ROWS - invoice.lines.length) }, () => null),
-  ].slice(0, INVOICE_ROWS);
+    ...Array.from({ length: Math.max(0, ruled - invoice.lines.length) }, () => null),
+  ];
+  const discount = invoice.discountUsd ?? 0;
+  const deposit = invoice.depositUsd ?? 0;
   const customer = invoice.customer;
   return (
     <div className="v5-invoice">
-      <article className="invoice-sheet" data-testid="tax-invoice-sheet">
+      <article className={`invoice-sheet${long ? " long" : ""}`} data-testid="tax-invoice-sheet">
         <header className="invoice-company">
           <div className="company-name">
             <Image src="/assets/cijd-logo.jpg" alt="CIJD" width={339} height={63} priority unoptimized />
@@ -140,6 +152,12 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
               <th colSpan={4}><span className="khmer">សរុប</span><small>Sub Total</small></th>
               <td data-testid="tax-invoice-subtotal"><Accounting value={invoice.subtotalUsd} /></td>
             </tr>
+            {discount > 0 && (
+              <tr className="extra">
+                <th colSpan={4}><span className="khmer">បញ្ចុះតម្លៃ</span><small>Discount{invoice.discount?.type === "PERCENT" ? ` (${invoice.discount.value}%)` : ""}</small></th>
+                <td data-testid="tax-invoice-discount"><Accounting value={-discount} /></td>
+              </tr>
+            )}
             <tr>
               <th colSpan={4}>
                 <span className="khmer">អាករលើតម្លៃបន្ថែម {khmerDigits(invoice.vatPercent)}%</span>
@@ -155,6 +173,18 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
               <th colSpan={4}><span className="khmer">សរុបរួមជារៀល</span><small>Grand Total in Riel</small></th>
               <td data-testid="tax-invoice-total-khr">{khr(invoice.totalKhr)}</td>
             </tr>
+            {deposit > 0 && (
+              <>
+                <tr className="extra">
+                  <th colSpan={4}><span className="khmer">ប្រាក់កក់</span><small>Deposit</small></th>
+                  <td data-testid="tax-invoice-deposit"><Accounting value={-deposit} /></td>
+                </tr>
+                <tr className="extra">
+                  <th colSpan={4}><span className="khmer">ប្រាក់ត្រូវបង់នៅសល់</span><small>Balance Due</small></th>
+                  <td data-testid="tax-invoice-balance-due"><Accounting value={Math.round((invoice.totalUsd - deposit) * 100) / 100} /></td>
+                </tr>
+              </>
+            )}
           </tfoot>
         </table>
 

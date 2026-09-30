@@ -54,13 +54,54 @@ are summed in integer cents; KHR = USD × rate, half-up to the riel (V4's arithm
 Template = V4's `InvoiceDocument` (workbook sheet CIJDTI2026080): same Khmer/English
 text, CIJD VATIN, bank details, signatures. Rendered only from the frozen record.
 Khmer fonts are self-hosted (`@fontsource/noto-sans-khmer`, `@fontsource/moul`).
-Numbers: `CIJDTI{year}{seq}`, continuing after the paper series (2026 starts at 081);
-editable, unique in V5. Cancel keeps the record and its number.
+Numbers: `CIJDTI{year}{seq}`, continuing after the paper series (2026 starts at 081,
+2027 restarts at 001). Assigned by the server, **immutable, never reused**. Clients whose
+name starts with `TEST` get their own `TEST-CIJDTI{year}{seq}` series, so tests never
+consume a real number. Cancel keeps the record and its number; nothing is ever deleted.
+
+PDF: the V4 layout, plus Discount, Deposit and Balance Due rows (Khmer labels
+បញ្ចុះតម្លៃ / ប្រាក់កក់ / ប្រាក់ត្រូវបង់នៅសល់) and a larger signature area. These rows take the place
+of empty ruled rows, so an invoice with up to 10 lines prints on **one A4 page**. With
+more lines the sheet grows (`.long`) and prints on several pages, with the table header
+repeated and the signatures kept together.
+
+## Invoice management (IMS, 2026-09-30)
+
+Model (`src/lib/types.ts`, `src/lib/billing-v5/ontology.ts`, `invoicing.ts`):
+Customer · Product · Billing (project) · Billing line · Invoice · Invoice item ·
+BillingAllocation · InvoicePayment (DEPOSIT | PAYMENT) · ExchangeRate · InvoiceRevision.
+
+- **Masters**: Customer (code C0001…, same id as the V3 client) and Product (P0001…).
+  A free invoice line is added to Products only when the user answers "Save to Product
+  List?" — never automatically.
+- **One customer per invoice**, several billings allowed (`DIFFERENT_CUSTOMER` refused).
+- **Partial billing**: an item may bill part of a line ($1000 → 300/300/400). The server
+  refuses over-allocation and double billing inside one Store transaction (optimistic
+  version lock ⇒ race safe). Billing state: UNBILLED / PARTIALLY_INVOICED /
+  FULLY_INVOICED / LEGACY_BILLED (billed in V3, not eligible) / NOT_READY.
+- **Discount** FIXED or PERCENT, applied **before VAT** (`DISCOUNT_ORDER`; no existing
+  rule — see Decisions).
+- **Deposit** on the invoice = a DEPOSIT payment; printed as Deposit, Balance Due =
+  Grand Total − Deposit. Separate from billing allocation.
+- **Exchange rate follows the invoice date**: newest stored NBC rate on or before the date
+  (≤ 7 days old); re-read only when the date changes. No NBC rate → manual rate required,
+  stored as MANUAL. The V5 Worker cron refreshes NBC into V5's D1.
+- **Edit**: every issue/edit/cancel writes an immutable revision (`v5_invoice_revisions`,
+  insert-only with no-update/no-delete triggers) holding the previous snapshot. The
+  number never changes; the first issue stays in `v5_tax_invoice_archive`.
+- **Payments**: several per invoice; voided with a reason, never deleted; overpayment
+  refused; Collected when paid ≥ total.
+- **Invoice list**: search (number / customer / amount), year and status filters.
+- Existing V5 invoices are back-filled on load (deterministic allocation and revision ids).
+- UI: `/office-v5/accounting?view=to-invoice|invoices|customers|products`,
+  editor modal `invoice-editor.tsx`, invoice page with Payments, Billings and History.
+- Migration `migrations-v5/0002_v5_invoice_management.sql` (additive only), applied by
+  `npm run deploy:v5` (`wrangler d1 migrations apply --remote`).
 
 ## Commands
 
 ```sh
-npm run test:unit        # 135 unit tests (108 V3 + V5 calculation + V5 store on real SQLite)
+npm run test:unit        # 154 unit tests (V3 + V5 calculation, store, invoicing on real SQLite)
 npm run dev:v5           # build V5 + fresh local D1 + wrangler dev on :8787
 PW_EXECUTABLE=/path/to/chromium npm run test:v5:e2e   # full browser E2E against :8787
 npm run deploy:v5        # deploy V5 (needs Cloudflare auth: wrangler login or API token)
@@ -131,6 +172,11 @@ Individual steps: `npm run deploy:v5`, `scripts/v5-smoke.sh <url>`,
 
 ## Rollback (V5 only — V3 and V4 are never involved)
 
+- IMS rollback point: branch `backup/v5-pre-invoice-management-20260930` (pushed) and
+  tag `v5-pre-invoice-management-20260930` (local; push from an authorised machine).
+  Redeploy that code with `npm run deploy:v5`. Migration 0002 only adds a table, so the
+  old code runs on the migrated D1 unchanged.
+
 - Code: `npx wrangler deployments list --name cijd-design-billing-v5-preview`, then
   `npx wrangler rollback <version-id> --name cijd-design-billing-v5-preview`.
 - Data: D1 Time Travel —
@@ -142,6 +188,11 @@ Individual steps: `npm run deploy:v5`, `scripts/v5-smoke.sh <url>`,
 - Close the import door at any time: `npx wrangler secret delete V5_IMPORT_TOKEN --name cijd-design-billing-v5-preview`.
 
 ## Decisions to confirm
+
+- **Discount is applied before VAT** (VAT on the discounted amount). No discount existed in
+  code or in the real invoices; change `DISCOUNT_ORDER` in `calculation.ts` if the
+  accountant says otherwise.
+- **QR**: the current template has no QR, so none was added.
 
 - **VAT not applicable** toggle prints VAT 0% (Khmer ០%). Default is 10%.
 - **Balance** is commercial (Final total, before VAT).

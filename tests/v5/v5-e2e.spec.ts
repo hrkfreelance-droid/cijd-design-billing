@@ -1,55 +1,61 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 
-import { taxTotals } from "../../src/lib/billing-v5/calculation";
+import { invoiceTotals } from "../../src/lib/billing-v5/calculation";
 
 /**
- * CIJD Billing V5, end to end through the real screens:
- * Designer → Invoice Ready → Accounting → Tax Invoice → Print / PDF → reopen.
+ * CIJD Billing V5 — invoice management, end to end through the real screens.
  *
- * Expected figures (from the V5 calculation layer):
- *   Logo design  Qty 2  × $305.00 (manual)         = $610.00
- *   Flyers A5    Qty 500 × $0.24 cost = $120 → +30% = $156.00 (AUTO)
- *   Subtotal $766.00 · VAT 10% $76.60 · Grand total $842.60 · × rate (4105 locally → 3,458,873 KHR)
+ *   Designer: TEST project (Design 2 × $305 manual, Printing 500 × $0.24 AUTO → $156), memo, ready
+ *   Accounting: Customer Master, Product Master, two billings of one customer on one invoice
+ *     (the $1,000 website billed $300 of), a product line, a free line saved to the list,
+ *     discount, deposit, NBC rate for the invoice date → issue → PDF (one A4 page)
+ *   Payments: partial → edit (date kept → rate kept) → final → Collected
+ *   Partial billing: $1,000 → $300 / $300 / $400 → fully invoiced; over-allocation refused
+ *   Masters edited afterwards do not change the issued invoice
  *
- * Against the deployed V5 (V5_BASE_URL set) everything it creates is named
- * TEST, the invoice uses a TEST- number (no real CIJDTI number is used up), and
- * it cleans up after itself: the TEST invoice is cancelled, the TEST project
- * deleted and the TEST client deactivated. Imported V3 records are only read.
+ * Everything created is named TEST; invoices for TEST customers are numbered
+ * TEST-CIJDTI…, so a run on the live V5 never uses a real invoice number.
+ * On the deployed V5 (V5_BASE_URL) it cleans up after itself. Imported V3
+ * records are only read, and are checked unchanged at the end.
  */
 
 const SHOTS = process.env.V5_SHOTS_DIR ?? "test-results/v5-shots";
 const RUN = Date.now().toString(36).slice(-5);
 const DEPLOYED = !!process.env.V5_BASE_URL;
 const CLIENT = `TEST E2E Customer ${RUN}`;
+const OTHER = `TEST E2E Other ${RUN}`;
 const PROJECT = `TEST V5 E2E Brochure ${RUN}`;
-
-const MEMO = "Deliver by Friday.\nInvoice to the Khmer company name.";
+const WEBSITE = `TEST V5 E2E Website ${RUN}`;
+const OTHER_PROJECT = `TEST V5 E2E Other ${RUN}`;
+const PRODUCT = `TEST Hosting ${RUN}`;
+const FREE = `TEST Rush fee ${RUN}`;
+const MEMO = "Deliver by Friday. Invoice to the Khmer company name.";
 
 const problems: string[] = [];
+/** Requests the test sends on purpose to prove they are refused. */
+const expectedFailures = new Set<string>();
 
 function watch(page: Page) {
   page.on("console", (message) => {
-    if (message.type() === "error") problems.push(`console: ${message.text()}`);
+    if (message.type() === "error" && !(expectedFailures.size && /status of 409/.test(message.text()))) problems.push(`console: ${message.text()}`);
   });
   page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));
   page.on("response", (response) => {
-    if (response.status() >= 400) problems.push(`${response.status()} ${response.url()}`);
+    if (response.status() >= 400 && !expectedFailures.has(`${response.request().method()} ${new URL(response.url()).pathname}`)) {
+      problems.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+    }
   });
   page.on("requestfailed", (request) => {
-    // A navigation away cancels in-flight prefetches; that is not a failure.
     if (request.failure()?.errorText !== "net::ERR_ABORTED") problems.push(`failed ${request.url()} ${request.failure()?.errorText}`);
   });
 }
 
 async function prefs(page: Page, locale: "en" | "ja" | "kh", theme: "light" | "dark") {
-  await page.evaluate(
-    ([l, th]) => {
-      localStorage.setItem("cijd.locale", l);
-      localStorage.setItem("cijd.theme", th);
-    },
-    [locale, theme] as const,
-  );
+  await page.evaluate(([l, th]) => {
+    localStorage.setItem("cijd.locale", l);
+    localStorage.setItem("cijd.theme", th);
+  }, [locale, theme] as const);
 }
 
 async function shot(page: Page, name: string) {
@@ -57,292 +63,368 @@ async function shot(page: Page, name: string) {
   await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
 }
 
-async function state(page: Page) {
-  const body = await (await page.request.get("/api/state")).json();
-  return body.data as {
-    clients: { id: string; name: string }[];
-    projects: { id: string; name: string; clientId: string; note?: string }[];
-    billingItems: { id: string; projectId: string; description: string; quantity: number; unitPrice: number; amount: number; finalMode?: string; billingStatus: string; markupOverride?: number | null }[];
-    taxInvoices: { id: string; invoiceNumber: string; project: { name: string }; lines: unknown[]; totalKhr: number }[];
-  };
+type State = {
+  clients: { id: string; name: string; active: boolean }[];
+  projects: { id: string; name: string; clientId: string; note?: string }[];
+  billingItems: { id: string; projectId: string; description: string; quantity: number; unitPrice: number; amount: number; finalMode?: string; billingStatus: string }[];
+  taxInvoices: { id: string; invoiceNumber: string; status: string; clientId: string; invoiceDate: string; totalUsd: number; exchangeRate: number; customer: Record<string, string>; lines: Record<string, unknown>[]; revision?: number; discount?: unknown; vatApplicable: boolean }[];
+  products: { id: string; description: string; active: boolean }[];
+  invoicePayments: { id: string; invoiceId: string; kind: string; amount: number; voidedAt?: string | null }[];
+  billingAllocations: { billingItemId: string; invoiceId: string; amount: number; voidedAt?: string | null }[];
+};
+async function state(page: Page): Promise<State> {
+  return (await (await page.request.get("/api/state")).json()).data as State;
 }
 
-test("V5: designer → accounting → tax invoice → print → reopen", async ({ page }) => {
+async function readyProject(page: Page, clientId: string, name: string, items: Record<string, unknown>[]) {
+  const project = (await (await page.request.post("/api/projects", { data: { clientId, name } })).json()).data as { id: string };
+  for (const item of items) {
+    expect((await page.request.post("/api/billing-items", { data: { projectId: project.id, finalMode: "MANUAL", ...item } })).ok()).toBeTruthy();
+  }
+  expect((await page.request.patch(`/api/projects/${project.id}/readiness`, { data: { readiness: "READY" } })).ok()).toBeTruthy();
+  return project.id;
+}
+
+test("V5 invoice management: designer → accounting → invoice → payments → partial billing", async ({ page }) => {
+  test.setTimeout(300_000);
   watch(page);
   await page.goto("/office-v5");
   await prefs(page, "en", "light");
   await page.reload();
-  await expect(page.getByTestId("v2-brand")).toBeVisible();
-  // V5 shows V3's tabs plus Accounting.
-  const nav = page.getByRole("navigation", { name: "Billing" }).first();
-  await expect(nav.getByRole("link")).toHaveText(["Billing", "Accounting", "Archive"]);
+  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Billing", "Accounting", "Archive"]);
 
   /* ------------------------------------------- imported V3 data (read only) */
   const fingerprint = async () => {
-    const snap = await state(page);
-    const testProjects = new Set(snap.projects.filter((p) => p.name.startsWith("TEST")).map((p) => p.id));
+    const st = await state(page);
+    const tests = new Set(st.projects.filter((p) => p.name.startsWith("TEST")).map((p) => p.id));
     return JSON.stringify({
-      projects: snap.projects.filter((p) => !testProjects.has(p.id)).map((p) => [p.id, p.name, p.note ?? ""]).sort(),
-      lines: snap.billingItems.filter((i) => !testProjects.has(i.projectId)).map((i) => [i.id, i.quantity, i.unitPrice, i.amount, i.billingStatus, i.finalMode ?? null]).sort(),
+      projects: st.projects.filter((p) => !tests.has(p.id)).map((p) => [p.id, p.name, p.note ?? ""]).sort(),
+      lines: st.billingItems.filter((i) => !tests.has(i.projectId)).map((i) => [i.id, i.quantity, i.unitPrice, i.amount, i.billingStatus, i.finalMode ?? null]).sort(),
+      invoices: st.taxInvoices.filter((i) => !i.invoiceNumber.startsWith("TEST-")).map((i) => [i.id, i.invoiceNumber, i.status, i.totalUsd]).sort(),
     });
   };
   const importedBefore = await fingerprint();
-  const imported = (await state(page)).projects.filter((p) => !p.name.startsWith("TEST"));
-  if (process.env.V5_EXPECT_IMPORTED === "1") expect(imported.length, "V5 holds the imported V3 projects").toBeGreaterThan(0);
-  const importedRow = page.getByTestId("v2-project-row").filter({ hasNotText: "TEST" }).first();
-  if (await importedRow.count()) {
-    // Open an existing project exactly as a designer would, change nothing, close it.
-    await importedRow.getByTestId("v2-open-project").click();
-    const existing = page.getByRole("dialog");
-    await expect(existing.getByTestId("v2-view-mode")).toBeVisible();
-    await page.waitForTimeout(500); // let the sheet finish opening before the screenshot
-    await shot(page, "00-imported-project-en-light");
-    await page.keyboard.press("Escape");
-    await expect(existing).toHaveCount(0);
-  }
+  if (process.env.V5_EXPECT_IMPORTED === "1") expect((await state(page)).projects.filter((p) => !p.name.startsWith("TEST")).length).toBeGreaterThan(0);
 
   /* ---------------------------------------------------------- designer */
   await page.getByTestId("v2-new-project").click();
-  const client = page.getByTestId("v2-new-project-client");
+  const clientSelect = page.getByTestId("v2-new-project-client");
   if (!(await page.getByTestId("v2-new-client-name").isVisible())) {
-    await client.selectOption({ index: (await client.locator("option").count()) - 1 });
+    await clientSelect.selectOption({ index: (await clientSelect.locator("option").count()) - 1 });
   }
   await page.getByTestId("v2-new-client-name").fill(CLIENT);
   await page.getByTestId("v2-new-project-name").fill(PROJECT);
   await page.getByTestId("v2-create-project").click();
-
   await page.getByRole("button", { name: `Open ${PROJECT}` }).click();
   const dialog = page.getByRole("dialog", { name: PROJECT });
   await dialog.getByTestId("v2-modal-edit").click();
-  await dialog.getByTestId("v2-project-note").fill(MEMO.replace("\n", " "));
-
-  // Line 1: Design, manual unit price 305 × 2.
+  await dialog.getByTestId("v2-project-note").fill(MEMO);
   await dialog.getByTestId("v2-item-service-0").selectOption("DESIGN");
   await dialog.getByTestId("v2-item-description-0").fill("Logo design");
   await dialog.getByTestId("v2-item-quantity-0").fill("2");
   await dialog.getByTestId("v3-item-final-unit-0").fill("305");
-  await expect(dialog.getByTestId("v2-item-final-0")).toHaveValue("610.00");
-
-  // Line 2: Printing, 500 × $0.24 → cost $120 → Recommended $156 (AUTO).
   await dialog.getByTestId("v2-add-item").click();
   await dialog.getByTestId("v2-item-service-1").selectOption("PRINTING");
   await dialog.getByTestId("v2-item-description-1").fill("Flyers A5");
   await dialog.getByTestId("v2-item-quantity-1").fill("500");
   await dialog.getByTestId("v2-item-unit-cost-1").fill("0.24");
-  await expect(dialog.getByTestId("v2-item-recommended-1")).toHaveText("$156.00");
   await expect(dialog.getByTestId("v2-item-final-1")).toHaveValue("156.00");
-  await expect(dialog.getByTestId("v3-item-final-mode-1")).toHaveAttribute("data-mode", "auto");
   await expect(dialog.getByTestId("v2-modal-total")).toHaveText("$766.00");
-  await shot(page, "01-designer-edit-en-light");
   await dialog.getByTestId("v2-modal-save").click();
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
-
-  // Invoice ready.
   await dialog.getByTestId("v2-mark-ready").click();
   await expect(dialog.getByTestId("v2-detail-mark-billed")).toBeVisible();
-  await shot(page, "02-designer-ready-en-light");
   await page.keyboard.press("Escape");
 
-  // Stored explicitly and reproduced on reload.
-  let data = await state(page);
-  const project = data.projects.find((entry) => entry.name === PROJECT)!;
-  const lines = data.billingItems.filter((entry) => entry.projectId === project.id);
-  const design = lines.find((entry) => entry.description === "Logo design")!;
-  const print = lines.find((entry) => entry.description === "Flyers A5")!;
-  expect({ q: design.quantity, u: design.unitPrice, a: design.amount, m: design.finalMode }).toEqual({ q: 2, u: 305, a: 610, m: "MANUAL" });
-  expect({ q: print.quantity, a: print.amount, m: print.finalMode }).toEqual({ q: 500, a: 156, m: "AUTO" });
+  let st = await state(page);
+  const client = st.clients.find((c) => c.name === CLIENT)!;
+  // A second billing of the same customer: a $1,000 website, billed in parts.
+  const websiteProject = await readyProject(page, client.id, WEBSITE, [{ description: "Website", type: "DESIGN", serviceType: "DESIGN", quantity: 1, amount: 1000 }]);
+  // Another customer's work, to show one invoice bills one customer.
+  const other = (await (await page.request.post("/api/clients", { data: { name: OTHER } })).json()).data as { id: string };
+  await readyProject(page, other.id, OTHER_PROJECT, [{ description: "Other", type: "DESIGN", serviceType: "DESIGN", quantity: 1, amount: 50 }]);
+  st = await state(page);
+  const website = st.billingItems.find((i) => i.projectId === websiteProject)!;
 
-  /* -------------------------------------------------------- accounting */
-  await page.getByRole("link", { name: "Accounting" }).first().click();
-  await expect(page).toHaveURL(/\/office-v5\/accounting$/);
-  const row = page.getByTestId("v5-accounting-row").filter({ hasText: PROJECT });
-  await expect(row).toBeVisible();
-  await expect(row.getByTestId("v5-row-memo")).toContainText("Deliver by Friday.");
-  await expect(row.getByTestId("v5-row-total")).toHaveText("$766.00");
-  await shot(page, "03-accounting-en-light");
+  /* ------------------------------------------------------ customer master */
+  await page.goto("/office-v5/accounting?view=customers");
+  await page.getByTestId("v5-customer-search").fill(CLIENT);
+  await page.getByTestId("v5-customer-row").filter({ hasText: CLIENT }).click();
+  const customerSheet = page.getByTestId("v5-customer-sheet");
+  await customerSheet.getByTestId("v5-customer-companyNameEn").fill(`${CLIENT} Co., Ltd.`);
+  await customerSheet.getByTestId("v5-customer-companyNameKm").fill("ក្រុមហ៊ុន តេស្ត ឯ.ក");
+  await customerSheet.getByTestId("v5-customer-addressEn").fill("#12, Street 51, Phnom Penh");
+  await customerSheet.getByTestId("v5-customer-addressKm").fill("ផ្ទះលេខ ១២ ផ្លូវ៥១ រាជធានីភ្នំពេញ");
+  await customerSheet.getByTestId("v5-customer-telephone").fill("012 345 678");
+  await customerSheet.getByTestId("v5-customer-vatin").fill("K001-123456789");
+  await customerSheet.getByTestId("v5-customer-email").fill("test@example.com");
+  await customerSheet.getByTestId("v5-customer-save").click();
+  await expect(customerSheet).toHaveCount(0);
+  await shot(page, "01-customers-en-light");
 
-  await row.getByTestId("v5-open-project").click();
-  const sheet = page.getByTestId("v5-accounting-modal");
-  await expect(sheet.getByTestId("v5-memo")).toContainText("Deliver by Friday.");
-  await expect(sheet.getByTestId("v5-details")).toContainText(CLIENT);
-  await expect(sheet.getByTestId("v2-view-item")).toHaveCount(2);
+  /* ------------------------------------------------------- product master */
+  await page.getByRole("tab", { name: /Products/ }).click();
+  await page.getByTestId("v5-product-new").click();
+  const productSheet = page.getByTestId("v5-product-sheet");
+  await productSheet.getByTestId("v5-product-description").fill(PRODUCT);
+  await productSheet.getByTestId("v5-product-price").fill("120");
+  await productSheet.getByTestId("v5-product-unit").fill("year");
+  await productSheet.getByTestId("v5-product-save").click();
+  await expect(page.getByTestId("v5-product-row").filter({ hasText: PRODUCT })).toBeVisible();
+  await shot(page, "02-products-en-light");
 
-  // Payments: 766 − deposit 300 = 466.
-  await sheet.getByTestId("v5-payment-kind").selectOption("DEPOSIT");
-  await sheet.getByTestId("v5-payment-amount").fill("300");
-  await sheet.getByTestId("v5-payment-add").click();
-  await expect(sheet.getByTestId("v5-balance-remaining")).toHaveText("$466.00");
-  await shot(page, "04-accounting-project-en-light");
+  /* ------------------------------------------------- select and invoice */
+  await page.getByRole("tab", { name: /To invoice/ }).click();
+  const row = (name: string) => page.getByTestId("v5-accounting-row").filter({ hasText: name });
+  await expect(row(PROJECT).getByTestId("v5-row-memo")).toContainText("Deliver by Friday");
+  await row(OTHER_PROJECT).getByTestId("v5-select-project").click();
+  await row(PROJECT).getByTestId("v5-select-project").click(); // different customer: the selection switches
+  await expect(page.getByText("One invoice bills one customer")).toBeVisible();
+  await row(WEBSITE).getByTestId("v5-select-project").click();
+  await expect(page.getByTestId("v5-selected-total")).toHaveText("$1,766.00");
+  await shot(page, "03-to-invoice-selected-en-light");
+  await page.getByTestId("v5-create-invoice").click();
 
-  // Prepare Tax Invoice: known data is prefilled.
-  await sheet.getByTestId("v5-prepare").click();
-  await expect(sheet.getByTestId("v5-name-en")).toHaveValue(CLIENT);
-  await expect(sheet.getByTestId("v5-warn-vatin")).toBeVisible();
-
-  // Exchange rate: fetch NBC; if NBC cannot be reached, the rate is typed by hand.
-  const rateInput = sheet.getByTestId("v5-rate-input");
-  const before = await rateInput.inputValue();
-  const [fetched] = await Promise.all([
-    page.waitForResponse((response) => response.url().endsWith("/api/v5/exchange-rate")),
-    sheet.getByTestId("v5-fetch-rate").click(),
-  ]);
-  expect(fetched.ok()).toBeTruthy();
-  const nbcReached = ((await fetched.json()) as { data: { fetched: boolean } }).data.fetched;
-  if (nbcReached) {
-    await expect(sheet.getByTestId("v5-rate-source")).toContainText("NBC ·");
-    await expect(rateInput).not.toHaveValue("");
-  } else {
-    await expect(page.getByText("The NBC rate could not be fetched", { exact: false })).toBeVisible();
-    await rateInput.fill("");
+  const editor = page.getByTestId("v5-invoice-editor");
+  await expect(editor.getByTestId("v5-name-en")).toHaveValue(`${CLIENT} Co., Ltd.`); // from the Customer Master
+  await expect(editor.getByTestId("v5-vatin")).toHaveValue("K001-123456789");
+  await expect(editor.getByTestId("v5-editor-row")).toHaveCount(3);
+  await expect(editor.getByTestId("v5-invoice-number")).toHaveText("Assigned when issued");
+  // Bill $300 of the website now; more than is left is refused on screen.
+  const websiteIndex = await editor.locator('[data-testid^="v5-row-description-"]').evaluateAll((inputs) => inputs.findIndex((input) => (input as HTMLInputElement).value === "Website"));
+  await editor.getByTestId(`v5-row-amount-${websiteIndex}`).fill("1000.01");
+  await expect(editor.getByTestId(`v5-row-error-${websiteIndex}`)).toContainText("$1,000.00");
+  await expect(editor.getByTestId("v5-issue")).toBeDisabled();
+  await editor.getByTestId(`v5-row-amount-${websiteIndex}`).fill("300");
+  // A product line and a free line.
+  await editor.getByTestId("v5-add-line").click();
+  await editor.getByTestId("v5-row-description-3").fill(PRODUCT);
+  await expect(editor.getByTestId("v5-row-price-3")).toHaveValue("120.00");
+  await editor.getByTestId("v5-add-line").click();
+  await editor.getByTestId("v5-row-description-4").fill(FREE);
+  await editor.getByTestId("v5-row-price-4").fill("50");
+  // Discount, deposit, rate for the invoice date.
+  await editor.getByTestId("v5-discount-type").selectOption("FIXED");
+  await editor.getByTestId("v5-discount-value").fill("20");
+  await editor.getByTestId("v5-deposit").fill("100");
+  const rateInput = editor.getByTestId("v5-rate-input");
+  await expect(rateInput).toBeEnabled();
+  if (!(await rateInput.inputValue())) {
+    // No NBC rate stored for the date (NBC unreachable): typed by hand, saved as MANUAL.
+    await expect(editor.getByTestId("v5-rate-none")).toBeVisible();
     await rateInput.fill("4105");
-    await expect(sheet.getByTestId("v5-rate-source")).toHaveText("Entered by hand");
   }
   const rate = Number(await rateInput.inputValue());
-  const expectedKhr = taxTotals({ lines: [{ amount: 610 }, { amount: 156 }], vatApplicable: true, exchangeRate: rate }).totalKhr.toLocaleString("en-US");
-  console.log(`exchange rate: ${rate} (${nbcReached ? "NBC" : "manual fallback"}; prefilled "${before}") → ${expectedKhr} KHR`);
-
-  await sheet.getByTestId("v5-name-km").fill("ក្រុមហ៊ុន តេស្ត ឯ.ក");
-  await sheet.getByTestId("v5-address-en").fill("#12, Street 51, Phnom Penh");
-  await sheet.getByTestId("v5-address-km").fill("ផ្ទះលេខ ១២ ផ្លូវ៥១ រាជធានីភ្នំពេញ");
-  await sheet.getByTestId("v5-phone").fill("012 345 678");
-  await sheet.getByTestId("v5-vatin").fill("K001-123456789");
-  if (DEPLOYED) {
-    // The deployed V5 holds real data: never use up a real CIJDTI number.
-    await sheet.getByTestId("v5-invoice-number").fill(`TEST-${RUN}`);
-  } else {
-    expect(await sheet.getByTestId("v5-invoice-number").inputValue()).toMatch(/^CIJDTI\d{7}$/);
-  }
-  const invoiceNumber = await sheet.getByTestId("v5-invoice-number").inputValue();
-
-  await expect(sheet.getByTestId("v5-subtotal")).toHaveText("$766.00");
-  await expect(sheet.getByTestId("v5-vat")).toHaveText("$76.60");
-  await expect(sheet.getByTestId("v5-total-usd")).toHaveText("$842.60");
-  await expect(sheet.getByTestId("v5-total-khr")).toHaveText(`${expectedKhr} ៛`);
-  await shot(page, "05-prepare-en-light");
-
-  await sheet.getByTestId("v5-preview").click();
-  await expect(sheet.getByTestId("tax-invoice-number")).toHaveText("DRAFT");
-  await shot(page, "06-preview-en-light");
-
-  await sheet.getByTestId("v5-issue").click();
+  const expected = invoiceTotals({ lines: [{ amount: 610 }, { amount: 156 }, { amount: 300 }, { amount: 120 }, { amount: 50 }], discount: { type: "FIXED", value: 20 }, vatApplicable: true, exchangeRate: rate, deposit: 100 });
+  expect([expected.subtotalUsd, expected.taxableUsd, expected.vatUsd, expected.totalUsd, expected.balanceDueUsd]).toEqual([1236, 1216, 121.6, 1337.6, 1237.6]);
+  await expect(editor.getByTestId("v5-subtotal")).toHaveText("$1,236.00");
+  await expect(editor.getByTestId("v5-discount")).toHaveText("−$20.00");
+  await expect(editor.getByTestId("v5-vat")).toHaveText("$121.60");
+  await expect(editor.getByTestId("v5-total-usd")).toHaveText("$1,337.60");
+  await expect(editor.getByTestId("v5-total-khr")).toHaveText(`${expected.totalKhr.toLocaleString("en-US")} ៛`);
+  await expect(editor.getByTestId("v5-balance-due")).toHaveText("$1,237.60");
+  await shot(page, "04-editor-en-light");
+  await editor.getByTestId("v5-preview").click();
+  await expect(editor.getByTestId("tax-invoice-number")).toHaveText("DRAFT");
+  await expect(editor.getByTestId("tax-invoice-discount")).toContainText("(20.00)");
+  await expect(editor.getByTestId("tax-invoice-balance-due")).toContainText("1,237.60");
+  await shot(page, "05-preview-en-light");
+  await editor.getByTestId("v5-issue").click();
+  // The free line is not in the Product List: asked, never added silently.
+  await expect(page.getByTestId("v5-confirm-products")).toContainText(FREE);
+  await page.getByTestId("v5-confirm-products-confirm").click();
   await page.getByTestId("v5-confirm-issue-confirm").click();
 
-  /* ----------------------------------------------------------- invoice */
+  /* -------------------------------------------------------- the invoice */
   await expect(page).toHaveURL(/\/office-v5\/tax-invoices\/[\w-]+$/);
   const invoiceUrl = page.url();
+  const number = (await page.getByTestId("v5-invoice-heading").innerText()).trim();
+  expect(number).toMatch(/^TEST-CIJDTI\d{7}$/);
   const doc = page.getByTestId("tax-invoice-sheet");
-  await expect(doc.getByTestId("tax-invoice-number")).toHaveText(invoiceNumber);
-  const invoiceLines = doc.getByTestId("tax-invoice-line");
-  await expect(invoiceLines).toHaveCount(2);
-  await expect(invoiceLines.nth(0)).toContainText("Logo design");
-  await expect(invoiceLines.nth(0).locator("td").nth(2)).toHaveText("2");
-  await expect(invoiceLines.nth(0).locator("td").nth(3)).toContainText("305.00");
-  await expect(invoiceLines.nth(0).locator("td").nth(4)).toContainText("610.00");
-  await expect(invoiceLines.nth(1).locator("td").nth(2)).toHaveText("500");
-  await expect(invoiceLines.nth(1).locator("td").nth(3)).toContainText("0.31");
-  await expect(invoiceLines.nth(1).locator("td").nth(4)).toContainText("156.00");
-  await expect(doc.getByTestId("tax-invoice-subtotal")).toContainText("766.00");
-  await expect(doc.getByTestId("tax-invoice-vat")).toContainText("76.60");
-  await expect(doc.getByTestId("tax-invoice-total-usd")).toContainText("842.60");
-  await expect(doc.getByTestId("tax-invoice-total-khr")).toHaveText(expectedKhr);
-  await expect(doc.getByTestId("tax-invoice-customer")).toContainText("K001-123456789");
+  await expect(doc.getByTestId("tax-invoice-number")).toHaveText(number);
+  await expect(doc.getByTestId("tax-invoice-line")).toHaveCount(5);
+  await expect(doc.getByTestId("tax-invoice-subtotal")).toContainText("1,236.00");
+  await expect(doc.getByTestId("tax-invoice-discount")).toContainText("(20.00)");
+  await expect(doc.getByTestId("tax-invoice-vat")).toContainText("121.60");
+  await expect(doc.getByTestId("tax-invoice-total-usd")).toContainText("1,337.60");
+  await expect(doc.getByTestId("tax-invoice-total-khr")).toHaveText(expected.totalKhr.toLocaleString("en-US"));
+  await expect(doc.getByTestId("tax-invoice-deposit")).toContainText("(100.00)");
+  await expect(doc.getByTestId("tax-invoice-balance-due")).toContainText("1,237.60");
   await expect(doc).toContainText("វិក្កយបត្រអាករ");
-  await expect(doc).toContainText("TAX INVOICE");
-  await expect(doc).toContainText("K002-901900787");
   await expect(doc).toContainText("Account No : 29000314877717");
   await expect(doc).toContainText("Seller's Signature & Name");
-
-  // Khmer is drawn with a real Khmer face, not boxes.
   await page.evaluate(() => document.fonts.ready);
-  const khmer = await page.evaluate(() => ({
-    noto: document.fonts.check('12px "Noto Sans Khmer"', "វិក្កយបត្រ"),
-    moul: document.fonts.check('12px "Moul"', "វិក្កយបត្រ"),
-  }));
-  expect(khmer).toEqual({ noto: true, moul: true });
-  await shot(page, "07-invoice-en-light");
+  expect(await page.evaluate(() => document.fonts.check('12px "Noto Sans Khmer"', "វិក្កយបត្រ"))).toBe(true);
+  await expect(page.getByTestId("v5-outstanding")).toContainText("$1,237.60"); // the deposit counts as paid
+  await shot(page, "06-invoice-en-light");
 
-  // Print / Save PDF: only the invoice, one A4 page.
+  // Print / Save PDF: only the invoice, one A4 page even with discount and deposit rows.
   await page.emulateMedia({ media: "print" });
   await expect(page.getByTestId("v5-print")).toBeHidden();
-  await page.screenshot({ path: `${SHOTS}/08-print-media.png`, fullPage: true });
+  await expect(page.getByTestId("v5-invoice-payments")).toBeHidden();
+  await page.screenshot({ path: `${SHOTS}/07-print-media.png`, fullPage: true });
   const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
   writeFileSync(`${SHOTS}/tax-invoice.pdf`, pdf);
-  const pages = (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
-  expect(pages).toBe(1);
+  expect((pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(1);
   await page.emulateMedia({ media: "screen" });
 
-  /* ------------------------------------------------------- persistence */
-  // Later edits to the project do not reach the issued invoice.
-  const renamed = await page.request.patch(`/api/projects/${project.id}`, { data: { name: `${PROJECT} (renamed)` } });
-  expect(renamed.ok()).toBeTruthy();
+  // A long invoice keeps every line at full size and flows onto a second page.
+  const longInvoice = await page.request.post("/api/v5/tax-invoices", {
+    data: {
+      customerId: client.id, invoiceDate: (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!.invoiceDate,
+      customer: { companyNameEn: `${CLIENT} Co., Ltd.` }, exchangeRate: { rate: 4105, source: "MANUAL" },
+      items: Array.from({ length: 12 }, (_, i) => ({ description: `TEST long line ${i + 1}`, quantity: 1, unitPrice: 10 })),
+    },
+  });
+  expect(longInvoice.ok()).toBeTruthy();
+  const longId = ((await longInvoice.json()).data as { id: string }).id;
+  await page.goto(`/office-v5/tax-invoices/${longId}`);
+  await expect(page.getByTestId("tax-invoice-line")).toHaveCount(12);
+  await page.emulateMedia({ media: "print" });
+  const longPdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
+  writeFileSync(`${SHOTS}/tax-invoice-long.pdf`, longPdf);
+  expect((longPdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(2);
+  await page.emulateMedia({ media: "screen" });
   await page.goto(invoiceUrl);
-  await expect(page.getByTestId("v5-invoice-heading")).toHaveText(invoiceNumber);
-  await expect(page.getByTestId("v5-invoice-status")).toHaveText("Issued");
-  await expect(page.getByTestId("tax-invoice-total-khr")).toHaveText(expectedKhr);
-  data = await state(page);
-  const issued = data.taxInvoices.find((entry) => entry.invoiceNumber === invoiceNumber)!;
-  expect(issued.project.name).toBe(PROJECT);
-  expect(issued.lines).toHaveLength(2);
-  // The project itself is intact and billed.
-  expect(data.billingItems.filter((entry) => entry.projectId === project.id).map((entry) => [entry.amount, entry.billingStatus]).sort()).toEqual([
-    [156, "INVOICED"],
-    [610, "INVOICED"],
-  ]);
 
-  // Back to Accounting: gone from the queue, listed as issued; Archive has it too.
-  await page.getByTestId("v5-invoice-back").click();
-  await expect(page.getByTestId("v5-accounting-row").filter({ hasText: PROJECT })).toHaveCount(0);
-  await expect(page.getByTestId("v5-issued-row").filter({ hasText: invoiceNumber })).toBeVisible();
-  await page.getByRole("link", { name: "Archive" }).first().click();
-  await expect(page.getByText(`${PROJECT} (renamed)`).first()).toBeVisible();
-  await expect(page.getByTestId("v5-issued-row").filter({ hasText: invoiceNumber })).toBeVisible();
-  await page.getByTestId("v5-issued-row").filter({ hasText: invoiceNumber }).click();
-  await expect(page.getByTestId("tax-invoice-number")).toHaveText(invoiceNumber);
+  /* --------------------------------------------------------- payments */
+  await page.getByTestId("v5-invoice-payment-amount").fill("1300");
+  await expect(page.getByTestId("v5-invoice-payment-add")).toBeDisabled(); // more than outstanding
+  await page.getByTestId("v5-invoice-payment-amount").fill("800");
+  await page.getByTestId("v5-invoice-payment-add").click();
+  await expect(page.getByTestId("v5-outstanding")).toContainText("$437.60");
+  await expect(page.getByTestId("v5-invoice-status")).toHaveText("Partly paid");
 
-  /* ------------------------------------------- languages and themes */
+  /* ------------------------------------------------------------- edit */
+  const rateBefore = (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!.exchangeRate;
+  await page.getByTestId("v5-invoice-edit").click();
+  const edit = page.getByTestId("v5-invoice-editor");
+  await expect(edit.getByTestId("v5-invoice-number")).toHaveText(number); // shown, not editable
+  await expect(edit.getByTestId("v5-rate-source")).toHaveText("Kept from the saved invoice (date unchanged)");
+  // A date with no stored rate asks for one; going back to the saved date restores the saved rate.
+  const savedDate = await edit.getByTestId("v5-invoice-date").inputValue();
+  await edit.getByTestId("v5-invoice-date").fill("2020-01-06");
+  await expect(edit.getByTestId("v5-rate-none")).toBeVisible();
+  await edit.getByTestId("v5-invoice-date").fill(savedDate);
+  await expect(edit.getByTestId("v5-rate-source")).toHaveText("Kept from the saved invoice (date unchanged)");
+  const freeIndex = await edit.locator('[data-testid^="v5-row-description-"]').evaluateAll((inputs, free) => inputs.findIndex((input) => (input as HTMLInputElement).value === free), FREE);
+  await edit.getByTestId(`v5-row-price-${freeIndex}`).fill("60");
+  await edit.getByTestId("v5-edit-reason").fill("TEST rush fee corrected");
+  await edit.getByTestId("v5-issue").click();
+  await expect(edit).toHaveCount(0);
+  let saved = (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!;
+  expect([saved.exchangeRate, saved.revision, saved.totalUsd]).toEqual([rateBefore, 2, 1348.6]); // (1246 − 20) × 1.1
+  await expect(page.getByTestId("v5-revision")).toHaveCount(2);
+  await expect(page.getByTestId("v5-invoice-history")).toContainText("TEST rush fee corrected");
+  await expect(page.getByTestId("v5-outstanding")).toContainText("$448.60");
+  await page.getByTestId("v5-invoice-payment-amount").fill("448.60");
+  await page.getByTestId("v5-invoice-payment-add").click();
+  await expect(page.getByTestId("v5-invoice-status")).toHaveText("Collected");
+  await expect(page.getByTestId("v5-outstanding")).toContainText("$0.00");
+  await shot(page, "08-invoice-collected-en-light");
+
+  /* --------------------------------------------------- partial billing */
+  const left = async () => {
+    const s = await state(page);
+    return Math.round((1000 - s.billingAllocations.filter((a) => a.billingItemId === website.id && !a.voidedAt).reduce((sum, a) => sum + a.amount, 0)) * 100) / 100;
+  };
+  expect(await left()).toBe(700);
+  await page.goto("/office-v5/accounting");
+  await expect(row(WEBSITE)).toContainText("Partly invoiced $300.00 / $1,000.00");
+  await expect(row(WEBSITE).getByTestId("v5-row-total")).toHaveText("$700.00");
+  await expect(row(PROJECT)).toHaveCount(0); // fully invoiced
+  const bill = (amount: number) =>
+    page.request.post("/api/v5/tax-invoices", {
+      data: {
+        customerId: client.id, invoiceDate: savedDate, customer: { companyNameEn: `${CLIENT} Co., Ltd.` },
+        exchangeRate: { rate, source: "MANUAL" }, items: [{ billingItemId: website.id, description: "Website", quantity: 1, unitPrice: amount, amount }],
+      },
+    });
+  expect((await bill(300)).ok()).toBeTruthy();
+  expect(await left()).toBe(400);
+  const over = await bill(400.01);
+  expect([over.status(), (await over.json()).code]).toEqual([409, "OVER_ALLOCATION"]);
+  expect((await bill(400)).ok()).toBeTruthy();
+  expect(await left()).toBe(0);
+  const again = await bill(1);
+  expect([again.status(), (await again.json()).code]).toEqual([409, "OVER_ALLOCATION"]); // no double billing
+  await page.reload();
+  await expect(row(WEBSITE)).toHaveCount(0);
+
+  /* ----------------------------------------------------- invoice list */
+  await page.getByRole("tab", { name: /Invoices/ }).click();
+  await page.getByTestId("v5-invoice-search").fill(number);
+  const listed = page.getByTestId("v5-issued-row").filter({ hasText: number });
+  await expect(listed).toHaveCount(1);
+  await expect(listed.getByTestId("v5-row-status")).toHaveText("Collected");
+  await page.getByTestId("v5-invoice-search").fill(WEBSITE);
+  await page.getByTestId("v5-invoice-status-filter").selectOption("UNPAID");
+  await expect(page.getByTestId("v5-issued-row")).toHaveCount(2); // the two further website invoices
+  await shot(page, "09-invoice-list-en-light");
+
+  /* ------------------------------ masters edited later: invoice unchanged */
+  const productId = (await state(page)).products.find((p) => p.description === PRODUCT)!.id;
+  expect((await page.request.patch(`/api/v5/products/${productId}`, { data: { description: `${PRODUCT} XL`, defaultUnitPrice: 999 } })).ok()).toBeTruthy();
+  expect((await page.request.patch(`/api/v5/customers/${client.id}`, { data: { companyNameEn: "TEST Renamed Co." } })).ok()).toBeTruthy();
+  saved = (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!;
+  expect(saved.customer.companyNameEn).toBe(`${CLIENT} Co., Ltd.`);
+  expect(saved.lines.map((l) => l.description)).toContain(PRODUCT);
+  expect((await state(page)).products.some((p) => p.description === FREE)).toBe(true); // saved when asked
+
+  /* -------------------------------------------- languages, themes, phone */
   for (const [locale, theme] of [["ja", "light"], ["ja", "dark"], ["en", "dark"], ["kh", "light"]] as const) {
     await prefs(page, locale, theme);
-    for (const [path, name] of [["/office-v5", "billing"], ["/office-v5/accounting", "accounting"], ["/office-v5/archive", "archive"], [invoiceUrl, "invoice"]] as const) {
+    for (const [path, name] of [["/office-v5", "billing"], ["/office-v5/accounting?view=invoices", "invoices"], ["/office-v5/accounting?view=customers", "customers"], [invoiceUrl, "invoice"]] as const) {
       await page.goto(path);
       await expect(page.locator("html")).toHaveAttribute("lang", locale === "kh" ? "km" : locale);
       if (theme === "dark") await expect(page.locator("html")).toHaveClass(/dark/);
       await page.waitForLoadState("networkidle");
-      await shot(page, `09-${name}-${locale}-${theme}`);
+      await shot(page, `10-${name}-${locale}-${theme}`);
     }
   }
   await prefs(page, "ja", "light");
   await page.goto("/office-v5/accounting");
   await expect(page.getByRole("heading", { name: "経理" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "経理" }).first()).toBeVisible();
-
-  // Phone width: no horizontal scroll; the A4 sheet scales down to fit.
   await page.setViewportSize({ width: 390, height: 844 });
-  for (const [path, name] of [["/office-v5/accounting", "accounting"], [invoiceUrl, "invoice"]] as const) {
+  for (const [path, name] of [["/office-v5/accounting", "accounting"], ["/office-v5/accounting?view=invoices", "invoices"], [invoiceUrl, "invoice"]] as const) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow, `${name} scrolls sideways`).toBeLessThanOrEqual(0);
-    await shot(page, `10-${name}-phone`);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${name} scrolls sideways`).toBeLessThanOrEqual(0);
+    await shot(page, `11-${name}-phone`);
   }
-
-  /* ------------------------------------------------------------- cleanup */
-  // TEST data leaves nothing behind but a cancelled TEST- invoice record.
   await page.setViewportSize({ width: 1360, height: 900 });
   await prefs(page, "en", "light");
-  await page.goto(invoiceUrl);
-  await page.getByTestId("v5-invoice-cancel").click();
-  await page.getByTestId("v5-cancel-reason").fill("E2E test cleanup");
-  await page.getByTestId("v5-confirm-cancel-confirm").click();
-  await expect(page.getByTestId("v5-invoice-status")).toHaveText("Cancelled");
-  const removed = await page.request.delete(`/api/billing-v2/projects/${project.id}`);
-  expect(removed.ok()).toBeTruthy();
-  const testClient = (await state(page)).clients.find((entry) => entry.name === CLIENT)!;
-  expect((await page.request.patch(`/api/clients/${testClient.id}`, { data: { active: false } })).ok()).toBeTruthy();
-  await page.goto("/office-v5");
-  await expect(page.getByText(PROJECT)).toHaveCount(0);
+
+  /* ------------------------------------------------------------ cleanup */
+  if (DEPLOYED) {
+    // Nothing is deleted: TEST payments are voided, TEST invoices cancelled
+    // (they keep their TEST- numbers), TEST projects removed from Billing,
+    // TEST customers and products deactivated.
+    const s = await state(page);
+    const testInvoices = s.taxInvoices.filter((i) => i.invoiceNumber.startsWith("TEST-") && [client.id, other.id].includes(i.clientId) && i.status === "ISSUED");
+    for (const payment of s.invoicePayments.filter((p) => testInvoices.some((i) => i.id === p.invoiceId) && !p.voidedAt && p.kind === "PAYMENT")) {
+      expect((await page.request.post(`/api/v5/invoice-payments/${payment.id}/void`, { data: { reason: "E2E test cleanup" } })).ok()).toBeTruthy();
+    }
+    for (const invoice of testInvoices) {
+      if (s.invoicePayments.some((p) => p.invoiceId === invoice.id && p.kind === "DEPOSIT" && !p.voidedAt)) {
+        const full = (await state(page)).taxInvoices.find((i) => i.id === invoice.id)!;
+        const patched = await page.request.patch(`/api/v5/tax-invoices/${invoice.id}`, {
+          data: { customerId: full.clientId, invoiceDate: full.invoiceDate, customer: full.customer, items: full.lines, discount: full.discount, vatApplicable: full.vatApplicable, depositUsd: 0, reason: "E2E test cleanup" },
+        });
+        expect(patched.ok()).toBeTruthy();
+      }
+      expect((await page.request.post(`/api/v5/tax-invoices/${invoice.id}/cancel`, { data: { reason: "E2E test cleanup" } })).ok()).toBeTruthy();
+    }
+    for (const project of (await state(page)).projects.filter((p) => [client.id, other.id].includes(p.clientId))) {
+      expect((await page.request.delete(`/api/billing-v2/projects/${project.id}`)).ok()).toBeTruthy();
+    }
+    for (const id of [client.id, other.id]) expect((await page.request.patch(`/api/clients/${id}`, { data: { active: false } })).ok()).toBeTruthy();
+    for (const product of (await state(page)).products.filter((p) => p.description.startsWith("TEST ") && p.description.includes(RUN))) {
+      expect((await page.request.patch(`/api/v5/products/${product.id}`, { data: { active: false } })).ok()).toBeTruthy();
+    }
+  }
 
   // Imported records were only read.
   expect(await fingerprint()).toBe(importedBefore);
-
   expect(problems, problems.join("\n")).toEqual([]);
 });

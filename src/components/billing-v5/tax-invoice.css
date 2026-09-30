@@ -52,10 +52,23 @@ body {
 .v5-invoice .invoice-lines tfoot th { position: relative; padding-right: 39mm; text-align: right; }
 .v5-invoice .invoice-lines tfoot th span, .v5-invoice .invoice-lines tfoot th small { display: block; font-size: 8pt; }
 .v5-invoice .invoice-lines tfoot td { font-weight: 700; }
-.v5-invoice .bank-accounts { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; height: 27mm; padding-top: 3mm; font-size: 8pt; line-height: 1.35; }
+.v5-invoice .bank-accounts { display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; min-height: 24mm; padding-top: 3mm; font-size: 8pt; line-height: 1.35; }
 .v5-invoice .bank-accounts p { margin: 0; }
 .v5-invoice .invoice-signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 22mm; text-align: center; font-size: 8pt; }
-.v5-invoice .invoice-signatures div { padding-top: 5mm; border-top: 1px solid #000; }
+/* Room to sign and stamp above each line (was 5mm of text under a rule). */
+/* The sheet is one A4 page: the signatures sit at its foot, and every bit of
+   room left above them is space to sign and stamp (at least 12mm). */
+.v5-invoice .invoice-sheet { display: flex; flex-direction: column; height: 297mm; }
+.v5-invoice .invoice-sheet > * { flex-shrink: 0; }
+.v5-invoice .invoice-signatures { margin-top: auto; padding-top: 12mm; }
+.v5-invoice .invoice-sheet.long { height: auto; }
+.v5-invoice .invoice-sheet.long .invoice-signatures { margin-top: 0; padding-top: 24mm; }
+.v5-invoice .invoice-signatures div { padding-top: 2.5mm; border-top: 1px solid #000; }
+.v5-invoice .invoice-lines tfoot tr.extra { height: 8.5mm; }
+.v5-invoice .invoice-sheet.long { min-height: 0; overflow: visible; }
+.v5-invoice .invoice-lines thead { display: table-header-group; }
+.v5-invoice .invoice-lines tr { break-inside: avoid; }
+.v5-invoice .invoice-lines tfoot, .v5-invoice .bank-accounts { break-inside: avoid; }
 .v5-invoice .invoice-signatures b, .v5-invoice .invoice-signatures span { display: block; }
 .v5-invoice .invoice-signatures span { font-family: Arial, sans-serif; font-weight: 400; }
 .v5-invoice .cancelled-watermark { position: absolute; z-index: 3; top: 128mm; left: 25mm; transform: rotate(-24deg); color: #b6202042; font-size: 42pt; font-weight: 900; letter-spacing: .12em; pointer-events: none; }
@@ -68,12 +81,16 @@ body {
 @media print {
   @page { size: A4 portrait; margin: 0; }
   /* The hidden page around the sheet must not add a blank second page. */
-  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; height: 297mm !important; overflow: hidden !important; }
+  html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  /* One A4 page for a normal invoice: the hidden page around it adds no blank page. */
+  html:not(:has(.invoice-sheet.long)), html:not(:has(.invoice-sheet.long)) body { height: 297mm !important; max-height: 297mm !important; overflow: hidden !important; }
+  .v5-invoice .invoice-sheet:not(.long) { height: 296.5mm; min-height: 0; }
   body * { visibility: hidden; }
   .v5-print-root, .v5-print-root * { visibility: visible; }
   .v5-print-root { position: absolute; inset: 0 auto auto 0; width: 210mm; }
+  .v5-invoice .invoice-sheet.long { min-height: 0; }
   .v5-no-print { display: none !important; }
-  .v5-invoice .invoice-sheet { width: 210mm; min-height: 297mm; margin: 0; box-shadow: none; page-break-after: avoid; }
+  .v5-invoice .invoice-sheet { width: 210mm; margin: 0; box-shadow: none; page-break-after: avoid; }
   .v5-invoice .invoice-signatures { break-inside: avoid; page-break-inside: avoid; }
   .v5-invoice-fit, .v5-invoice-fit > .v5-invoice { transform: none !important; height: auto !important; width: auto !important; overflow: visible !important; }
 }
