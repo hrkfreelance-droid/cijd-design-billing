@@ -11,7 +11,7 @@ import { useAction } from "@/components/use-action";
 import { selectableClients } from "@/lib/billing-v2/board";
 import { serviceForItem, serviceLabel } from "@/lib/billing-v2/services";
 import { storedFinalUnitPrice } from "@/lib/billing-v2/board";
-import { DISCOUNT_VAT_POLICY, invoiceTotals, invoiceUnitPrice, roundMoney, toCents } from "@/lib/billing-v5/calculation";
+import { invoiceTotals, invoiceUnitPrice, roundMoney, toCents } from "@/lib/billing-v5/calculation";
 import { useV5T } from "@/lib/billing-v5/i18n";
 import { billingState, customerFor, unappliedProjectDeposit } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
@@ -165,8 +165,7 @@ export function InvoiceEditor(props: EditorProps) {
 
   const lines = rows.map((row) => ({ amount: Number.isFinite(rowAmount(row)) ? rowAmount(row) : 0 }));
   const rateNumber = num(rate.value);
-  // No discount until accounting confirms where it sits relative to VAT.
-  const discount = discountType === "NONE" || !DISCOUNT_VAT_POLICY ? null : { type: discountType, value: num(discountValue) };
+  const discount = discountType === "NONE" ? null : { type: discountType, value: num(discountValue) };
   const totals = invoiceTotals({
     lines,
     discount: discount && Number.isFinite(discount.value) ? discount : null,
@@ -458,7 +457,7 @@ export function InvoiceEditor(props: EditorProps) {
             <div className="grid content-start gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.discount")}</span>
-                <Select value={discountType} disabled={!DISCOUNT_VAT_POLICY} onChange={(event) => setDiscountType(event.target.value as typeof discountType)} data-testid="v5-discount-type">
+                <Select value={discountType} onChange={(event) => setDiscountType(event.target.value as typeof discountType)} data-testid="v5-discount-type">
                   <option value="NONE">{t("editor.discountNone")}</option>
                   <option value="FIXED">{t("editor.discountFixed")}</option>
                   <option value="PERCENT">{t("editor.discountPercent")}</option>
@@ -466,11 +465,8 @@ export function InvoiceEditor(props: EditorProps) {
               </label>
               <label className="block">
                 <span className="mb-1 block text-[12px] font-medium text-muted">&nbsp;</span>
-                <Input inputMode="decimal" value={discountValue} disabled={discountType === "NONE" || !DISCOUNT_VAT_POLICY} onChange={(event) => setDiscountValue(event.target.value)} className="tnum text-right" aria-label={t("editor.discount")} data-testid="v5-discount-value" />
+                <Input inputMode="decimal" value={discountValue} disabled={discountType === "NONE"} onChange={(event) => setDiscountValue(event.target.value)} className="tnum text-right" aria-label={t("editor.discount")} data-testid="v5-discount-value" />
               </label>
-              {!DISCOUNT_VAT_POLICY && (
-                <span className="-mt-1 block text-[12px] text-faint sm:col-span-2" data-testid="v5-discount-unavailable">{t("editor.discountUnavailable")}</span>
-              )}
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.deposit")}</span>
                 <Input inputMode="decimal" value={deposit} placeholder="0.00" onChange={(event) => setDeposit(event.target.value)} className="tnum text-right" data-testid="v5-deposit" />

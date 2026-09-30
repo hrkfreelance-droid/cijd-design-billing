@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { d1Persistence } from "../../src/lib/billing-v5/d1-persistence.ts";
 import { invoiceCollection } from "../../src/lib/billing-v5/ontology.ts";
+import { reconcileV5 } from "../../src/lib/billing-v5/reconcile.ts";
 import { buildV5Seed } from "../../src/lib/billing-v5/repository.ts";
 import { RuleError } from "../../src/lib/data/repository.ts";
 import { Store } from "../../src/lib/data/store.ts";
@@ -13,13 +14,8 @@ const CUSTOMER = { companyNameEn: "TEST Legacy Co., Ltd.", companyNameKm: "ក�
 const AT = "2026-09-20T08:00:00.000Z";
 const PRE_EXISTING = ["clients", "projects", "billingItems", "invoices", "invoiceItems", "payments", "projectPayments", "taxInvoices", "clientTaxProfiles", "exchangeRates"] as const;
 
-/**
- * F. A V5 database as it stands before invoice management (migration 0001
- * only, pre-IMS records: V3-imported history, invoices 081–083, a ledger
- * payment, project payments) goes through migration 0002 and the IMS
- * back-fill. Every pre-existing record must come out byte-for-byte the same.
- */
-test("F. pre-existing V5 data is unchanged by migration 0002 and the back-fill; numbering continues after 083", async () => {
+/** A V5 D1 as deployed before invoice management: migration 0001 only, pre-IMS records. */
+async function preImsDatabase() {
   const d1 = sqliteD1({ through: "0001_v5_state.sql" });
   assert.equal((d1.raw.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'v5_invoice_revisions'").get() as { n: number }).n, 0);
   const open = () => new Store(d1Persistence(d1, buildV5Seed));
@@ -79,6 +75,17 @@ test("F. pre-existing V5 data is unchanged by migration 0002 and the back-fill; 
     );
   });
 
+  return { d1, open, edit, client, lines, projects };
+}
+
+/**
+ * F. A V5 database as it stands before invoice management (migration 0001
+ * only, pre-IMS records: V3-imported history, invoices 081–083, a ledger
+ * payment, project payments) goes through migration 0002 and the IMS
+ * back-fill. Every pre-existing record must come out byte-for-byte the same.
+ */
+test("F. pre-existing V5 data is unchanged by migration 0002 and the back-fill; numbering continues after 083", async () => {
+  const { d1, open, client, lines } = await preImsDatabase();
   const before = (await d1Persistence(d1, buildV5Seed).read())!;
   const frozen = JSON.parse(JSON.stringify(Object.fromEntries(PRE_EXISTING.map((name) => [name, before[name] ?? []]))));
   const archiveBefore = d1.raw.prepare("SELECT * FROM v5_tax_invoice_archive ORDER BY id").all();
@@ -145,4 +152,38 @@ test("F. an empty 2026 database starts the real series at CIJDTI2026081, never a
   const customer = await open().saveCustomer({ name: "Real Co", companyNameEn: "Real Co., Ltd.", actor: "Accounting" });
   const issued = await open().issueInvoice({ customerId: customer.id, invoiceDate: "2026-09-20", customer: { ...CUSTOMER, companyNameEn: "Real Co., Ltd." }, actor: "Accounting", items: [{ description: "x", quantity: 1, unitPrice: 1 }] });
   assert.equal(issued.invoiceNumber, "CIJDTI2026081");
+});
+
+test("deploy reconciliation: old-code snapshot vs new-code snapshot passes; any change, loss or real number is caught", async () => {
+  const { d1, open, client, lines } = await preImsDatabase();
+  // What the pre-IMS Worker's /api/state returned (its getSnapshot shape).
+  const raw = (await d1Persistence(d1, buildV5Seed).read())!;
+  const before = JSON.parse(JSON.stringify({
+    clients: raw.clients, projects: raw.projects.filter((p) => !p.deletedAt), billingItems: raw.billingItems.filter((i) => !i.deletedAt),
+    invoices: raw.invoices, invoiceItems: raw.invoiceItems, users: raw.users, serviceTypes: raw.serviceTypes,
+    projectPayments: raw.projectPayments ?? [], clientTaxProfiles: raw.clientTaxProfiles ?? [], taxInvoices: raw.taxInvoices,
+  }));
+  d1.migrate("0002_v5_invoice_management.sql");
+  await open().issueInvoice({ customerId: client.id, invoiceDate: "2026-09-20", customer: CUSTOMER, actor: "TEST", items: [{ description: "TEST e2e", quantity: 1, unitPrice: 10 }] });
+  const after = JSON.parse(JSON.stringify(await open().getSnapshot()));
+  const result = reconcileV5(before, after);
+  assert.equal(result.ok, true, JSON.stringify(result.checks.filter((c) => !c.ok)));
+  assert.deepEqual(result.counts.taxInvoices, { before: 3, after: 4 });
+
+  const failing = (mutate: (snapshot: typeof after) => void, options = {}) => {
+    const copy = JSON.parse(JSON.stringify(after));
+    mutate(copy);
+    return reconcileV5(before, copy, options).checks.filter((c) => !c.ok).map((c) => c.name);
+  };
+  assert.deepEqual(failing((s) => { s.taxInvoices.find((i: TaxInvoiceRecord) => i.id === "ti-082").totalUsd = 133; }), ["taxInvoices unchanged"]);
+  assert.deepEqual(failing((s) => { s.taxInvoices.find((i: TaxInvoiceRecord) => i.id === "ti-082").invoiceNumber = "CIJDTI2026090"; }), ["taxInvoices unchanged"]);
+  assert.deepEqual(failing((s) => { s.taxInvoices.find((i: TaxInvoiceRecord) => i.id === "ti-081").customer.vatin = "X"; }), ["taxInvoices unchanged"]);
+  assert.deepEqual(failing((s) => { s.projects = s.projects.slice(1); }), ["projects unchanged"]);
+  assert.deepEqual(failing((s) => { s.billingAllocations = s.billingAllocations.filter((a: { invoiceId: string }) => a.invoiceId !== "ti-082"); }), ["billing links and history"]);
+  assert.deepEqual(failing((s) => { s.invoices.find((i: { id: string }) => i.id === "led-081").status = "ISSUED"; }), ["invoices unchanged", "payment state"]);
+  const realNew = (s: typeof after) => { s.taxInvoices.push({ ...s.taxInvoices[0], id: "new", invoiceNumber: "CIJDTI2026084" }); };
+  assert.deepEqual(failing(realNew), ["invoice numbers"]); // a test run must not consume a real number
+  assert.deepEqual(failing(realNew, { allowNewRealNumbers: true }), []);
+  assert.deepEqual(failing((s) => { s.taxInvoices.push({ ...s.taxInvoices[0], id: "dup", invoiceNumber: "CIJDTI2026082" }); }, { allowNewRealNumbers: true }), ["invoice numbers"]);
+  void lines;
 });

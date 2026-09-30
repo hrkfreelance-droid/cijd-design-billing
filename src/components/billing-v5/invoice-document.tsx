@@ -1,6 +1,7 @@
 import Image from "next/image";
 
 import type { TaxInvoiceRecord } from "@/lib/types";
+import { balanceDueUsd } from "@/lib/billing-v5/calculation";
 
 /**
  * The CIJD Tax Invoice (template: V4's InvoiceDocument, workbook sheet
@@ -181,7 +182,7 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
                 </tr>
                 <tr className="extra">
                   <th colSpan={4}><span className="khmer">ប្រាក់ត្រូវបង់នៅសល់</span><small>Balance Due</small></th>
-                  <td data-testid="tax-invoice-balance-due"><Accounting value={Math.round((invoice.totalUsd - deposit) * 100) / 100} /></td>
+                  <td data-testid="tax-invoice-balance-due"><Accounting value={balanceDueUsd(invoice.totalUsd, deposit)} /></td>
                 </tr>
               </>
             )}

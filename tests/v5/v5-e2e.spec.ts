@@ -9,7 +9,7 @@ import { invoiceTotals } from "../../src/lib/billing-v5/calculation";
  *   Designer: TEST project (Design 2 × $305 manual, Printing 500 × $0.24 AUTO → $156), memo, ready
  *   Accounting: Customer Master, Product Master, two billings of one customer on one invoice
  *     (the $1,000 website billed $300 of), a product line, a free line saved to the list,
- *     discount unavailable (policy unresolved), deposit, NBC rate for the
+ *     discount (before VAT), deposit, NBC rate for the
  *     invoice date → issue → PDF (one A4 page; logo/company/VATIN/bank as the
  *     verified source, no QR — the source has none)
  *   Payments: partial → edit (date kept → rate kept) → final → Collected
@@ -69,7 +69,7 @@ type State = {
   clients: { id: string; name: string; active: boolean }[];
   projects: { id: string; name: string; clientId: string; note?: string }[];
   billingItems: { id: string; projectId: string; description: string; quantity: number; unitPrice: number; amount: number; finalMode?: string; billingStatus: string }[];
-  taxInvoices: { id: string; invoiceNumber: string; status: string; clientId: string; invoiceDate: string; totalUsd: number; exchangeRate: number; customer: Record<string, string>; lines: Record<string, unknown>[]; revision?: number; discount?: unknown; vatApplicable: boolean; exchangeRateSource?: string; exchangeRateBasis?: string; exchangeRateForDate?: string }[];
+  taxInvoices: { id: string; invoiceNumber: string; status: string; clientId: string; invoiceDate: string; totalUsd: number; exchangeRate: number; customer: Record<string, string>; lines: Record<string, unknown>[]; revision?: number; discount?: unknown; vatApplicable: boolean; subtotalUsd?: number; discountUsd?: number; taxableUsd?: number; vatUsd?: number; depositUsd?: number; discountPolicy?: string | null; exchangeRateSource?: string; exchangeRateBasis?: string; exchangeRateForDate?: string }[];
   products: { id: string; description: string; active: boolean }[];
   invoicePayments: { id: string; invoiceId: string; kind: string; amount: number; voidedAt?: string | null }[];
   billingAllocations: { billingItemId: string; invoiceId: string; amount: number; voidedAt?: string | null }[];
@@ -205,10 +205,9 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await editor.getByTestId("v5-add-line").click();
   await editor.getByTestId("v5-row-description-4").fill(FREE);
   await editor.getByTestId("v5-row-price-4").fill("50");
-  // Discount: not available while the discount/VAT order is unresolved.
-  await expect(editor.getByTestId("v5-discount-type")).toBeDisabled();
-  await expect(editor.getByTestId("v5-discount-unavailable")).toBeVisible();
-  // Deposit, rate for the invoice date.
+  // Discount (reduces the taxable amount, before VAT), deposit, rate for the invoice date.
+  await editor.getByTestId("v5-discount-type").selectOption("FIXED");
+  await editor.getByTestId("v5-discount-value").fill("20");
   await editor.getByTestId("v5-deposit").fill("100");
   const rateInput = editor.getByTestId("v5-rate-input");
   await expect(editor.getByTestId("v5-rate-source")).not.toHaveText("");
@@ -223,19 +222,19 @@ test("V5 invoice management: designer → accounting → invoice → payments �
     await rateInput.fill("4105");
   }
   const rate = Number(await rateInput.inputValue());
-  const expected = invoiceTotals({ lines: [{ amount: 610 }, { amount: 156 }, { amount: 300 }, { amount: 120 }, { amount: 50 }], vatApplicable: true, exchangeRate: rate, deposit: 100 });
-  expect([expected.subtotalUsd, expected.taxableUsd, expected.vatUsd, expected.totalUsd, expected.balanceDueUsd]).toEqual([1236, 1236, 123.6, 1359.6, 1259.6]);
+  const expected = invoiceTotals({ lines: [{ amount: 610 }, { amount: 156 }, { amount: 300 }, { amount: 120 }, { amount: 50 }], discount: { type: "FIXED", value: 20 }, vatApplicable: true, exchangeRate: rate, deposit: 100 });
+  expect([expected.subtotalUsd, expected.taxableUsd, expected.vatUsd, expected.totalUsd, expected.balanceDueUsd]).toEqual([1236, 1216, 121.6, 1337.6, 1237.6]);
   await expect(editor.getByTestId("v5-subtotal")).toHaveText("$1,236.00");
-  await expect(editor.getByTestId("v5-discount")).toHaveCount(0);
-  await expect(editor.getByTestId("v5-vat")).toHaveText("$123.60");
-  await expect(editor.getByTestId("v5-total-usd")).toHaveText("$1,359.60");
+  await expect(editor.getByTestId("v5-discount")).toHaveText("−$20.00");
+  await expect(editor.getByTestId("v5-vat")).toHaveText("$121.60");
+  await expect(editor.getByTestId("v5-total-usd")).toHaveText("$1,337.60");
   await expect(editor.getByTestId("v5-total-khr")).toHaveText(`${expected.totalKhr.toLocaleString("en-US")} ៛`);
-  await expect(editor.getByTestId("v5-balance-due")).toHaveText("$1,259.60");
+  await expect(editor.getByTestId("v5-balance-due")).toHaveText("$1,237.60");
   await shot(page, "04-editor-en-light");
   await editor.getByTestId("v5-preview").click();
   await expect(editor.getByTestId("tax-invoice-number")).toHaveText("DRAFT");
-  await expect(editor.getByTestId("tax-invoice-discount")).toHaveCount(0);
-  await expect(editor.getByTestId("tax-invoice-balance-due")).toContainText("1,259.60");
+  await expect(editor.getByTestId("tax-invoice-discount")).toContainText("(20.00)");
+  await expect(editor.getByTestId("tax-invoice-balance-due")).toContainText("1,237.60");
   await shot(page, "05-preview-en-light");
   await editor.getByTestId("v5-issue").click();
   // The free line is not in the Product List: asked, never added silently.
@@ -252,12 +251,12 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(doc.getByTestId("tax-invoice-number")).toHaveText(number);
   await expect(doc.getByTestId("tax-invoice-line")).toHaveCount(5);
   await expect(doc.getByTestId("tax-invoice-subtotal")).toContainText("1,236.00");
-  await expect(doc.getByTestId("tax-invoice-discount")).toHaveCount(0);
-  await expect(doc.getByTestId("tax-invoice-vat")).toContainText("123.60");
-  await expect(doc.getByTestId("tax-invoice-total-usd")).toContainText("1,359.60");
+  await expect(doc.getByTestId("tax-invoice-discount")).toContainText("(20.00)");
+  await expect(doc.getByTestId("tax-invoice-vat")).toContainText("121.60");
+  await expect(doc.getByTestId("tax-invoice-total-usd")).toContainText("1,337.60");
   await expect(doc.getByTestId("tax-invoice-total-khr")).toHaveText(expected.totalKhr.toLocaleString("en-US"));
   await expect(doc.getByTestId("tax-invoice-deposit")).toContainText("(100.00)");
-  await expect(doc.getByTestId("tax-invoice-balance-due")).toContainText("1,259.60");
+  await expect(doc.getByTestId("tax-invoice-balance-due")).toContainText("1,237.60");
   // E. Visual assets as in the verified current source (V4 InvoiceDocument):
   // logo, company, VATIN, both bank accounts, signatures — and no QR, because
   // no branch, asset or template of this repository has one.
@@ -279,17 +278,28 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   const saved0 = (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!;
   expect(saved0.exchangeRateForDate).toBe(saved0.invoiceDate);
   expect(saved0.exchangeRateSource === "MANUAL" ? saved0.exchangeRateBasis === "MANUAL" : ["EXACT", "IN_EFFECT"].includes(saved0.exchangeRateBasis!)).toBe(true);
-  // The server refuses a discount while the policy is unresolved (no number used).
-  const discounted = await page.request.post("/api/v5/tax-invoices", {
-    data: { customerId: client.id, invoiceDate: saved0.invoiceDate, customer: { companyNameEn: `${CLIENT} Co., Ltd.` }, discount: { type: "FIXED", value: 1 }, items: [{ description: "TEST discount refused", quantity: 1, unitPrice: 10 }] },
-  });
-  expect([discounted.status(), (await discounted.json()).code]).toEqual([409, "DISCOUNT_POLICY_UNRESOLVED"]);
+  // Stored exactly as calculated: discount before VAT, the deposit after the Grand Total.
+  expect(saved0).toMatchObject({ subtotalUsd: 1236, discountUsd: 20, taxableUsd: 1216, vatUsd: 121.6, totalUsd: 1337.6, depositUsd: 100, discountPolicy: "DISCOUNT_BEFORE_VAT" });
+  // NBC rate rule, on the server: no look-back (a date days after the newest
+  // rate has none unless NBC gave that exact date), and no manual override
+  // when NBC has the rate. Refused requests write nothing.
+  const ahead = new Date(Date.parse(`${saved0.invoiceDate}T00:00:00Z`) + 5 * 86_400_000).toISOString().slice(0, 10);
+  const lookAhead = (await (await page.request.get(`/api/v5/exchange-rate?date=${ahead}`)).json()).data as { rate: { effectiveDate: string } | null };
+  expect(lookAhead.rate === null || lookAhead.rate.effectiveDate === ahead).toBe(true);
+  const old = (await (await page.request.get("/api/v5/exchange-rate?date=2020-01-06")).json()).data as { rate: unknown };
+  expect(old.rate).toBeNull();
+  if (saved0.exchangeRateSource === "NBC") {
+    const override = await page.request.post("/api/v5/tax-invoices", {
+      data: { customerId: client.id, invoiceDate: saved0.invoiceDate, customer: { companyNameEn: `${CLIENT} Co., Ltd.` }, exchangeRate: { rate: 4000, source: "MANUAL" }, items: [{ description: "TEST manual refused", quantity: 1, unitPrice: 10 }] },
+    });
+    expect([override.status(), (await override.json()).code]).toEqual([409, "RATE_AVAILABLE"]);
+  }
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.fonts.check('12px "Noto Sans Khmer"', "វិក្កយបត្រ"))).toBe(true);
-  await expect(page.getByTestId("v5-outstanding")).toContainText("$1,259.60"); // the deposit counts as paid
+  await expect(page.getByTestId("v5-outstanding")).toContainText("$1,237.60"); // the deposit counts as paid
   await shot(page, "06-invoice-en-light");
 
-  // Print / Save PDF: only the invoice, one A4 page even with the deposit rows.
+  // Print / Save PDF: only the invoice, one A4 page even with discount and deposit rows.
   await page.emulateMedia({ media: "print" });
   await expect(page.getByTestId("v5-print")).toBeHidden();
   await expect(page.getByTestId("v5-invoice-payments")).toBeHidden();
@@ -323,7 +333,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(page.getByTestId("v5-invoice-payment-add")).toBeDisabled(); // more than outstanding
   await page.getByTestId("v5-invoice-payment-amount").fill("800");
   await page.getByTestId("v5-invoice-payment-add").click();
-  await expect(page.getByTestId("v5-outstanding")).toContainText("$459.60");
+  await expect(page.getByTestId("v5-outstanding")).toContainText("$437.60");
   await expect(page.getByTestId("v5-invoice-status")).toHaveText("Partly paid");
 
   /* ------------------------------------------------------------- edit */
@@ -336,6 +346,8 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   const savedDate = await edit.getByTestId("v5-invoice-date").inputValue();
   await edit.getByTestId("v5-invoice-date").fill("2020-01-06");
   await expect(edit.getByTestId("v5-rate-none")).toBeVisible();
+  await expect(edit.getByTestId("v5-rate-input")).toBeEnabled(); // entered by hand, no silent fallback
+  await expect(edit.getByTestId("v5-rate-input")).toHaveValue("");
   await edit.getByTestId("v5-invoice-date").fill(savedDate);
   await expect(edit.getByTestId("v5-rate-source")).toHaveText("Kept from the saved invoice (date unchanged)");
   const freeIndex = await edit.locator('[data-testid^="v5-row-description-"]').evaluateAll((inputs, free) => inputs.findIndex((input) => (input as HTMLInputElement).value === free), FREE);
@@ -344,11 +356,11 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await edit.getByTestId("v5-issue").click();
   await expect(edit).toHaveCount(0);
   let saved = (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!;
-  expect([saved.exchangeRate, saved.revision, saved.totalUsd]).toEqual([rateBefore, 2, 1370.6]); // 1246 × 1.1
+  expect([saved.exchangeRate, saved.revision, saved.totalUsd]).toEqual([rateBefore, 2, 1348.6]); // (1246 − 20) × 1.1
   await expect(page.getByTestId("v5-revision")).toHaveCount(2);
   await expect(page.getByTestId("v5-invoice-history")).toContainText("TEST rush fee corrected");
-  await expect(page.getByTestId("v5-outstanding")).toContainText("$470.60");
-  await page.getByTestId("v5-invoice-payment-amount").fill("470.60");
+  await expect(page.getByTestId("v5-outstanding")).toContainText("$448.60");
+  await page.getByTestId("v5-invoice-payment-amount").fill("448.60");
   await page.getByTestId("v5-invoice-payment-add").click();
   await expect(page.getByTestId("v5-invoice-status")).toHaveText("Collected");
   await expect(page.getByTestId("v5-outstanding")).toContainText("$0.00");

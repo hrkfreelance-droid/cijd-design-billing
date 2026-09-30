@@ -370,28 +370,21 @@ export function nextTaxInvoiceNumber(year: number, existing: readonly string[]):
 /* --------------------------------------------------- invoice management */
 
 /**
- * Where an invoice discount sits relative to VAT — an accounting rule that is
- * NOT YET DECIDED. No CIJD invoice (the 77 sheets of "Tax Invoice CIJD 2026",
- * audited in V4's work/tax-invoice-audit.json), no V2/V3/V4 code and no
- * document has a discount, so there is no existing rule to follow.
+ * Where an invoice discount sits relative to VAT — CIJD accounting policy,
+ * confirmed 2026-09-30: the discount (FIXED or PERCENT) reduces the taxable
+ * amount, and VAT is charged on what remains.
  *
- *   DISCOUNT_BEFORE_VAT  Subtotal − Discount = Taxable; VAT on Taxable.
- *   DISCOUNT_AFTER_VAT   VAT on Subtotal; Grand Total = Subtotal + VAT − Discount.
+ *   Subtotal → Discount → Taxable Amount → VAT 10% → Grand Total
+ *   → Deposit / Payments → Balance Due
  *
- * `null` = unresolved: an invoice without a discount is calculated exactly
- * as before (VAT 10% on the subtotal); an invoice WITH a discount is refused
- * (`DiscountPolicyUnresolvedError`) until CIJD's accountant confirms the order
- * and this constant is set in a reviewed commit.
+ * A deposit or payment is never a discount: it does not change the taxable
+ * amount or the VAT, it only settles the Grand Total.
+ *
+ * `DISCOUNT_AFTER_VAT` stays implemented (and tested) only so the order is an
+ * explicit, named choice; it is not used.
  */
 export type DiscountVatPolicy = "DISCOUNT_BEFORE_VAT" | "DISCOUNT_AFTER_VAT";
-export const DISCOUNT_VAT_POLICY: DiscountVatPolicy | null = null;
-
-export class DiscountPolicyUnresolvedError extends Error {
-  readonly code = "DISCOUNT_POLICY_UNRESOLVED";
-  constructor() {
-    super("Discounts are not available yet: the order of discount and VAT has not been confirmed by accounting.");
-  }
-}
+export const DISCOUNT_VAT_POLICY: DiscountVatPolicy = "DISCOUNT_BEFORE_VAT";
 
 export interface InvoiceDiscountInput {
   type: "FIXED" | "PERCENT";
@@ -406,7 +399,7 @@ export interface InvoiceTotalsInput {
   /** Deposit shown on the invoice; it never changes the tax. */
   deposit?: number;
   /** Defaults to DISCOUNT_VAT_POLICY. Only consulted when there is a discount. */
-  discountPolicy?: DiscountVatPolicy | null;
+  discountPolicy?: DiscountVatPolicy;
 }
 
 export interface InvoiceTotals extends TaxTotals {
@@ -416,6 +409,11 @@ export interface InvoiceTotals extends TaxTotals {
   balanceDueUsd: number;
   /** The policy used, or null when there is no discount. */
   discountPolicy: DiscountVatPolicy | null;
+}
+
+/** Grand Total − Deposit, in cents; a deposit never changes the VAT. */
+export function balanceDueUsd(totalUsd: number, depositUsd: number): number {
+  return fromCents(toCents(totalUsd) - Math.min(Math.max(toCents(depositUsd), 0), toCents(totalUsd)));
 }
 
 /** True when the input carries a discount that changes the amount. */
@@ -431,15 +429,15 @@ export function discountCents(baseCents: number, discount: InvoiceDiscountInput 
 }
 
 /**
- * Subtotal (Σ lines) → [discount, per policy] → VAT 10% → Grand Total USD →
- * × rate → Grand Total KHR; then Deposit → Balance Due. With no discount this
- * is exactly `taxTotals` and needs no policy.
+ * Subtotal (Σ lines) → Discount → Taxable Amount → VAT 10% → Grand Total
+ * USD → × rate → Grand Total KHR; then Deposit → Balance Due. The discount
+ * never takes the taxable amount below zero. With no discount this is exactly
+ * `taxTotals`.
  */
 export function invoiceTotals(input: InvoiceTotalsInput): InvoiceTotals {
   const subtotalCents = input.lines.reduce((sum, line) => sum + toCents(line.amount), 0);
   const vatPercent = input.vatApplicable ? VAT_PERCENT : 0;
-  const policy = hasDiscount(input.discount) ? (input.discountPolicy === undefined ? DISCOUNT_VAT_POLICY : input.discountPolicy) : null;
-  if (hasDiscount(input.discount) && !policy) throw new DiscountPolicyUnresolvedError();
+  const policy = hasDiscount(input.discount) ? (input.discountPolicy ?? DISCOUNT_VAT_POLICY) : null;
 
   let discount = 0;
   let taxableCents = subtotalCents;
@@ -467,7 +465,7 @@ export function invoiceTotals(input: InvoiceTotalsInput): InvoiceTotals {
     totalUsd: fromCents(totalCents),
     totalKhr: khr,
     depositUsd: fromCents(depositCents),
-    balanceDueUsd: fromCents(totalCents - depositCents),
+    balanceDueUsd: balanceDueUsd(fromCents(totalCents), fromCents(depositCents)),
     discountPolicy: policy,
   };
 }

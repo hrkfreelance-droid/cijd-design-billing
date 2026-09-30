@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { d1Persistence } from "../../src/lib/billing-v5/d1-persistence.ts";
-import { DISCOUNT_VAT_POLICY, DiscountPolicyUnresolvedError, invoiceTotals } from "../../src/lib/billing-v5/calculation.ts";
+import { balanceDueUsd, DISCOUNT_VAT_POLICY, invoiceTotals, taxTotals } from "../../src/lib/billing-v5/calculation.ts";
 import { billingState, eligibleBilling, invoiceCollection, officialRateForDate } from "../../src/lib/billing-v5/ontology.ts";
 import { buildV5Seed } from "../../src/lib/billing-v5/repository.ts";
 import { RuleError } from "../../src/lib/data/repository.ts";
@@ -130,39 +130,56 @@ test("double billing under a race: the second writer cannot commit, and its retr
   assert.equal((await t.snap()).taxInvoices!.filter((invoice) => invoice.status === "ISSUED").length, 1);
 });
 
-test("D. discount/VAT order is an explicit, unresolved policy: no hidden default; no-discount VAT 10% unchanged", async () => {
-  // The policy is not decided: nothing may pick BEFORE or AFTER VAT silently.
-  assert.equal(DISCOUNT_VAT_POLICY, null);
+test("D. discount policy: BEFORE_VAT (confirmed) — Subtotal → Discount → Taxable → VAT 10% → Grand Total → Deposit → Balance Due", async () => {
+  assert.equal(DISCOUNT_VAT_POLICY, "DISCOUNT_BEFORE_VAT");
+  const totals = (discount: { type: "FIXED" | "PERCENT"; value: number } | null, deposit = 0, amount = 100) =>
+    invoiceTotals({ lines: [{ amount }], discount, vatApplicable: true, exchangeRate: 4100, deposit });
+  const row = (t: ReturnType<typeof totals>) => [t.subtotalUsd, t.discountUsd, t.taxableUsd, t.vatUsd, t.totalUsd, t.balanceDueUsd];
+
+  // 1. $100 − 10% = $90 taxable, VAT $9, Grand Total $99.
+  assert.deepEqual(row(totals({ type: "PERCENT", value: 10 })), [100, 10, 90, 9, 99, 99]);
+  // 2. $100 − fixed $10: the same.
+  assert.deepEqual(row(totals({ type: "FIXED", value: 10 })), [100, 10, 90, 9, 99, 99]);
+  assert.equal(totals({ type: "FIXED", value: 10 }).discountPolicy, "DISCOUNT_BEFORE_VAT");
+  // 3. Deposit $30 is not a discount: VAT stays $9, Balance Due $69.
+  const deposit = totals({ type: "PERCENT", value: 10 }, 30);
+  assert.deepEqual([deposit.taxableUsd, deposit.vatUsd, deposit.totalUsd, deposit.depositUsd, deposit.balanceDueUsd], [90, 9, 99, 30, 69]);
+  assert.equal(balanceDueUsd(99, 30), 69);
+  // 4. Never below zero: the engine caps at the subtotal; the server refuses more.
+  assert.deepEqual(row(totals({ type: "FIXED", value: 150 })), [100, 100, 0, 0, 0, 0]);
+  assert.deepEqual(row(totals({ type: "PERCENT", value: 250 })), [100, 100, 0, 0, 0, 0]);
+  // Rounding: percent discount half-up to the cent, VAT on the discounted amount.
+  const pct = invoiceTotals({ lines: [{ amount: 333.33 }], discount: { type: "PERCENT", value: 12.5 }, vatApplicable: true, exchangeRate: 4105 });
+  assert.deepEqual([pct.discountUsd, pct.taxableUsd, pct.vatUsd, pct.totalUsd], [41.67, 291.66, 29.17, 320.83]);
+  // 5. Without a discount: exactly the existing VAT 10% totals, and no policy recorded.
   const lines = [{ amount: 400 }];
-  assert.throws(() => invoiceTotals({ lines, discount: { type: "FIXED", value: 40 }, vatApplicable: true, exchangeRate: 4105 }), DiscountPolicyUnresolvedError);
-  assert.throws(() => invoiceTotals({ lines, discount: { type: "PERCENT", value: 10 }, vatApplicable: true, exchangeRate: 4105, discountPolicy: null }), DiscountPolicyUnresolvedError);
-  // No discount (absent, zero): no policy needed, exactly the existing VAT 10% totals.
   for (const discount of [undefined, null, { type: "FIXED" as const, value: 0 }]) {
     const plain = invoiceTotals({ lines, discount, vatApplicable: true, exchangeRate: 4105, deposit: 100 });
-    assert.deepEqual(
-      [plain.subtotalUsd, plain.discountUsd, plain.taxableUsd, plain.vatUsd, plain.totalUsd, plain.totalKhr, plain.balanceDueUsd, plain.discountPolicy],
-      [400, 0, 400, 40, 440, 1806200, 340, null],
-    );
+    const legacy = taxTotals({ lines, vatApplicable: true, exchangeRate: 4105 });
+    assert.deepEqual([plain.subtotalUsd, plain.vatPercent, plain.vatUsd, plain.totalUsd, plain.totalKhr], [legacy.subtotalUsd, legacy.vatPercent, legacy.vatUsd, legacy.totalUsd, legacy.totalKhr]);
+    assert.deepEqual([plain.discountUsd, plain.taxableUsd, plain.balanceDueUsd, plain.discountPolicy], [0, 400, 340, null]);
   }
-  // Both candidate orders are implemented and only used when named explicitly.
-  const before = invoiceTotals({ lines, discount: { type: "FIXED", value: 40 }, vatApplicable: true, exchangeRate: 4105, deposit: 100, discountPolicy: "DISCOUNT_BEFORE_VAT" });
-  assert.deepEqual([before.discountUsd, before.taxableUsd, before.vatUsd, before.totalUsd, before.balanceDueUsd], [40, 360, 36, 396, 296]);
-  const after = invoiceTotals({ lines, discount: { type: "FIXED", value: 40 }, vatApplicable: true, exchangeRate: 4105, deposit: 100, discountPolicy: "DISCOUNT_AFTER_VAT" });
-  assert.deepEqual([after.discountUsd, after.taxableUsd, after.vatUsd, after.totalUsd, after.balanceDueUsd], [40, 400, 40, 400, 300]);
-  const pct = invoiceTotals({ lines: [{ amount: 333.33 }], discount: { type: "PERCENT", value: 12.5 }, vatApplicable: true, exchangeRate: 4105, discountPolicy: "DISCOUNT_BEFORE_VAT" });
-  assert.deepEqual([pct.discountUsd, pct.taxableUsd, pct.vatUsd, pct.totalUsd], [41.67, 291.66, 29.17, 320.83]);
 
-  // The server refuses a discounted invoice while the policy is unresolved.
+  // Through the server: issued with the discount, stored as calculated.
   const t = await env();
   const { line } = await t.billing("TEST Discount", 1000);
-  await rejectsWith(t.issue([{ billingItemId: line.id, amount: 400 }], { discount: { type: "FIXED", value: 40 } }), "DISCOUNT_POLICY_UNRESOLVED");
-  await rejectsWith(t.issue([{ billingItemId: line.id, amount: 400 }], { discount: { type: "PERCENT", value: 5 } }), "DISCOUNT_POLICY_UNRESOLVED");
+  const pctInvoice = await t.issue([{ billingItemId: line.id, amount: 100 }], { discount: { type: "PERCENT", value: 10 }, depositUsd: 30 });
+  assert.deepEqual(
+    [pctInvoice.subtotalUsd, pctInvoice.discountUsd, pctInvoice.taxableUsd, pctInvoice.vatUsd, pctInvoice.totalUsd, pctInvoice.depositUsd, pctInvoice.totalKhr, pctInvoice.discountPolicy],
+    [100, 10, 90, 9, 99, 30, 406395, "DISCOUNT_BEFORE_VAT"],
+  );
+  assert.deepEqual(pctInvoice.discount, { type: "PERCENT", value: 10 });
+  assert.equal(invoiceCollection(await t.snap(), pctInvoice).outstandingUsd, 69);
+  const fixedInvoice = await t.issue([{ billingItemId: line.id, amount: 100 }], { discount: { type: "FIXED", value: 10 } });
+  assert.deepEqual([fixedInvoice.taxableUsd, fixedInvoice.vatUsd, fixedInvoice.totalUsd], [90, 9, 99]);
+  await rejectsWith(t.issue([{ billingItemId: line.id, amount: 10 }], { discount: { type: "FIXED", value: 11 } }), "INVALID");
   await rejectsWith(t.issue([{ billingItemId: line.id, amount: 10 }], { discount: { type: "PERCENT", value: 101 } }), "INVALID");
-  assert.equal((await t.snap()).taxInvoices!.length, 0); // nothing issued, no number used
-  // Without a discount: VAT 10% exactly as before, deposit → Balance Due.
+  await rejectsWith(t.issue([{ billingItemId: line.id, amount: 10 }], { discount: { type: "FIXED", value: -1 } }), "INVALID");
+  // A deposit larger than the discounted Grand Total is refused.
+  await rejectsWith(t.issue([{ billingItemId: line.id, amount: 100 }], { discount: { type: "FIXED", value: 10 }, depositUsd: 99.01 }), "INVALID");
+  // Without a discount: VAT 10% exactly as before.
   const plain = await t.issue([{ billingItemId: line.id, amount: 400 }], { depositUsd: 100 });
-  assert.deepEqual([plain.subtotalUsd, plain.discountUsd, plain.vatUsd, plain.totalUsd, plain.depositUsd, plain.discountPolicy], [400, 0, 40, 440, 100, null]);
-  assert.equal(plain.invoiceNumber, "CIJDTI2026081");
+  assert.deepEqual([plain.subtotalUsd, plain.discountUsd, plain.vatUsd, plain.totalUsd, plain.depositUsd, plain.discountPolicy, plain.discount], [400, 0, 40, 440, 100, null, null]);
 });
 
 test("payments: deposit, partial, final → collected; overpayment refused; voids keep history", async () => {

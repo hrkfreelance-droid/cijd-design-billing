@@ -79,11 +79,14 @@ BillingAllocation · InvoicePayment (DEPOSIT | PAYMENT) · ExchangeRate · Invoi
   refuses over-allocation and double billing inside one Store transaction (optimistic
   version lock ⇒ race safe). Billing state: UNBILLED / PARTIALLY_INVOICED /
   FULLY_INVOICED / LEGACY_BILLED (billed in V3, not eligible) / NOT_READY.
-- **Discount** FIXED or PERCENT — **disabled until accounting decides the order**:
-  `DISCOUNT_VAT_POLICY = null` in `calculation.ts`. Both orders are implemented
-  (`DISCOUNT_BEFORE_VAT`, `DISCOUNT_AFTER_VAT`) but neither is a default; the server
-  refuses a discounted invoice (`DISCOUNT_POLICY_UNRESOLVED`) and the editor greys the
-  control out. Invoices without a discount: VAT 10% exactly as before.
+- **Discount** FIXED or PERCENT, **before VAT** — CIJD accounting policy confirmed
+  2026-09-30 (`DISCOUNT_VAT_POLICY = "DISCOUNT_BEFORE_VAT"`, `calculation.ts`):
+  Subtotal → Discount → Taxable Amount → VAT 10% → Grand Total → Deposit / Payments →
+  Balance Due. e.g. $100 − 10% = $90 taxable, VAT $9, Grand Total $99; deposit $30 →
+  Balance Due $69 (VAT stays $9). A deposit is never a discount. The discount cannot
+  exceed the subtotal (the server refuses it). Invoices without a discount: VAT 10%
+  exactly as before. Issued invoices keep their stored values; nothing is recalculated
+  except by an explicit edit. The PDF shows the Discount row only when used.
 - **Deposit** on the invoice = a DEPOSIT payment; printed as Deposit, Balance Due =
   Grand Total − Deposit. Separate from billing allocation.
 - **Exchange rate follows the invoice date** (`officialRateForDate`, ontology.ts):
@@ -111,7 +114,7 @@ BillingAllocation · InvoicePayment (DEPOSIT | PAYMENT) · ExchangeRate · Invoi
 ## Commands
 
 ```sh
-npm run test:unit        # 159 unit tests (V3 + V5 calculation, store, invoicing on real SQLite)
+npm run test:unit        # 160 unit tests (V3 + V5 calculation, store, invoicing on real SQLite)
 npm run dev:v5           # build V5 + fresh local D1 + wrangler dev on :8787
 PW_EXECUTABLE=/path/to/chromium npm run test:v5:e2e   # full browser E2E against :8787
 npm run deploy:v5        # deploy V5 (needs Cloudflare auth: wrangler login or API token)
@@ -180,6 +183,21 @@ Individual steps: `npm run deploy:v5`, `scripts/v5-smoke.sh <url>`,
 `npm run v5:import -- [--target <url> --commit|--verify]`,
 `V5_BASE_URL=<url> V5_EXPECT_IMPORTED=1 npm run test:v5:e2e`.
 
+## IMS deploy (authorised machine)
+
+```sh
+npx wrangler login
+scripts/v5-ims-deploy.sh
+```
+
+Checks branch/HEAD/policy → pushes the rollback tag (never forced) → records V5/V3/V4
+Worker versions, the V5 D1 id and migrations, and V5's data (`/api/state`, GET) →
+`scripts/deploy-v5.sh` (migration 0002, Worker, smoke) → reconciliation
+(`npm run v5:reconcile`: every existing record, invoice number, total, customer
+snapshot, billing link and payment state unchanged) → live browser E2E (TEST data,
+TEST- series) → reconciliation again → V3/V4 GET + versions unchanged. Stops at the
+first failure and prints the rollback. Reports: `.data/v5-ims-deploy/<time>/`.
+
 ## Rollback (V5 only — V3 and V4 are never involved)
 
 - IMS rollback point: branch `backup/v5-pre-invoice-management-20260930` (pushed) and
@@ -199,10 +217,9 @@ Individual steps: `npm run deploy:v5`, `scripts/v5-smoke.sh <url>`,
 
 ## Decisions to confirm
 
-- **BLOCKER — Discount/VAT order** is unresolved (no discount in any branch, document or
-  in the 77 sheets of "Tax Invoice CIJD 2026" — V4 `work/tax-invoice-audit.json`). Set
-  `DISCOUNT_VAT_POLICY` in a reviewed commit once accounting decides; until then
-  discounts are off.
+- **Discount/VAT order: confirmed BEFORE_VAT** by CIJD accounting (2026-09-30).
+- The PDF has no separate Taxable Amount row (its Khmer wording is not confirmed); the
+  editor shows it. Add it once the Khmer label is confirmed.
 - **QR — verified absent**: no QR asset, component, dependency or text in any branch
   (V2–V5, main, gh-pages); the V4 template (`v4-app/src/ui/invoice-document.tsx`) has
   only the logo image. Nothing was added. (The original .xlsx workbook's embedded

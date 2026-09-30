@@ -24,7 +24,7 @@ import type {
   TaxInvoiceLine,
   TaxInvoiceRecord,
 } from "../types";
-import { DiscountPolicyUnresolvedError, invoiceTotals, nextCode, nextTaxInvoiceNumber, roundMoney, toCents } from "./calculation";
+import { invoiceTotals, nextCode, nextTaxInvoiceNumber, roundMoney, toCents } from "./calculation";
 import { billingState, customerFor, invoiceCollection, officialRateForDate, readyProjectIds } from "./ontology";
 
 const newId = () => globalThis.crypto.randomUUID();
@@ -291,18 +291,9 @@ function checkDiscountAndDeposit(input: InvoiceInput) {
   if (discount.type === "PERCENT" && discount.value > 100) throw new RuleError("INVALID", "A discount cannot be more than 100%.", 400);
 }
 
-/**
- * Invoice totals, with the discount/VAT order left to `DISCOUNT_VAT_POLICY`.
- * While that policy is unresolved an invoice with a discount is refused.
- */
+/** Invoice totals from the one calculation engine (discount before VAT, per DISCOUNT_VAT_POLICY). */
 function totalsFor(input: InvoiceInput, lines: readonly { amount: number }[], exchangeRate: number) {
-  let totals;
-  try {
-    totals = invoiceTotals({ lines, discount: input.discount, vatApplicable: input.vatApplicable !== false, exchangeRate, deposit: input.depositUsd });
-  } catch (error) {
-    if (error instanceof DiscountPolicyUnresolvedError) throw new RuleError(error.code, error.message, 409);
-    throw error;
-  }
+  const totals = invoiceTotals({ lines, discount: input.discount, vatApplicable: input.vatApplicable !== false, exchangeRate, deposit: input.depositUsd });
   if (input.discount?.type === "FIXED" && toCents(input.discount.value) > toCents(totals.discountUsd)) {
     throw new RuleError("INVALID", "The discount is more than the amount it applies to.", 400);
   }

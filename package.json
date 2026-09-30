@@ -23,7 +23,8 @@
     "test:v5:e2e": "playwright test -c playwright.v5.config.ts",
     "dev:v5": "scripts/v5-local.sh",
     "deploy:v5": "scripts/deploy-v5.sh",
-    "v5:import": "node --experimental-transform-types --import ./tests/unit/register.mjs scripts/v5-import/v3-to-v5.ts"
+    "v5:import": "node --experimental-transform-types --import ./tests/unit/register.mjs scripts/v5-import/v3-to-v5.ts",
+    "v5:reconcile": "node --experimental-transform-types --import ./tests/unit/register.mjs scripts/v5-reconcile.ts"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",
