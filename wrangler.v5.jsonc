@@ -33,6 +33,14 @@
       "migrations_dir": "migrations-v5"
     }
   ],
+  // Customer company documents (internal only, never on a Tax Invoice): V5's own
+  // private bucket, not shared with V3 or V4. Created by scripts/deploy-v5.sh.
+  "r2_buckets": [
+    {
+      "binding": "V5_DOCS",
+      "bucket_name": "cijd-design-billing-v5-customer-documents"
+    }
+  ],
   "cache": {
     "enabled": true
   }

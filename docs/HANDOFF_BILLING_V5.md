@@ -97,6 +97,27 @@ BillingAllocation · InvoicePayment (DEPOSIT | PAYMENT) · ExchangeRate · Invoi
   `exchangeRateBasis`). MANUAL is refused when NBC has the rate (`RATE_AVAILABLE`). An edit
   that keeps the date never changes the saved rate. NBC/MEF's API only returns the latest
   rate, so V5's cron (and the editor, for today) stores it daily.
+- **Customer selector** (`combobox.tsx`, editor): active Customer Master entries,
+  searchable by code, short name, company EN/KM and VATIN; picking fills the six invoice
+  fields. Issue stores the snapshot; later master edits never change it. An edit may
+  change the customer explicitly (billing lines must be that customer's; TEST and real
+  series never mix). Inactive customers cannot be invoiced. "New Tax Invoice" on the
+  Invoices tab starts one without billing lines.
+- **Customer codes**: system-assigned (C0001…), read-only, never reused (max + 1 over all
+  records, which are never deleted). Clients without a Customer Master record get one,
+  with the next code, in creation order (additive, idempotent back-fill).
+- **Company documents** (Customer sheet): Patent Tax, VAT Certificate, Company
+  Registration, Business License, Other; PDF and common images, ≤ 20 MB. Files in V5's own
+  private R2 bucket `cijd-design-billing-v5-customer-documents` (binding `V5_DOCS`,
+  created by `deploy-v5.sh`), metadata in D1 `v5_customer_documents` (migration 0003,
+  no delete; replace keeps the old one). Served only via `/api/v5/customer-documents/:id`
+  (inline / `?download=1`, `private, no-store`). Never on a Tax Invoice. Uploads are
+  separate from the customer save.
+- **Product selector**: each free line searches the Product Master (code or description);
+  picking fills description, unit and unit price, all still editable. Unregistered lines are
+  asked one by one: Yes adds that line to the Product Master, No keeps it on the invoice.
+- **Project name** on each billed line (snapshot), above the description; older invoices
+  print the description only.
 - **Invoices marked paid before IMS** (ledger entry PAID) count as collected: a
   read-only derived payment (`ledger:<id>`), nothing written.
 - **Edit**: every issue/edit/cancel writes an immutable revision (`v5_invoice_revisions`,

@@ -11,6 +11,7 @@ import { useV5T } from "@/lib/billing-v5/i18n";
 import { customerFor } from "@/lib/billing-v5/ontology";
 import { moneyExact } from "@/lib/format";
 import type { Customer, Product, Snapshot } from "@/lib/types";
+import { CustomerDocuments } from "./customer-documents";
 
 /* ------------------------------------------------------------- customers */
 
@@ -85,9 +86,12 @@ function CustomerSheet({ snapshot, id, onClose }: { snapshot: Snapshot; id: stri
   const set = (key: keyof typeof form, value: string | boolean) => setForm((current) => ({ ...current, [key]: value }));
   const valid = form.name.trim() !== "";
 
+  // The code is not sent: the server assigns it and never changes it.
+  const { customerCode: _code, ...editable } = form;
+  void _code;
   const save = async () => {
     const saved = await runResult(() =>
-      id ? api<Customer>(`/api/v5/customers/${id}`, { method: "PATCH", body: form }) : api<Customer>("/api/v5/customers", { method: "POST", body: form }),
+      id ? api<Customer>(`/api/v5/customers/${id}`, { method: "PATCH", body: editable }) : api<Customer>("/api/v5/customers", { method: "POST", body: editable }),
     );
     if (saved) {
       toast(t("master.saved"));
@@ -120,7 +124,11 @@ function CustomerSheet({ snapshot, id, onClose }: { snapshot: Snapshot; id: stri
     >
       <div className="grid gap-3 sm:grid-cols-2">
         {field("name", t("customer.name"))}
-        {field("customerCode", t("master.code"))}
+        <div className="block min-w-0">
+          <span className="mb-1 block text-[12px] font-medium text-muted">{t("master.code")}</span>
+          {/* System-assigned, never typed or changed. */}
+          <span className="tnum flex h-11 items-center text-[15px] text-muted" data-testid="v5-customer-code">{form.customerCode || t("customer.codeAuto")}</span>
+        </div>
         {field("companyNameEn", t("prepare.nameEn"))}
         {field("companyNameKm", t("prepare.nameKm"), "km")}
         {field("addressEn", t("prepare.addressEn"))}
@@ -134,6 +142,7 @@ function CustomerSheet({ snapshot, id, onClose }: { snapshot: Snapshot; id: stri
           <span className="text-[13.5px]">{t("master.active")}</span>
         </label>
       </div>
+      {id ? <CustomerDocuments customerId={id} /> : <p className="mt-6 text-[12.5px] text-faint">{t("docs.afterSave")}</p>}
     </Modal>
   );
 }

@@ -8,6 +8,7 @@
 #   - refuses any Worker name other than cijd-design-billing-v5-preview
 #     (never the V3 Worker cijd-design-billing-preview or V4's -v4-preview)
 #   - creates/uses only the D1 database cijd-design-billing-v5-preview
+#     and the R2 bucket cijd-design-billing-v5-customer-documents (V5 only)
 #   - applies only migrations-v5/ (additive, V5-only tables)
 #   - builds with no Supabase variables, so V5 cannot reach V3's data
 set -euo pipefail
@@ -31,6 +32,17 @@ if [ -z "$id" ]; then
   id=$(npx wrangler d1 list --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{console.log(JSON.parse(s).find(d=>d.name===process.argv[1]).uuid)})' "$DB")
 fi
 echo "   id $id"
+
+BUCKET="cijd-design-billing-v5-customer-documents"
+echo "== R2: $BUCKET (V5 customer documents, private)"
+if npx wrangler r2 bucket info "$BUCKET" >/dev/null 2>&1; then
+  echo "   exists"
+else
+  npx wrangler r2 bucket create "$BUCKET" || {
+    echo "Could not create the R2 bucket $BUCKET. If R2 is not yet enabled on this Cloudflare account, enable it in the dashboard (R2 → Get started) and run again." >&2
+    exit 1
+  }
+fi
 
 # A deploy copy of the V5 config with the real database id (git-ignored).
 sed "s/00000000-0000-0000-0000-000000000000/$id/" wrangler.v5.jsonc > wrangler.v5.deploy.jsonc

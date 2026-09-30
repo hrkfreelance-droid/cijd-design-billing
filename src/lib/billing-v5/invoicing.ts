@@ -116,6 +116,37 @@ export interface CustomerInput extends Partial<Omit<Customer, "id" | "createdAt"
   actor: string;
 }
 
+/** C0001, C0002, …: one more than the highest code any customer record holds (records are never deleted). */
+function nextCustomerCode(db: Database): string {
+  return nextCode("C", db.customers!.map((entry) => entry.customerCode));
+}
+
+/**
+ * Every client gets a Customer Master record with a code, in the order the
+ * clients were created. Additive and idempotent: existing records and codes
+ * are never touched; only clients without a record are added.
+ */
+function backfillCustomerCodes(db: Database): boolean {
+  let changed = false;
+  const has = new Set(db.customers!.map((entry) => entry.id));
+  const missing = db.clients
+    .filter((client) => !has.has(client.id))
+    .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "") || a.id.localeCompare(b.id));
+  for (const client of missing) {
+    const base = customerFor(db as never, client.id);
+    db.customers!.push({ ...base, id: client.id, customerCode: nextCustomerCode(db), active: client.active, createdAt: client.createdAt || now(), updatedAt: now(), updatedBy: "System" });
+    changed = true;
+  }
+  // A record without a code (never expected, but never left so): give it the next one.
+  for (const customer of db.customers!) {
+    if (!customer.customerCode?.trim()) {
+      customer.customerCode = nextCustomerCode(db);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 export function saveCustomer(db: Database, input: CustomerInput): Customer {
   ensureCollections(db);
   const at = now();
@@ -137,8 +168,9 @@ export function saveCustomer(db: Database, input: CustomerInput): Customer {
   }
   const base = customerFor(db as never, client.id);
   const existing = db.customers!.find((entry) => entry.id === client!.id);
-  const code = (input.customerCode ?? existing?.customerCode ?? "").trim() ||
-    nextCode("C", db.customers!.map((entry) => entry.customerCode));
+  // The code is the system's, never the user's: kept once given, otherwise the
+  // next after the highest ever issued (codes are never reused).
+  const code = existing?.customerCode?.trim() || nextCustomerCode(db);
   if (db.customers!.some((entry) => entry.id !== client!.id && entry.customerCode.toLowerCase() === code.toLowerCase())) {
     throw new RuleError("DUPLICATE_CODE", `Customer code ${code} is already used.`);
   }
@@ -433,6 +465,7 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
   ensureCollections(db);
   const client = db.clients.find((entry) => entry.id === input.customerId);
   if (!client) throw new RuleError("NOT_FOUND", "Choose a customer.", 404);
+  if (!client.active) throw new RuleError("CUSTOMER_INACTIVE", `${client.name} is inactive. Make the customer active first.`, 409);
   if (!isIsoDate(input.invoiceDate)) throw new RuleError("INVALID", "Enter a valid invoice date.", 400);
   const customer = customerSnapshot(input.customer);
   if (!customer.companyNameEn && !customer.companyNameKm) throw new RuleError("INVALID", "Enter the customer's legal name.", 400);
@@ -521,7 +554,18 @@ export function editInvoice(db: Database, invoiceId: string, input: InvoiceInput
   if (input.invoiceNumber !== undefined && input.invoiceNumber !== record.invoiceNumber) {
     throw new RuleError("NUMBER_IMMUTABLE", "An invoice number never changes.", 400);
   }
-  if (input.customerId !== record.clientId) throw new RuleError("DIFFERENT_CUSTOMER", "An invoice keeps its customer.", 400);
+  // Changing the customer is an explicit edit: the new customer must be active,
+  // its billing lines must be the new customer's (checked with the lines), and a
+  // TEST invoice number never moves to a real customer (or back).
+  const customerChanged = input.customerId !== record.clientId;
+  if (customerChanged) {
+    const next = db.clients.find((entry) => entry.id === input.customerId);
+    if (!next) throw new RuleError("NOT_FOUND", "Choose a customer.", 404);
+    if (!next.active) throw new RuleError("CUSTOMER_INACTIVE", `${next.name} is inactive.`, 409);
+    if (isTestCustomer(next.name) !== record.invoiceNumber.startsWith(TEST_NUMBER_PREFIX)) {
+      throw new RuleError("SERIES_MISMATCH", "A TEST invoice stays with a TEST customer, and a real one with a real customer.", 409);
+    }
+  }
   if (!isIsoDate(input.invoiceDate)) throw new RuleError("INVALID", "Enter a valid invoice date.", 400);
   const customer = customerSnapshot(input.customer);
   if (!customer.companyNameEn && !customer.companyNameKm) throw new RuleError("INVALID", "Enter the customer's legal name.", 400);
@@ -546,6 +590,7 @@ export function editInvoice(db: Database, invoiceId: string, input: InvoiceInput
   const released = new Set((db.billingAllocations ?? []).filter((a) => a.invoiceId === record.id && !a.voidedAt).map((a) => a.billingItemId));
   const projects = projectIds.map((pid) => db.projects.find((entry) => entry.id === pid)!);
   Object.assign(record, {
+    clientId: input.customerId,
     projectId: projectIds[0] ?? record.projectId,
     projectIds,
     invoiceDate: input.invoiceDate,
@@ -579,6 +624,7 @@ export function editInvoice(db: Database, invoiceId: string, input: InvoiceInput
   const ledger = db.invoices.find((entry) => entry.id === record.ledgerInvoiceId);
   if (ledger) {
     ledger.invoiceDate = record.invoiceDate;
+    ledger.clientId = record.clientId;
     ledger.amount = money([...perBilling.values()].reduce((sum, value) => sum + value, 0));
     ledger.updatedAt = now();
     ledger.updatedBy = input.actor;
@@ -677,7 +723,7 @@ export function voidInvoicePayment(db: Database, paymentId: string, reason: stri
 export function backfillInvoiceManagement(db: Database): boolean {
   if (db.taxInvoices === undefined) return false;
   ensureCollections(db);
-  let changed = false;
+  let changed = backfillCustomerCodes(db);
   for (const invoice of db.taxInvoices) {
     const hasAllocations = db.billingAllocations!.some((allocation) => allocation.invoiceId === invoice.id);
     if (!hasAllocations) {

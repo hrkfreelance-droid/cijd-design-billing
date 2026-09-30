@@ -21,6 +21,7 @@ export function ConfirmDialog({
   title,
   message,
   confirmLabel,
+  cancelLabel,
   tone = "default",
   busy = false,
   testId,
@@ -31,6 +32,8 @@ export function ConfirmDialog({
   title: string;
   message: ReactNode;
   confirmLabel: string;
+  /** Defaults to "Cancel". */
+  cancelLabel?: string;
   tone?: "default" | "destructive";
   busy?: boolean;
   testId?: string;
@@ -55,8 +58,8 @@ export function ConfirmDialog({
               {message}
             </AlertDialog.Description>
             <div className="mt-5 grid grid-cols-2 gap-2">
-              <AlertDialog.Close render={<Button variant="secondary" full disabled={busy} />}>
-                {t("common.cancel")}
+              <AlertDialog.Close render={<Button variant="secondary" full disabled={busy} data-testid={testId ? `${testId}-cancel` : undefined} />}>
+                {cancelLabel ?? t("common.cancel")}
               </AlertDialog.Close>
               <Button
                 variant={tone === "destructive" ? "destructive" : "primary"}

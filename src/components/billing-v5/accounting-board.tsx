@@ -71,7 +71,7 @@ export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
 
       <div className="px-5 sm:px-8">
         {view === "to-invoice" && <ToInvoice snapshot={snapshot} eligible={eligible} />}
-        {view === "invoices" && <InvoiceList snapshot={snapshot} />}
+        {view === "invoices" && <InvoicesView snapshot={snapshot} />}
         {view === "customers" && <CustomerMaster snapshot={snapshot} />}
         {view === "products" && <ProductMaster snapshot={snapshot} />}
       </div>
@@ -444,3 +444,18 @@ function DepositsPanel({ projectId, snapshot, run, total }: { projectId: string;
   );
 }
 
+
+/** Invoice list, plus a Tax Invoice started from the customer (free or product lines). */
+function InvoicesView({ snapshot }: { snapshot: Snapshot }) {
+  const t = useV5T();
+  const [creating, setCreating] = useState(false);
+  return (
+    <>
+      <div className="flex justify-end pt-6">
+        <Button variant="secondary" onClick={() => setCreating(true)} data-testid="v5-invoice-new">+ {t("editor.createTitle")}</Button>
+      </div>
+      <InvoiceList snapshot={snapshot} />
+      {creating && <InvoiceEditor mode="create" snapshot={snapshot} customerId={null} billingItemIds={[]} onClose={() => setCreating(false)} />}
+    </>
+  );
+}

@@ -23,7 +23,7 @@ export interface ReconcileResult {
 }
 
 /** Collections whose existing records must come out of a deploy unchanged. */
-export const PRESERVED = ["clients", "projects", "billingItems", "invoices", "invoiceItems", "projectPayments", "clientTaxProfiles", "taxInvoices"] as const;
+export const PRESERVED = ["clients", "projects", "billingItems", "invoices", "invoiceItems", "projectPayments", "clientTaxProfiles", "taxInvoices", "customers", "products", "billingAllocations", "invoicePayments", "invoiceRevisions"] as const;
 
 const REAL_NUMBER = /^CIJDTI(\d{4})(\d{3,})$/;
 
@@ -137,7 +137,7 @@ export function reconcileV5(before: AnySnapshot, after: AnySnapshot, options: { 
   }
 
   const counts: ReconcileResult["counts"] = {};
-  for (const name of [...PRESERVED, "customers", "products", "billingAllocations", "invoicePayments", "invoiceRevisions"]) {
+  for (const name of PRESERVED) {
     counts[name] = { before: list(before, name).length, after: list(after, name).length };
   }
   return { ok: checks.every((entry) => entry.ok), checks, counts };

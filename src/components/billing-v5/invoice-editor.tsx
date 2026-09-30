@@ -17,6 +17,7 @@ import { billingState, customerFor, unappliedProjectDeposit } from "@/lib/billin
 import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
 import type { ExchangeRate, Product, Snapshot, TaxInvoiceRecord } from "@/lib/types";
+import { Combobox, type ComboOption } from "./combobox";
 import { FitA4 } from "./fit-a4";
 import { InvoiceDocument, type InvoiceView } from "./invoice-document";
 
@@ -65,6 +66,12 @@ export function InvoiceEditor(props: EditorProps) {
   const { snapshot } = props;
   const editing = props.mode === "edit" ? props.invoice : null;
   const products = (snapshot.products ?? []).filter((product) => product.active);
+  const productOptions: ComboOption[] = products.map((product) => ({
+    id: product.id,
+    label: product.description,
+    hint: [product.productCode, product.unit, product.defaultUnitPrice == null ? "" : moneyExact(product.defaultUnitPrice)].filter(Boolean).join(" · "),
+    keywords: [product.productCode],
+  }));
 
   // What each billing line has left to bill, counting this invoice's own share back in.
   const leftFor = useMemo(() => {
@@ -87,6 +94,8 @@ export function InvoiceEditor(props: EditorProps) {
       }));
     }
     const ids = props.mode === "create" ? props.billingItemIds : [];
+    // Started from the customer: one empty line to type or pick a product into.
+    if (!ids.length) return [{ key: nextKey(), billingItemId: null, productId: null, description: "", quantity: "1", unit: "", unitPrice: "", amount: "" }];
     return ids.map((id) => {
       const item = snapshot.billingItems.find((entry) => entry.id === id)!;
       const left = leftFor.get(id) ?? 0;
@@ -104,12 +113,38 @@ export function InvoiceEditor(props: EditorProps) {
 
   const startCustomer = editing?.clientId ?? (props.mode === "create" ? props.customerId : null) ?? "";
   const [customerId, setCustomerId] = useState(startCustomer);
+  // The invoice's own snapshot for its customer; the Customer Master for any
+  // customer chosen explicitly (a new invoice, or a changed customer on edit).
   const fieldsFor = (id: string): CustomerFields => {
-    if (editing) return { ...editing.customer };
+    if (editing && id === editing.clientId) return { ...editing.customer };
     const master = customerFor(snapshot, id);
     return { companyNameEn: master.companyNameEn, companyNameKm: master.companyNameKm, addressEn: master.addressEn, addressKm: master.addressKm, telephone: master.telephone, vatin: master.vatin };
   };
   const [customer, setCustomer] = useState<CustomerFields>(() => fieldsFor(startCustomer));
+  // Active customers from the Customer Master (the current one stays listed on edit).
+  const customerOptions = useMemo<ComboOption[]>(
+    () =>
+      snapshot.clients
+        .filter((client) => (client.active && selectableClients([client]).length > 0) || client.id === startCustomer)
+        .map((client) => {
+          const master = customerFor(snapshot, client.id);
+          return {
+            id: client.id,
+            label: master.customerCode ? `${master.customerCode} · ${client.name}` : client.name,
+            hint: [master.companyNameEn !== client.name ? master.companyNameEn : "", master.companyNameKm].filter(Boolean).join(" · ") || undefined,
+            keywords: [master.customerCode, client.name, master.companyNameEn, master.companyNameKm, master.vatin],
+          };
+        })
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [snapshot, startCustomer],
+  );
+  const customerLabel = (id: string) => customerOptions.find((option) => option.id === id)?.label ?? "";
+  const [customerQuery, setCustomerQuery] = useState(() => customerLabel(startCustomer));
+  const pickCustomer = (id: string) => {
+    setCustomerId(id);
+    setCustomer(fieldsFor(id));
+    setCustomerQuery(customerLabel(id));
+  };
   const [updateMaster, setUpdateMaster] = useState(!editing);
   const [invoiceDate, setInvoiceDate] = useState(editing?.invoiceDate ?? phnomPenhDate());
   const [rows, setRows] = useState<Row[]>(initialRows);
@@ -184,6 +219,13 @@ export function InvoiceEditor(props: EditorProps) {
 
   const errors: string[] = [];
   if (!customerId) errors.push(t("editor.chooseCustomer"));
+  // One invoice bills one customer: billing lines of another customer block it.
+  const foreign = rows.filter((row) => {
+    if (!row.billingItemId || !customerId) return false;
+    const item = snapshot.billingItems.find((entry) => entry.id === row.billingItemId);
+    return snapshot.projects.find((project) => project.id === item?.projectId)?.clientId !== customerId;
+  });
+  if (foreign.length) errors.push(t("editor.otherCustomer", { count: foreign.length }));
   if (!customer.companyNameEn.trim() && !customer.companyNameKm.trim()) errors.push(t("prepare.errName"));
   if (!(rateNumber > 0)) errors.push(t("prepare.errRate"));
   if (!rows.length) errors.push(t("editor.addLine"));
@@ -222,6 +264,19 @@ export function InvoiceEditor(props: EditorProps) {
       }
       return next;
     }));
+
+  /** Choosing a product fills the line from the Product Master; every field stays editable. */
+  const pickProduct = (key: string, productId: string) => {
+    const product = products.find((entry) => entry.id === productId);
+    if (!product) return;
+    setRows((current) => current.map((row) => (row.key !== key ? row : {
+      ...row,
+      productId: product.id,
+      description: product.description,
+      unit: product.unit,
+      unitPrice: product.defaultUnitPrice == null ? row.unitPrice : product.defaultUnitPrice.toFixed(2),
+    })));
+  };
 
   const view_: InvoiceView = {
     projectId: projectIds[0] ?? "", projectIds, clientId: customerId, invoiceNumber: editing?.invoiceNumber ?? "", invoiceDate,
@@ -267,7 +322,11 @@ export function InvoiceEditor(props: EditorProps) {
     }
   };
 
-  /** Free-text lines that are not in the Product List: ask before saving them there. */
+  /**
+   * Free-text lines that are not in the Product Master: asked one line at a
+   * time — Yes adds that line to the Product Master, No keeps it on this
+   * invoice only. Nothing is ever added without asking.
+   */
   const start = () => {
     const unknown = rows.filter((row) => !row.billingItemId && !row.productId && row.description.trim());
     if (unknown.length) setNewProducts(unknown);
@@ -275,27 +334,28 @@ export function InvoiceEditor(props: EditorProps) {
     else setConfirming(true);
   };
 
-  const saveProductsThenSubmit = async (save: boolean) => {
-    const pending = newProducts ?? [];
-    setNewProducts(null);
+  const answerProduct = async (save: boolean) => {
+    const [row, ...rest] = newProducts ?? [];
+    if (!row) return;
     let next = rows;
     if (save) {
-      for (const row of pending) {
-        const product = await runResult(() =>
-          api<Product>("/api/v5/products", { method: "POST", body: { description: row.description.trim(), defaultUnitPrice: num(row.unitPrice), unit: row.unit.trim() } }),
-        );
-        if (!product) return;
-        next = next.map((entry) => (entry.key === row.key ? { ...entry, productId: product.id } : entry));
-      }
+      const product = await runResult(() =>
+        api<Product>("/api/v5/products", { method: "POST", body: { description: row.description.trim(), defaultUnitPrice: num(row.unitPrice), unit: row.unit.trim() } }),
+      );
+      if (!product) return; // stays on this question; the error is shown
+      next = rows.map((entry) => (entry.key === row.key ? { ...entry, productId: product.id } : entry));
       setRows(next);
     }
+    if (rest.length) {
+      setNewProducts(rest);
+      return;
+    }
+    setNewProducts(null);
     if (editing) void submit(next);
     else setConfirming(true);
   };
 
   const title = editing ? t("editor.editTitle", { number: editing.invoiceNumber }) : t("editor.createTitle");
-  const clientOptions = selectableClients(snapshot.clients);
-  const customerLocked = !!editing || rows.some((row) => row.billingItemId);
 
   const footer = (
     <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -335,20 +395,18 @@ export function InvoiceEditor(props: EditorProps) {
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
                   <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.customer")}</span>
-                  <Select
-                    value={customerId}
-                    disabled={customerLocked}
-                    onChange={(event) => {
-                      setCustomerId(event.target.value);
-                      setCustomer(fieldsFor(event.target.value));
-                    }}
-                    data-testid="v5-editor-customer"
-                  >
-                    <option value="">{t("editor.chooseCustomer")}</option>
-                    {clientOptions.map((client) => (
-                      <option key={client.id} value={client.id}>{client.name}</option>
-                    ))}
-                  </Select>
+                  <Combobox
+                    value={customerQuery}
+                    onInput={setCustomerQuery}
+                    onBlur={() => setCustomerQuery(customerLabel(customerId))}
+                    options={customerOptions}
+                    onPick={pickCustomer}
+                    placeholder={t("editor.searchCustomer")}
+                    ariaLabel={t("editor.customer")}
+                    empty={t("editor.noCustomer")}
+                    testId="v5-editor-customer"
+                  />
+                  {foreign.length > 0 && <span className="mt-1 block text-[12px] text-danger" data-testid="v5-editor-customer-error">{t("editor.otherCustomer", { count: foreign.length })}</span>}
                 </label>
                 <Text label={t("prepare.nameEn")} value={customer.companyNameEn} onChange={(v) => setCustomer({ ...customer, companyNameEn: v })} testId="v5-name-en" />
                 <Text label={t("prepare.nameKm")} value={customer.companyNameKm} onChange={(v) => setCustomer({ ...customer, companyNameKm: v })} testId="v5-name-km" lang="km" />
@@ -408,9 +466,6 @@ export function InvoiceEditor(props: EditorProps) {
 
           <section>
             <h3 className="mb-1 text-[13px] font-semibold">{t("editor.lines")}</h3>
-            <datalist id="v5-products">
-              {products.map((product) => <option key={product.id} value={product.description} />)}
-            </datalist>
             <div className="border-t border-line">
               <div className="hidden grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_6.5rem_7rem_2rem] gap-x-2 border-b border-line py-2 text-[11px] font-medium uppercase tracking-[0.06em] text-faint sm:grid">
                 <span>{t("editor.description")}</span>
@@ -427,7 +482,19 @@ export function InvoiceEditor(props: EditorProps) {
                 return (
                   <div key={row.key} className="grid grid-cols-[minmax(0,1fr)_2rem] gap-x-2 gap-y-2 border-b border-line py-3 sm:grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_6.5rem_7rem_2rem] sm:items-start" data-testid="v5-editor-row">
                     <div className="min-w-0">
-                      <Input value={row.description} list={row.billingItemId ? undefined : "v5-products"} onChange={(event) => update(row.key, { description: event.target.value })} aria-label={t("editor.description")} data-testid={`v5-row-description-${index}`} />
+                      {row.billingItemId ? (
+                        <Input value={row.description} onChange={(event) => update(row.key, { description: event.target.value })} aria-label={t("editor.description")} data-testid={`v5-row-description-${index}`} />
+                      ) : (
+                        <Combobox
+                          value={row.description}
+                          onInput={(text) => update(row.key, { description: text })}
+                          options={productOptions}
+                          onPick={(id) => pickProduct(row.key, id)}
+                          placeholder={t("editor.searchProduct")}
+                          ariaLabel={t("editor.description")}
+                          testId={`v5-row-description-${index}`}
+                        />
+                      )}
                       <span className="mt-1 block text-[12px] text-faint">
                         {item ? t("editor.fromBilling", { project: project?.name ?? "", left: moneyExact(leftFor.get(item.id) ?? 0) }) : row.productId ? products.find((p) => p.id === row.productId)?.productCode : t("detail.freeLine")}
                       </span>
@@ -522,13 +589,14 @@ export function InvoiceEditor(props: EditorProps) {
         testId="v5-confirm-issue"
       />
       <ConfirmDialog
-        open={!!newProducts}
-        onClose={() => void saveProductsThenSubmit(false)}
-        onConfirm={() => void saveProductsThenSubmit(true)}
+        open={!!newProducts?.length}
+        onClose={() => void answerProduct(false)}
+        onConfirm={() => void answerProduct(true)}
         busy={busy}
         title={t("editor.newProducts")}
-        message={t("editor.newProductsBody", { count: newProducts?.length ?? 0, names: (newProducts ?? []).map((row) => `“${row.description.trim()}”`).join(", ") })}
+        message={t("editor.newProductsBody", { name: newProducts?.[0]?.description.trim() ?? "" })}
         confirmLabel={t("editor.saveProducts")}
+        cancelLabel={t("editor.keepOnInvoice")}
         testId="v5-confirm-products"
       />
     </Modal>

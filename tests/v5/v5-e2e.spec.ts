@@ -70,7 +70,8 @@ type State = {
   projects: { id: string; name: string; clientId: string; note?: string }[];
   billingItems: { id: string; projectId: string; description: string; quantity: number; unitPrice: number; amount: number; finalMode?: string; billingStatus: string }[];
   taxInvoices: { id: string; invoiceNumber: string; status: string; clientId: string; invoiceDate: string; totalUsd: number; exchangeRate: number; customer: Record<string, string>; lines: Record<string, unknown>[]; revision?: number; discount?: unknown; vatApplicable: boolean; subtotalUsd?: number; discountUsd?: number; taxableUsd?: number; vatUsd?: number; depositUsd?: number; discountPolicy?: string | null; exchangeRateSource?: string; exchangeRateBasis?: string; exchangeRateForDate?: string }[];
-  products: { id: string; description: string; active: boolean }[];
+  products: { id: string; description: string; active: boolean; productCode: string }[];
+  customers: { id: string; customerCode: string; companyNameEn: string; active: boolean }[];
   invoicePayments: { id: string; invoiceId: string; kind: string; amount: number; voidedAt?: string | null }[];
   billingAllocations: { billingItemId: string; invoiceId: string; amount: number; voidedAt?: string | null }[];
 };
@@ -480,5 +481,182 @@ test("V5 invoice management: designer → accounting → invoice → payments �
 
   // Imported records were only read.
   expect(await fingerprint()).toBe(importedBefore);
+  expect(problems, problems.join("\n")).toEqual([]);
+});
+
+/* ======================================================================
+ * Customer selector, customer codes, company documents, product selector,
+ * unregistered products (TEST data only; documents are kept, never deleted).
+ * ==================================================================== */
+test("V5 masters in the invoice: customer selector, codes, company documents, product selector", async ({ page }) => {
+  test.setTimeout(240_000);
+  watch(page);
+  const CUST = `TEST E2E Selector ${RUN}`;
+  const EN = `${CUST} Co., Ltd.`;
+  const KM = "ក្រុមហ៊ុន ជ្រើសរើស ឯ.ក";
+  const ADDR_EN = "#8, Street 63, Phnom Penh";
+  const ADDR_KM = "ផ្ទះលេខ ៨ ផ្លូវ៦៣ រាជធានីភ្នំពេញ";
+  const PHONE = "023 111 222";
+  const VATIN = "K009-987654321";
+  const PICKED = `TEST Selector Product ${RUN}`;
+  const YES = `TEST custom yes ${RUN}`;
+  const NO = `TEST custom no ${RUN}`;
+
+  await page.goto("/office-v5/accounting?view=customers");
+  await prefs(page, "en", "light");
+  await page.reload();
+
+  /* ------------------------------------------ A. new customer, auto code */
+  await page.getByTestId("v5-customer-new").click();
+  let sheet = page.getByTestId("v5-customer-sheet");
+  await expect(sheet.getByTestId("v5-customer-code")).toHaveText("Assigned when saved");
+  await expect(sheet.locator('input[data-testid="v5-customer-code"]')).toHaveCount(0); // never typed
+  await sheet.getByTestId("v5-customer-name").fill(CUST);
+  await sheet.getByTestId("v5-customer-companyNameEn").fill(EN);
+  await sheet.getByTestId("v5-customer-companyNameKm").fill(KM);
+  await sheet.getByTestId("v5-customer-addressEn").fill(ADDR_EN);
+  await sheet.getByTestId("v5-customer-addressKm").fill(ADDR_KM);
+  await sheet.getByTestId("v5-customer-telephone").fill(PHONE);
+  await sheet.getByTestId("v5-customer-vatin").fill(VATIN);
+  await expect(sheet.getByTestId("v5-doc-empty")).toHaveCount(0); // documents come after the first save
+  await sheet.getByTestId("v5-customer-save").click();
+  await expect(sheet).toHaveCount(0);
+  const customer = (await state(page)).customers.find((c) => c.companyNameEn === EN)!;
+  expect(customer.customerCode).toMatch(/^C\d{4}$/);
+  await page.getByTestId("v5-customer-search").fill(customer.customerCode);
+  await expect(page.getByTestId("v5-customer-row")).toHaveCount(1);
+  await page.getByTestId("v5-customer-row").click();
+  sheet = page.getByTestId("v5-customer-sheet");
+  await expect(sheet.getByTestId("v5-customer-code")).toHaveText(customer.customerCode);
+  await expect(sheet.locator('input[data-testid="v5-customer-code"]')).toHaveCount(0);
+
+  /* ------------------------------------------------- B. company documents */
+  const pdf = Buffer.from(`%PDF-1.4\n% TEST patent tax ${RUN}\n%%EOF\n`);
+  await sheet.getByTestId("v5-doc-type").selectOption("PATENT_TAX");
+  await sheet.getByTestId("v5-doc-file").setInputFiles({ name: `TEST patent ${RUN}.pdf`, mimeType: "application/pdf", buffer: pdf });
+  const docRow = sheet.getByTestId("v5-doc-row");
+  await expect(docRow).toHaveCount(1);
+  await expect(docRow).toContainText("Patent Tax");
+  await expect(docRow.getByTestId("v5-doc-name")).toHaveText(`TEST patent ${RUN}.pdf`);
+  const viewHref = (await docRow.getByTestId("v5-doc-view").getAttribute("href"))!;
+  const viewed = await page.request.get(viewHref);
+  expect([viewed.status(), viewed.headers()["content-type"], viewed.headers()["content-disposition"]?.split(";")[0], viewed.headers()["cache-control"]]).toEqual([200, "application/pdf", "inline", "private, no-store"]);
+  expect(Buffer.from(await viewed.body()).equals(pdf)).toBe(true);
+  const downloaded = await page.request.get((await docRow.getByTestId("v5-doc-download").getAttribute("href"))!);
+  expect([downloaded.status(), downloaded.headers()["content-disposition"]?.split(";")[0]]).toEqual([200, "attachment"]);
+  expect(Buffer.from(await downloaded.body()).equals(pdf)).toBe(true);
+  // Replace: the new file is current, the old one kept in the history.
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
+  const chooser = page.waitForEvent("filechooser");
+  await docRow.getByTestId("v5-doc-replace").click();
+  await (await chooser).setFiles({ name: `TEST patent ${RUN} v2.png`, mimeType: "image/png", buffer: png });
+  await expect(sheet.getByTestId("v5-doc-name")).toHaveText(`TEST patent ${RUN} v2.png`);
+  await expect(sheet.getByTestId("v5-doc-history")).toContainText("1 earlier version");
+  const replaced = await page.request.get((await sheet.getByTestId("v5-doc-view").getAttribute("href"))!);
+  expect([replaced.status(), replaced.headers()["content-type"]]).toEqual([200, "image/png"]);
+  // The old file is still there (kept, not overwritten).
+  expect(Buffer.from(await (await page.request.get(viewHref)).body()).equals(pdf)).toBe(true);
+  await shot(page, "12-customer-documents-en-light");
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+
+  /* --------------------------------------------------- C. a TEST product */
+  await page.getByRole("tab", { name: /Products/ }).click();
+  await page.getByTestId("v5-product-new").click();
+  const productSheet = page.getByTestId("v5-product-sheet");
+  await productSheet.getByTestId("v5-product-description").fill(PICKED);
+  await productSheet.getByTestId("v5-product-price").fill("45");
+  await productSheet.getByTestId("v5-product-unit").fill("pcs");
+  await productSheet.getByTestId("v5-product-save").click();
+  await expect(productSheet).toHaveCount(0);
+  const product = (await state(page)).products.find((p) => p.description === PICKED)!;
+  expect(product.productCode).toMatch(/^P\d{4}$/);
+
+  /* ------------------------- A. selector → editor → issue → reopen → PDF */
+  await page.getByRole("tab", { name: /Invoices/ }).click();
+  await page.getByTestId("v5-invoice-new").click();
+  const editor = page.getByTestId("v5-invoice-editor");
+  const picker = editor.getByTestId("v5-editor-customer");
+  await picker.fill(customer.customerCode); // search by code
+  await expect(editor.getByTestId("v5-editor-customer-options").getByTestId("v5-editor-customer-option")).toHaveCount(1);
+  await picker.fill(EN.slice(0, 18).toLowerCase()); // or by company name, any case
+  await editor.getByTestId("v5-editor-customer-option").filter({ hasText: CUST }).click();
+  await expect(picker).toHaveValue(`${customer.customerCode} · ${CUST}`);
+  await expect(editor.getByTestId("v5-name-en")).toHaveValue(EN);
+  await expect(editor.getByTestId("v5-name-km")).toHaveValue(KM);
+  await expect(editor.getByTestId("v5-address-en")).toHaveValue(ADDR_EN);
+  await expect(editor.getByTestId("v5-address-km")).toHaveValue(ADDR_KM);
+  await expect(editor.getByTestId("v5-phone")).toHaveValue(PHONE);
+  await expect(editor.getByTestId("v5-vatin")).toHaveValue(VATIN);
+
+  // C. Product selector: search by code, pick → description, unit, unit price; qty × price.
+  const line0 = editor.getByTestId("v5-row-description-0");
+  await line0.fill(product.productCode);
+  await editor.getByTestId("v5-row-description-0-option").filter({ hasText: PICKED }).click();
+  await expect(line0).toHaveValue(PICKED);
+  await expect(editor.getByTestId("v5-row-unit-0")).toHaveValue("pcs");
+  await expect(editor.getByTestId("v5-row-price-0")).toHaveValue("45.00");
+  await editor.getByTestId("v5-row-qty-0").fill("3");
+  await expect(editor.getByTestId("v5-row-amount-0")).toHaveText("$135.00");
+  await editor.getByTestId("v5-row-price-0").fill("44"); // still editable after picking
+  await expect(editor.getByTestId("v5-row-amount-0")).toHaveText("$132.00");
+
+  // D. Two lines that are not in the Product Master.
+  await editor.getByTestId("v5-add-line").click();
+  await editor.getByTestId("v5-row-description-1").fill(YES);
+  await editor.getByTestId("v5-row-price-1").fill("10");
+  await editor.getByTestId("v5-add-line").click();
+  await editor.getByTestId("v5-row-description-2").fill(NO);
+  await editor.getByTestId("v5-row-price-2").fill("5");
+  const rateInput = editor.getByTestId("v5-rate-input");
+  await expect(editor.getByTestId("v5-rate-source")).not.toHaveText("");
+  if (!(await rateInput.inputValue())) await rateInput.fill("4105");
+  await editor.getByTestId("v5-issue").click();
+  const ask = page.getByTestId("v5-confirm-products");
+  await expect(ask).toContainText(YES);
+  await page.getByTestId("v5-confirm-products-confirm").click(); // YES: register
+  await expect(ask).toContainText(NO);
+  await page.getByTestId("v5-confirm-products-cancel").click(); // NO: this invoice only
+  await page.getByTestId("v5-confirm-issue-confirm").click();
+
+  await expect(page).toHaveURL(/\/office-v5\/tax-invoices\/[\w-]+$/);
+  const number = (await page.getByTestId("v5-invoice-heading").innerText()).trim();
+  expect(number).toMatch(/^TEST-CIJDTI\d{7}$/); // TEST series only
+  const check = async () => {
+    const doc = page.getByTestId("tax-invoice-sheet");
+    for (const text of [EN, KM, ADDR_EN, ADDR_KM, PHONE, VATIN, PICKED, YES, NO]) await expect(doc).toContainText(text);
+    await expect(doc.getByTestId("tax-invoice-line")).toHaveCount(3);
+    await expect(doc.getByTestId("tax-invoice-subtotal")).toContainText("147.00"); // 132 + 10 + 5
+    // Company documents never reach the Tax Invoice.
+    await expect(doc).not.toContainText("patent");
+    await expect(doc.locator("img")).toHaveCount(1); // the logo only
+  };
+  await check();
+  await page.reload(); // reopen
+  await check();
+  const saved = (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!;
+  expect(saved.clientId).toBe(customer.id);
+  expect(saved.customer).toMatchObject({ companyNameEn: EN, companyNameKm: KM, addressEn: ADDR_EN, addressKm: ADDR_KM, telephone: PHONE, vatin: VATIN });
+  const products = (await state(page)).products;
+  expect(products.some((p) => p.description === YES)).toBe(true);
+  expect(products.some((p) => p.description === NO)).toBe(false);
+  expect(saved.lines.map((l) => [l.description, !!l.productId])).toEqual([[PICKED, true], [YES, true], [NO, false]]);
+
+  // A later Customer Master edit never reaches the issued invoice.
+  expect((await page.request.patch(`/api/v5/customers/${customer.id}`, { data: { vatin: "K000-CHANGED" } })).ok()).toBeTruthy();
+  expect((await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!.customer.vatin).toBe(VATIN);
+  await page.getByTestId("tax-invoice-sheet").scrollIntoViewIfNeeded();
+  await shot(page, "13-selector-invoice-en-light");
+
+  if (DEPLOYED) {
+    const s = await state(page);
+    for (const invoice of s.taxInvoices.filter((i) => i.clientId === customer.id && i.status === "ISSUED")) {
+      expect((await page.request.post(`/api/v5/tax-invoices/${invoice.id}/cancel`, { data: { reason: "E2E test cleanup" } })).ok()).toBeTruthy();
+    }
+    expect((await page.request.patch(`/api/v5/customers/${customer.id}`, { data: { active: false } })).ok()).toBeTruthy();
+    for (const p of s.products.filter((entry) => entry.description.startsWith("TEST ") && entry.description.includes(RUN))) {
+      expect((await page.request.patch(`/api/v5/products/${p.id}`, { data: { active: false } })).ok()).toBeTruthy();
+    }
+  }
   expect(problems, problems.join("\n")).toEqual([]);
 });

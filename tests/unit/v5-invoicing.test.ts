@@ -58,7 +58,9 @@ test("Customer Master and Product Master: create, code, edit, search fields", as
   const created = await open().saveCustomer({ name: "TEST Second", companyNameEn: "TEST Second Ltd.", actor: "TEST" });
   assert.equal(created.customerCode, "C0002");
   assert.ok((await open().getSnapshot()).clients.some((entry) => entry.id === created.id)); // usable on Billing too
-  await rejectsWith(open().saveCustomer({ id: created.id, customerCode: "C0001", actor: "TEST" }), "DUPLICATE_CODE");
+  // The code is the system's: a code sent by a client is ignored, never taken.
+  assert.equal((await open().saveCustomer({ id: created.id, customerCode: "C0001", actor: "TEST" })).customerCode, "C0002");
+  assert.equal((await open().saveCustomer({ name: "TEST Third", customerCode: "C0999", actor: "TEST" })).customerCode, "C0003");
 
   const product = await open().saveProduct({ description: "Logo design", defaultUnitPrice: 300, unit: "set", actor: "TEST" });
   assert.equal(product.productCode, "P0001");
@@ -66,6 +68,50 @@ test("Customer Master and Product Master: create, code, edit, search fields", as
   const edited = await open().saveProduct({ id: product.id, defaultUnitPrice: 320, actor: "TEST" });
   assert.equal(edited.defaultUnitPrice, 320);
   assert.equal(edited.description, "Logo design");
+});
+
+test("customer codes: every client gets one (max + 1, creation order), never reused, never changed; inactive customers cannot be invoiced", async () => {
+  const t = await env();
+  const codes = async () => new Map((await t.snap()).customers!.map((c) => [c.id, c.customerCode]));
+  await t.open().saveProduct({ description: "TEST any write", actor: "TEST" }); // any write runs the back-fill
+  const envCode = (await codes()).get(t.client.id);
+  assert.match(envCode ?? "", /^C\d{4}$/);
+  // A higher code was issued before (an inactive customer): new codes go after it.
+  await t.edit((db) => {
+    db.customers!.push({ ...db.customers![0], id: "gone", customerCode: "C0007", companyNameEn: "Inactive old", active: false });
+  });
+  // Two clients made on the Billing screens (no Customer Master record yet), in this order.
+  await t.edit((db) => {
+    db.clients.push({ id: "b-later", name: "TEST Code B", active: true, createdAt: "2026-09-02T00:00:00.000Z" });
+    db.clients.push({ id: "a-first", name: "TEST Code A", active: true, createdAt: "2026-09-01T00:00:00.000Z" });
+  });
+  await t.open().saveProduct({ description: "TEST second write", actor: "TEST" });
+  const first = await codes();
+  assert.deepEqual([first.get(t.client.id), first.get("gone"), first.get("a-first"), first.get("b-later")], [envCode, "C0007", "C0008", "C0009"]);
+  await t.open().saveProduct({ description: "TEST third write", actor: "TEST" });
+  assert.deepEqual(await codes(), first); // idempotent
+  assert.equal((await t.open().saveCustomer({ name: "TEST Code C", actor: "TEST" })).customerCode, "C0010");
+  // Inactive: kept in the master with its code, but not invoiceable.
+  await t.open().saveCustomer({ id: "a-first", active: false, actor: "TEST" });
+  await rejectsWith(t.open().issueInvoice({ customerId: "a-first", invoiceDate: "2026-09-29", customer: CUSTOMER, actor: "TEST", items: [{ description: "x", quantity: 1, unitPrice: 1 }] }), "CUSTOMER_INACTIVE");
+  assert.equal((await codes()).get("a-first"), "C0008");
+});
+
+test("edit may change the customer explicitly: snapshot follows; billing lines must be the new customer's; TEST and real series never mix", async () => {
+  const t = await env();
+  const other = await t.open().saveCustomer({ name: "Other Co", companyNameEn: "Other Co., Ltd.", vatin: "K009", actor: "TEST" });
+  const free = await t.issue([{ description: "TEST free", quantity: 1, unitPrice: 10 }]);
+  const moved = await t.open().editInvoice(free.id, { customerId: other.id, customer: { ...CUSTOMER, companyNameEn: "Other Co., Ltd.", vatin: "K009" }, actor: "TEST", invoiceDate: free.invoiceDate, items: free.lines.map((l) => ({ ...l, billingItemId: undefined })) });
+  assert.deepEqual([moved.clientId, moved.customer.companyNameEn, moved.customer.vatin, moved.invoiceNumber, moved.totalUsd], [other.id, "Other Co., Ltd.", "K009", free.invoiceNumber, 11]);
+  const ledger = (await t.snap()).invoices.find((i) => i.id === moved.ledgerInvoiceId);
+  if (ledger) assert.equal(ledger.clientId, other.id);
+  // Billing lines stay with their own customer.
+  const { line } = await t.billing("TEST Billed", 100);
+  const billed = await t.issue([{ billingItemId: line.id, amount: 100 }]);
+  await rejectsWith(t.open().editInvoice(billed.id, { customerId: other.id, customer: CUSTOMER, actor: "TEST", invoiceDate: billed.invoiceDate, items: billed.lines.map((l) => ({ ...l, billingItemId: l.billingItemId ?? undefined })) }), "DIFFERENT_CUSTOMER");
+  // A real invoice never moves to a TEST customer (nor the other way round).
+  const testCustomer = await t.open().saveCustomer({ name: "TEST Customer X", actor: "TEST" });
+  await rejectsWith(t.open().editInvoice(free.id, { customerId: testCustomer.id, customer: CUSTOMER, actor: "TEST", invoiceDate: free.invoiceDate, items: free.lines.map((l) => ({ ...l, billingItemId: undefined })) }), "SERIES_MISMATCH");
 });
 
 test("several billings of one customer on one invoice; another customer's billing is refused", async () => {

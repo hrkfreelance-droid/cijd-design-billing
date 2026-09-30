@@ -1,6 +1,8 @@
+import { RuleError } from "@/lib/data/repository";
 import { Store } from "@/lib/data/store";
 import type { Database } from "@/lib/types";
 import { d1Persistence, type D1DatabaseLike } from "./d1-persistence";
+import type { R2BucketLike } from "./documents";
 
 /**
  * The V5 Worker hands its bindings over here (see worker/index.ts) before any
@@ -8,6 +10,8 @@ import { d1Persistence, type D1DatabaseLike } from "./d1-persistence";
  */
 interface V5Env {
   V5_DB?: D1DatabaseLike;
+  /** V5's own R2 bucket for customer company documents (internal only). */
+  V5_DOCS?: R2BucketLike;
 }
 
 const ENV_KEY = "__cijdV5Env";
@@ -20,6 +24,13 @@ function v5Database(): D1DatabaseLike {
   const env = (globalThis as Record<string, unknown>)[ENV_KEY] as V5Env | undefined;
   if (!env?.V5_DB) throw new Error("The V5 D1 binding (V5_DB) is not available.");
   return env.V5_DB;
+}
+
+/** Customer documents: V5's D1 (metadata) and V5's own R2 bucket (files). */
+export function v5DocumentStorage(): { db: D1DatabaseLike; bucket: R2BucketLike } {
+  const env = (globalThis as Record<string, unknown>)[ENV_KEY] as V5Env | undefined;
+  if (!env?.V5_DOCS) throw new RuleError("STORAGE_UNAVAILABLE", "Document storage is not available on this server.", 503);
+  return { db: v5Database(), bucket: env.V5_DOCS };
 }
 
 /** V5 starts empty: no V3 records are copied in, and none are ever read. */
