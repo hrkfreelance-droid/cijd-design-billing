@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { HistoricalRecordRow } from "@/components/historical-record-row";
 import { api, useI18n, useSession } from "@/components/providers";
@@ -37,7 +37,17 @@ type ArchiveDateGroup = {
  * Search covers both, so old work can be used as a pricing reference without
  * turning historical evidence back into active billing data.
  */
-export function ArchiveBoard({ snapshot }: { snapshot: Snapshot }) {
+export function ArchiveBoard({
+  snapshot,
+  excludeProjectIds,
+  allowRestore = true,
+  leading,
+}: {
+  snapshot: Snapshot;
+  excludeProjectIds?: ReadonlySet<string>;
+  allowRestore?: boolean;
+  leading?: ReactNode;
+}) {
   const { t, locale } = useI18n();
   const { user } = useSession();
   const { run, busy } = useAction();
@@ -45,7 +55,21 @@ export function ArchiveBoard({ snapshot }: { snapshot: Snapshot }) {
   const [restoring, setRestoring] = useState(false);
   const [query, setQuery] = useState("");
 
-  const groups = useMemo(() => archiveBoard(snapshot), [snapshot]);
+  const groups = useMemo(() => {
+    const base = archiveBoard(snapshot);
+    if (!excludeProjectIds?.size) return base;
+    return base
+      .map((group) => {
+        const projects = group.projects.filter((project) => !excludeProjectIds.has(project.id));
+        return {
+          ...group,
+          projects,
+          total: boardTotal(projects),
+          pending: projects.some((project) => project.pricePendingCount > 0),
+        };
+      })
+      .filter((group) => group.projects.length > 0);
+  }, [snapshot, excludeProjectIds]);
   const historical = useMemo(
     () =>
       groupHistoricalItems(
@@ -58,7 +82,7 @@ export function ArchiveBoard({ snapshot }: { snapshot: Snapshot }) {
 
   const total = boardTotal(groups);
   const count = groups.reduce((sum, group) => sum + group.projects.length, 0);
-  const canRestore = !!user && can(user.role, "invoice:write");
+  const canRestore = allowRestore && !!user && can(user.role, "invoice:write");
   const term = query.trim().toLocaleLowerCase();
 
   const lookup = useMemo(() => {
@@ -174,6 +198,8 @@ export function ArchiveBoard({ snapshot }: { snapshot: Snapshot }) {
           </dl>
         )}
       </header>
+
+      {leading}
 
       {hasRecords && (
         <div className="px-5 pt-4 sm:px-8">

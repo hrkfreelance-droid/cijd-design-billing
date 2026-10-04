@@ -96,7 +96,7 @@ export class GuardedRepository {
 
   setProjectBillingReadiness(
     id: string,
-    readiness: "READY" | "IN_PROGRESS" | "AUTO",
+    readiness: "READY" | "IN_PROGRESS" | "AUTO" | "ACCOUNTING",
     actor?: string,
   ) {
     this.assert("invoice:write");

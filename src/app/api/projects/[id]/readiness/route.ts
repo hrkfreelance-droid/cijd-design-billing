@@ -9,7 +9,7 @@ export async function PATCH(
   return handleAs((repo) =>
     repo.setProjectBillingReadiness(
       id,
-      str(body.readiness) as "READY" | "IN_PROGRESS" | "AUTO",
+      str(body.readiness) as "READY" | "IN_PROGRESS" | "AUTO" | "ACCOUNTING",
     ),
   );
 }

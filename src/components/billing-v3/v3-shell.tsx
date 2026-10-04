@@ -66,7 +66,7 @@ function Header({ variant }: { variant: ShellVariant }) {
   const links =
     variant === "v5"
       ? [
-          { href: base, label: t("v2.nav.billing") },
+          { href: base, label: v5t("nav.design") },
           { href: `${base}/accounting`, label: v5t("nav.accounting") },
           { href: `${base}/archive`, label: t("v2.nav.archive") },
         ]

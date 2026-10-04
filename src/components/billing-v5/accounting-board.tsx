@@ -1,13 +1,12 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { Modal } from "@/components/billing-v2/modal";
 import { Price, ProjectDetail } from "@/components/billing-v2/project-detail";
 import { CheckIcon } from "@/components/icons";
 import { api, useI18n, useToast } from "@/components/providers";
-import { Button, Input, Segmented } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { useAction } from "@/components/use-action";
 import { toBoardProject } from "@/lib/billing-v2/board";
 import { serviceForItem, serviceLabel } from "@/lib/billing-v2/services";
@@ -19,29 +18,22 @@ import { moneyExact } from "@/lib/format";
 import type { Snapshot } from "@/lib/types";
 import { InvoiceEditor } from "./invoice-editor";
 import { InvoiceList } from "./invoice-list";
-import { CustomerMaster, ProductMaster } from "./masters";
-
-type View = "to-invoice" | "invoices" | "customers" | "products";
-const VIEWS: View[] = ["to-invoice", "invoices", "customers", "products"];
 
 /**
- * Accounting: the step after the designer's "ready to bill", and the home of
- * the invoices themselves. One screen, four views of the same objects —
- * billing waiting to be invoiced, invoices, customers, products — built from
- * the Billing screen's own parts so it reads as the next page of V3.
+ * Accounting is one screen: work handed off by Design, then the invoice list.
+ * Status is shown on each row/invoice instead of splitting the workflow into tabs.
  */
 export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
   const t = useV5T();
-  const router = useRouter();
-  const pathname = usePathname();
-  const params = useSearchParams();
-  const view = (VIEWS.includes(params.get("view") as View) ? params.get("view") : "to-invoice") as View;
-  const setView = (next: View) => router.replace(next === "to-invoice" ? pathname : `${pathname}?view=${next}`, { scroll: false });
-
-  const eligible = useMemo(() => eligibleBilling(snapshot), [snapshot]);
+  const eligible = useMemo(() => {
+    const accountingIds = new Set(snapshot.projects.filter((project) => project.billingReadiness === "ACCOUNTING").map((project) => project.id));
+    return eligibleBilling(snapshot).filter((state) => accountingIds.has(state.item.projectId) || state.allocations.length > 0);
+  }, [snapshot]);
   const toInvoiceTotal = roundMoney(eligible.reduce((sum, state) => sum + state.remainingUsd, 0));
   const outstanding = roundMoney(
-    (snapshot.taxInvoices ?? []).filter((i) => i.status === "ISSUED").reduce((sum, invoice) => sum + invoiceCollection(snapshot, invoice).outstandingUsd, 0),
+    (snapshot.taxInvoices ?? [])
+      .filter((invoice) => invoice.status === "ISSUED" && !invoice.invoiceNumber.startsWith("TEST"))
+      .reduce((sum, invoice) => sum + invoiceCollection(snapshot, invoice).outstandingUsd, 0),
   );
 
   return (
@@ -56,24 +48,16 @@ export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
             {snapshot.exchangeRate ? snapshot.exchangeRate.rate.toLocaleString("en-US") : t("accounting.rateNone")}
           </Figure>
         </dl>
-        <Segmented
-          className="mt-7 max-w-[560px]"
-          value={view}
-          onChange={setView}
-          options={[
-            { value: "to-invoice", label: t("view.toInvoice"), count: new Set(eligible.map((s) => s.item.projectId)).size },
-            { value: "invoices", label: t("view.invoices"), count: (snapshot.taxInvoices ?? []).length },
-            { value: "customers", label: t("view.customers") },
-            { value: "products", label: t("view.products") },
-          ]}
-        />
       </header>
 
       <div className="px-5 sm:px-8">
-        {view === "to-invoice" && <ToInvoice snapshot={snapshot} eligible={eligible} />}
-        {view === "invoices" && <InvoicesView snapshot={snapshot} />}
-        {view === "customers" && <CustomerMaster snapshot={snapshot} />}
-        {view === "products" && <ProductMaster snapshot={snapshot} />}
+        <ToInvoice snapshot={snapshot} eligible={eligible} />
+        <section className="pt-12" data-testid="v5-section-invoices">
+          <div className="border-b border-line-strong pb-2.5">
+            <h2 className="text-[16px] font-semibold tracking-[-0.012em]">{t("accounting.openInvoices")}</h2>
+          </div>
+          <InvoiceList snapshot={snapshot} mode="open" excludeTest />
+        </section>
       </div>
     </div>
   );
@@ -441,21 +425,5 @@ function DepositsPanel({ projectId, snapshot, run, total }: { projectId: string;
         </Button>
       </div>
     </section>
-  );
-}
-
-
-/** Invoice list, plus a Tax Invoice started from the customer (free or product lines). */
-function InvoicesView({ snapshot }: { snapshot: Snapshot }) {
-  const t = useV5T();
-  const [creating, setCreating] = useState(false);
-  return (
-    <>
-      <div className="flex justify-end pt-6">
-        <Button variant="secondary" onClick={() => setCreating(true)} data-testid="v5-invoice-new">+ {t("editor.createTitle")}</Button>
-      </div>
-      <InvoiceList snapshot={snapshot} />
-      {creating && <InvoiceEditor mode="create" snapshot={snapshot} customerId={null} billingItemIds={[]} onClose={() => setCreating(false)} />}
-    </>
   );
 }

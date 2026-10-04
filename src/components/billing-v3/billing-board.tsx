@@ -16,6 +16,7 @@ import {
 } from "@/lib/billing-v2/board";
 import { isCostPriced, serviceLabel } from "@/lib/billing-v2/services";
 import { moneyExact } from "@/lib/format";
+import { useV5T } from "@/lib/billing-v5/i18n";
 import type { Snapshot } from "@/lib/types";
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
 import { NewProjectModal } from "@/components/billing-v2/new-project-modal";
@@ -30,8 +31,9 @@ type Section = "READY" | "IN_PROGRESS";
  * each one is, its final price and, for printing, its cost — so a billing
  * decision can be made from the list without opening anything.
  */
-export function BillingV3Board({ snapshot }: { snapshot: Snapshot }) {
+export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot: Snapshot; accountingFlow?: boolean }) {
   const { t } = useI18n();
+  const v5t = useV5T();
   const { run, busy } = useAction();
   const [selected, setSelected] = useState<{ section: Section; ids: Set<string> }>({
     section: "READY",
@@ -102,8 +104,16 @@ export function BillingV3Board({ snapshot }: { snapshot: Snapshot }) {
   const markBilled = async () => {
     const ids = chosen.map((project) => project.id);
     const ok = await run(
-      () => api("/api/billing-v2/billed", { method: "POST", body: { projectIds: ids } }),
-      { key: "v2.markBilled.done" },
+      async () => {
+        if (accountingFlow) {
+          for (const id of ids) {
+            await api("/api/projects/" + id + "/readiness", { method: "PATCH", body: { readiness: "ACCOUNTING" } });
+          }
+          return;
+        }
+        await api("/api/billing-v2/billed", { method: "POST", body: { projectIds: ids } });
+      },
+      accountingFlow ? undefined : { key: "v2.markBilled.done" },
     );
     setConfirmingBill(false);
     if (ok) clear();
@@ -130,9 +140,9 @@ export function BillingV3Board({ snapshot }: { snapshot: Snapshot }) {
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">
-              {t("v2.billing.title")}
+              {accountingFlow ? v5t("design.title") : t("v2.billing.title")}
             </h1>
-            <p className="mt-1 text-[13.5px] text-muted">{t("v2.billing.subtitle")}</p>
+            <p className="mt-1 text-[13.5px] text-muted">{accountingFlow ? v5t("design.subtitle") : t("v2.billing.subtitle")}</p>
           </div>
           <Button variant="primary" onClick={() => setCreating(true)} className="mt-1" data-testid="v2-new-project">
             <span aria-hidden className="-ml-0.5 text-[17px] font-normal leading-none">+</span>
@@ -236,7 +246,7 @@ export function BillingV3Board({ snapshot }: { snapshot: Snapshot }) {
                 disabled={busy}
                 data-testid="v2-mark-billed"
               >
-                {t("v2.markBilled")}
+                {accountingFlow ? v5t("design.sendAccounting") : t("v2.markBilled")}
               </Button>
             </>
           ) : (
@@ -261,6 +271,7 @@ export function BillingV3Board({ snapshot }: { snapshot: Snapshot }) {
           depositLocked={snapshot.billingItems.some(
             (item) => item.projectId === open.project.id && !item.deletedAt && isBilled(item),
           )}
+          accountingFlow={accountingFlow}
           onClose={() => setOpenProject(null)}
         />
       )}
@@ -278,9 +289,9 @@ export function BillingV3Board({ snapshot }: { snapshot: Snapshot }) {
         onClose={() => setConfirmingBill(false)}
         onConfirm={() => void markBilled()}
         busy={busy}
-        title={t("v2.markBilled.confirmTitle")}
-        message={t("v2.markBilled.confirmBody", { count: chosen.length, total: moneyExact(chosenTotal) })}
-        confirmLabel={t("v2.markBilled")}
+        title={accountingFlow ? v5t("design.sendAccountingTitle") : t("v2.markBilled.confirmTitle")}
+        message={accountingFlow ? v5t("design.sendAccountingBody", { count: chosen.length, total: moneyExact(chosenTotal) }) : t("v2.markBilled.confirmBody", { count: chosen.length, total: moneyExact(chosenTotal) })}
+        confirmLabel={accountingFlow ? v5t("design.sendAccounting") : t("v2.markBilled")}
         testId="v2-confirm-bill"
       />
     </div>

@@ -9,6 +9,7 @@ import type { BoardProject } from "@/lib/billing-v2/board";
 import { serviceLabel } from "@/lib/billing-v2/services";
 import { projectBalance, roundCents } from "@/lib/billing-v2/pricing";
 import { moneyExact } from "@/lib/format";
+import { useV5T } from "@/lib/billing-v5/i18n";
 import type { ServiceType } from "@/lib/types";
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
 import { ItemEditor } from "./item-editor";
@@ -43,6 +44,7 @@ export function ProjectModal({
   clientName,
   serviceTypes = [],
   depositLocked = false,
+  accountingFlow = false,
   onClose,
 }: {
   project: BoardProject;
@@ -50,9 +52,12 @@ export function ProjectModal({
   serviceTypes?: ServiceType[];
   /** The project already has billed work, so its deposit is read-only. */
   depositLocked?: boolean;
+  /** V5 hands finished Design work to Accounting instead of archiving it. */
+  accountingFlow?: boolean;
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const v5t = useV5T();
   const { refresh } = useData();
   const { toast } = useToast();
   const { run, busy, describe } = useAction();
@@ -158,8 +163,10 @@ export function ProjectModal({
 
   const markBilled = async () => {
     const ok = await run(
-      () => api("/api/billing-v2/billed", { method: "POST", body: { projectIds: [project.id] } }),
-      { key: "v2.markBilled.done" },
+      () => accountingFlow
+        ? api("/api/projects/" + project.id + "/readiness", { method: "PATCH", body: { readiness: "ACCOUNTING" } })
+        : api("/api/billing-v2/billed", { method: "POST", body: { projectIds: [project.id] } }),
+      accountingFlow ? undefined : { key: "v2.markBilled.done" },
     );
     setConfirm(null);
     if (ok) onClose();
@@ -211,7 +218,7 @@ export function ProjectModal({
         </Button>
         {ready ? (
           <Button variant="primary" onClick={() => setConfirm("bill")} disabled={working} data-testid="v2-detail-mark-billed">
-            {t("v2.markBilled")}
+            {accountingFlow ? v5t("design.sendAccounting") : t("v2.markBilled")}
           </Button>
         ) : (
           <Button
@@ -380,14 +387,14 @@ export function ProjectModal({
         onClose={() => setConfirm(null)}
         onConfirm={() => void markBilled()}
         busy={busy}
-        title={t("v2.markBilled.confirmTitle")}
+        title={accountingFlow ? v5t("design.sendAccountingTitle") : t("v2.markBilled.confirmTitle")}
         message={
           <>
             <span className="block font-medium text-text">{project.name}</span>
-            {t("v2.markBilled.confirmBody", { count: 1, total: moneyExact(project.total) })}
+            {accountingFlow ? v5t("design.sendAccountingBody", { count: 1, total: moneyExact(project.total) }) : t("v2.markBilled.confirmBody", { count: 1, total: moneyExact(project.total) })}
           </>
         }
-        confirmLabel={t("v2.markBilled")}
+        confirmLabel={accountingFlow ? v5t("design.sendAccounting") : t("v2.markBilled")}
         testId="v2-confirm-bill"
       />
       <ConfirmDialog

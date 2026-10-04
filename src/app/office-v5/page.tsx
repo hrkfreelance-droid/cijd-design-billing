@@ -8,5 +8,5 @@ import { useData } from "@/components/providers";
 export default function BillingV5Page() {
   const { snapshot } = useData();
   if (!snapshot) return <BoardSkeleton />;
-  return <BillingV3Board snapshot={snapshot} />;
+  return <BillingV3Board snapshot={snapshot} accountingFlow />;
 }

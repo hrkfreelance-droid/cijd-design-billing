@@ -436,7 +436,7 @@ export class Store implements Repository {
 
   setProjectBillingReadiness(
     id: string,
-    readiness: "READY" | "IN_PROGRESS" | "AUTO",
+    readiness: "READY" | "IN_PROGRESS" | "AUTO" | "ACCOUNTING",
     actor = DEFAULT_ACTOR,
   ) {
     return this.transaction((db) => {
@@ -445,7 +445,7 @@ export class Store implements Repository {
       const items = db.billingItems.filter(
         (item) => item.projectId === id && !item.deletedAt && !isLocked(item),
       );
-      if (readiness === "READY") {
+      if (readiness === "READY" || readiness === "ACCOUNTING") {
         if (!items.length) throw new RuleError("NO_ITEMS", "Add what should be billed first.", 400);
         if (items.some((item) => item.amount === null)) {
           throw new RuleError("PRICE_REQUIRED", "1 item still needs a billing price.", 400);
@@ -454,7 +454,7 @@ export class Store implements Repository {
       project.billingReadiness = readiness;
       project.updatedAt = now();
       project.updatedBy = actor;
-      if (readiness === "READY") {
+      if (readiness === "READY" || readiness === "ACCOUNTING") {
         for (const item of items) item.billingStatus = "READY_TO_INVOICE";
       } else if (readiness === "IN_PROGRESS") {
         for (const item of items) item.billingStatus = "NOT_READY";

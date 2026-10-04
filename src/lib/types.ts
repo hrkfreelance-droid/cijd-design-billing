@@ -43,7 +43,7 @@ export type ReceiptStatus = "NOT_REQUIRED" | "PENDING" | "RECEIVED";
 export type UserRole = "DESIGNER" | "BILLING" | "ACCOUNTING" | "PRINTING" | "ADMIN";
 export const PRICE_REVIEW_STATUSES = ["NOT_REQUIRED", "REVIEW_REQUIRED", "CONFIRMED"] as const;
 export type PriceReviewStatus = (typeof PRICE_REVIEW_STATUSES)[number];
-export const BILLING_READINESS = ["AUTO", "READY", "IN_PROGRESS"] as const;
+export const BILLING_READINESS = ["AUTO", "READY", "IN_PROGRESS", "ACCOUNTING"] as const;
 export type BillingReadiness = (typeof BILLING_READINESS)[number];
 /** The stored source of a line's Final price (V5). */
 export type FinalMode = "AUTO" | "MANUAL";

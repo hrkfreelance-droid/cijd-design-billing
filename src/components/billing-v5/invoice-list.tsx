@@ -15,7 +15,19 @@ type Status = "ALL" | "UNPAID" | "PARTIALLY_PAID" | "PAID" | "CANCELLED";
  * Every invoice with what it has collected. Search by number, customer or
  * amount; filter by year and collection status. A row opens the invoice.
  */
-export function InvoiceList({ snapshot, compact = false }: { snapshot: Snapshot; compact?: boolean }) {
+export function InvoiceList({
+  snapshot,
+  compact = false,
+  mode = "all",
+  excludeTest = false,
+  compactTitle,
+}: {
+  snapshot: Snapshot;
+  compact?: boolean;
+  mode?: "all" | "open" | "completed";
+  excludeTest?: boolean;
+  compactTitle?: string;
+}) {
   const t = useV5T();
   const [query, setQuery] = useState("");
   const [year, setYear] = useState("ALL");
@@ -29,8 +41,14 @@ export function InvoiceList({ snapshot, compact = false }: { snapshot: Snapshot;
           const customer = snapshot.clients.find((c) => c.id === invoice.clientId)?.name ?? invoice.customer.companyNameEn;
           return { invoice, money, customer, status: (invoice.status === "CANCELLED" ? "CANCELLED" : money.status) as Exclude<Status, "ALL"> };
         })
+        .filter((row) => !excludeTest || (!row.invoice.invoiceNumber.startsWith("TEST") && !/^TEST\b/i.test(row.customer.trim())))
+        .filter((row) => {
+          if (mode === "open") return row.invoice.status === "ISSUED" && row.money.status !== "PAID";
+          if (mode === "completed") return row.invoice.status === "ISSUED" && row.money.status === "PAID";
+          return true;
+        })
         .sort((a, b) => b.invoice.invoiceDate.localeCompare(a.invoice.invoiceDate) || b.invoice.invoiceNumber.localeCompare(a.invoice.invoiceNumber)),
-    [snapshot],
+    [snapshot, mode, excludeTest],
   );
   const years = [...new Set(rows.map((row) => row.invoice.invoiceDate.slice(0, 4)))].sort().reverse();
   const needle = query.trim().toLowerCase();
@@ -46,7 +64,7 @@ export function InvoiceList({ snapshot, compact = false }: { snapshot: Snapshot;
     <section className={compact ? "pt-10" : "pt-8"} data-testid="v5-section-issued">
       {compact ? (
         <h2 className="pb-1 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
-          {t("accounting.issued")}
+          {compactTitle ?? t("accounting.issued")}
           <span className="tnum ml-2 font-normal text-faint">{rows.length}</span>
         </h2>
       ) : (

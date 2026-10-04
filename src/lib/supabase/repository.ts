@@ -350,7 +350,7 @@ export class SupabaseRepository implements Repository {
 
   async setProjectBillingReadiness(
     id: string,
-    readiness: "READY" | "IN_PROGRESS" | "AUTO",
+    readiness: "READY" | "IN_PROGRESS" | "AUTO" | "ACCOUNTING",
     actor = DEFAULT_ACTOR,
   ) {
     const result = await this.db.rpc("set_project_billing_readiness", {

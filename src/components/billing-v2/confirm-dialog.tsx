@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertDialog } from "@base-ui/react/alert-dialog";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { useI18n } from "@/components/providers";
@@ -39,6 +40,7 @@ export function ConfirmDialog({
   testId?: string;
 }) {
   const { t } = useI18n();
+  const v5 = usePathname().startsWith("/office-v5");
   return (
     <AlertDialog.Root
       open={open}
@@ -47,8 +49,10 @@ export function ConfirmDialog({
       }}
     >
       <AlertDialog.Portal>
-        <AlertDialog.Backdrop className="overlay-surface confirm-backdrop fixed inset-0 z-[140]" />
-        <AlertDialog.Viewport className="fixed inset-0 z-[141] flex items-end justify-center safe-bottom-bar p-3 lg:items-center lg:p-6">
+        <AlertDialog.Backdrop className={`overlay-surface confirm-backdrop fixed inset-0 z-[140] ${v5 ? "backdrop-blur-[3px]" : ""}`} />
+        <AlertDialog.Viewport
+          className={`fixed inset-0 z-[141] flex items-end justify-center safe-bottom-bar p-3 lg:p-6 ${v5 ? "" : "lg:items-center"}`}
+        >
           <AlertDialog.Popup
             data-testid={testId}
             className="confirm-popup w-full max-w-[420px] rounded-[18px] border border-line bg-panel p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)]"

@@ -54,11 +54,17 @@ export function allocationsFor(data: Data, billingItemId: string): BillingAlloca
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-/** Projects whose lines the Billing screen shows as ready to bill. */
+/**
+ * Projects the invoice engine may accept. ACCOUNTING is the V5 handoff state;
+ * READY remains accepted for backward compatibility with pre-V5 records and
+ * tests. The Accounting UI itself only exposes explicit ACCOUNTING handoffs.
+ */
 export function readyProjectIds(data: Data): Set<string> {
   return new Set(
     pendingProjects(data as unknown as Snapshot)
-      .filter((project) => project.blocker === null)
+      .filter((project) =>
+        (project.billingReadiness === "ACCOUNTING" || project.billingReadiness === "READY") && project.blocker === null,
+      )
       .map((project) => project.id),
   );
 }

@@ -166,7 +166,7 @@ export interface Repository {
   ): Promise<Project>;
   setProjectBillingReadiness(
     id: string,
-    readiness: "READY" | "IN_PROGRESS" | "AUTO",
+    readiness: "READY" | "IN_PROGRESS" | "AUTO" | "ACCOUNTING",
     actor?: string,
   ): Promise<Project>;
   /** Money received before billing; null clears it. Locked once the project is billed. */
