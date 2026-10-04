@@ -1,6 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
 import { MobileBottomSheet, useIsMobileViewport } from "@/components/ui/mobile-bottom-sheet";
 
@@ -41,10 +42,12 @@ export function Modal({
   testId?: string;
 }) {
   const panel = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
   const isMobile = useIsMobileViewport();
+  const forceBottomSheet = pathname.startsWith("/office-v5");
 
   useEffect(() => {
-    if (!open || isMobile === null || isMobile) return;
+    if (!open || forceBottomSheet || isMobile === null || isMobile) return;
     const onKey = (event: KeyboardEvent) => {
       // A confirmation on top of this modal owns Escape while it is open.
       if (event.key !== "Escape" || busy || document.querySelector("[role=alertdialog]")) return;
@@ -57,11 +60,11 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
     };
-  }, [open, busy, isMobile, onClose]);
+  }, [open, busy, forceBottomSheet, isMobile, onClose]);
 
-  if (!open || isMobile === null) return null;
+  if (!open || (!forceBottomSheet && isMobile === null)) return null;
 
-  if (isMobile) {
+  if (forceBottomSheet || isMobile) {
     return (
       <MobileBottomSheet
         open
@@ -72,7 +75,8 @@ export function Modal({
         subtitle={subtitle}
         disabled={busy}
         footer={footer}
-        contentClassName="px-5 pt-4"
+        contentClassName="px-5 pt-4 sm:px-6"
+        forceDesktop={forceBottomSheet}
       >
         <div data-testid={testId}>{children}</div>
       </MobileBottomSheet>
