@@ -41,6 +41,8 @@ type MobileBottomSheetProps = {
   children: React.ReactNode;
   footer?: React.ReactNode;
   contentClassName?: string;
+  /** Keep the same bottom-sheet interaction on desktop. */
+  forceDesktop?: boolean;
 };
 
 /**
@@ -59,6 +61,7 @@ export function MobileBottomSheet({
   children,
   footer,
   contentClassName,
+  forceDesktop = false,
 }: MobileBottomSheetProps) {
   const isMobile = useIsMobileViewport();
   const [snapPoint, setSnapPoint] = React.useState<Drawer.Root.SnapPoint | null>(OPEN_SNAP_POINT);
@@ -71,7 +74,8 @@ export function MobileBottomSheet({
     }
   }, [open]);
 
-  const drawerOpen = open && isMobile === true;
+  const drawerOpen = open && (forceDesktop || isMobile === true);
+  const desktopClass = forceDesktop ? styles.desktopEnabled : "";
 
   return (
     <Drawer.Root
@@ -90,9 +94,9 @@ export function MobileBottomSheet({
     >
       <Drawer.VirtualKeyboardProvider>
         <Drawer.Portal>
-          <Drawer.Backdrop className={styles.backdrop} />
-          <Drawer.Viewport className={styles.viewport}>
-            <Drawer.Popup className={`${styles.popup} border border-line/80 bg-panel shadow-2xl`}>
+          <Drawer.Backdrop className={`${styles.backdrop} ${desktopClass}`.trim()} />
+          <Drawer.Viewport className={`${styles.viewport} ${desktopClass}`.trim()}>
+            <Drawer.Popup className={`${styles.popup} ${desktopClass} border border-line/80 bg-panel shadow-2xl`.trim()}>
               <div className={`${styles.header} bg-panel`}>
                 <div className={styles.dragArea} aria-hidden="true">
                   <div className={styles.handle} />
