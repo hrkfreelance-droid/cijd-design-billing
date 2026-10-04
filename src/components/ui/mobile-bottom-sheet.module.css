@@ -108,9 +108,17 @@
 }
 
 @media (min-width: 1024px) {
-  .backdrop,
-  .viewport {
+  .backdrop:not(.desktopEnabled),
+  .viewport:not(.desktopEnabled) {
     display: none;
+  }
+
+  .viewport.desktopEnabled {
+    padding-inline: 24px;
+  }
+
+  .popup.desktopEnabled {
+    max-width: 960px;
   }
 }
 
