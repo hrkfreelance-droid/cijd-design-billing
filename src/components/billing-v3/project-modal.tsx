@@ -223,11 +223,11 @@ export function ProjectModal({
         ) : (
           <Button
             variant="primary"
-            onClick={() => void setReadiness("READY")}
+            onClick={() => accountingFlow ? setConfirm("bill") : void setReadiness("READY")}
             disabled={working || project.items.length === 0 || project.pricePendingCount > 0}
             data-testid="v2-mark-ready"
           >
-            {t("v2.markReady")}
+            {accountingFlow ? v5t("design.sendAccounting") : t("v2.markReady")}
           </Button>
         )}
       </div>
