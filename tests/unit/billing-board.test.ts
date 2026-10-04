@@ -100,6 +100,13 @@ test("a project moved to in progress stays there even when every line is finishe
   assert.equal(board.inProgress[0].projects[0].blocker, "STATUS");
 });
 
+test("a project handed to Accounting no longer appears on the Design board", () => {
+  const done = item("i1", "p1", { productionStatus: "COMPLETED", billingStatus: "READY_TO_INVOICE" });
+  const board = billingBoard(snapshot([project("p1", { billingReadiness: "ACCOUNTING" })], [done]));
+  assert.equal(board.readyCount, 0);
+  assert.equal(board.inProgressCount, 0);
+});
+
 test("totals, print cost and the recommendation come from one place", () => {
   const print = item("i2", "p1", {
     description: "Print x900",

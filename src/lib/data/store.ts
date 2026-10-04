@@ -1125,13 +1125,13 @@ export class Store implements Repository {
           throw new RuleError("PRICE_REQUIRED", `"${item.description}" still needs a billing price.`);
         }
         // Belt and braces: the gate is enforced here too, not just in the UI.
-        if (project.billingReadiness !== "READY" && !isProductionComplete(item)) {
+        if (project.billingReadiness !== "READY" && project.billingReadiness !== "ACCOUNTING" && !isProductionComplete(item)) {
           throw new RuleError(
             "NOT_DELIVERED",
             `"${item.description}" has not been completed yet.`,
           );
         }
-        if (project.billingReadiness !== "READY" && item.type === "PRINT" && !isPrintPriceConfirmed(item)) {
+        if (project.billingReadiness !== "READY" && project.billingReadiness !== "ACCOUNTING" && item.type === "PRINT" && !isPrintPriceConfirmed(item)) {
           throw new RuleError(
             "PRICE_REVIEW_REQUIRED",
             `"${item.description}" needs a confirmed print price first.`,
