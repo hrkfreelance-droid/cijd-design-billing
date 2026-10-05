@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { Modal } from "@/components/billing-v2/modal";
@@ -17,7 +18,6 @@ import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
 import type { Snapshot } from "@/lib/types";
 import { InvoiceEditor } from "./invoice-editor";
-import { InvoiceList } from "./invoice-list";
 
 /**
  * Accounting is one screen: work handed off by Design, then the invoice list.
@@ -56,7 +56,7 @@ export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
           <div className="border-b border-line-strong pb-2.5">
             <h2 className="text-[16px] font-semibold tracking-[-0.012em]">{t("accounting.openInvoices")}</h2>
           </div>
-          <InvoiceList snapshot={snapshot} mode="open" excludeTest />
+          <OpenInvoiceProjects snapshot={snapshot} />
         </section>
       </div>
     </div>
@@ -70,6 +70,135 @@ function Figure({ label, children, strong = false, testId }: { label: string; ch
       <dd className={`tnum mt-0.5 truncate leading-tight tracking-[-0.02em] ${strong ? "text-[22px] font-semibold" : "text-[17px] font-medium text-text/85"}`} data-testid={testId}>
         {children}
       </dd>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------ open invoices */
+
+function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
+  const t = useV5T();
+
+  const groups = useMemo(() => {
+    const byClient = new Map<string, {
+      clientName: string;
+      rows: {
+        invoice: NonNullable<Snapshot["taxInvoices"]>[number];
+        projectName: string;
+        paid: number;
+        outstanding: number;
+        status: "UNPAID" | "PARTIALLY_PAID" | "PAID";
+      }[];
+    }>();
+
+    for (const invoice of snapshot.taxInvoices ?? []) {
+      if (invoice.status !== "ISSUED" || invoice.invoiceNumber.startsWith("TEST")) continue;
+      const clientName = snapshot.clients.find((client) => client.id === invoice.clientId)?.name ?? invoice.customer.companyNameEn;
+      if (/^TEST\b/i.test(clientName.trim())) continue;
+      const money = invoiceCollection(snapshot, invoice);
+      if (money.status === "PAID") continue;
+
+      const names = [...new Set(
+        invoice.lines
+          .map((line) => line.projectName?.trim())
+          .filter((name): name is string => !!name),
+      )];
+      const projectName = names.length
+        ? names.join(" / ")
+        : invoice.project.name?.trim() || invoice.invoiceNumber;
+
+      const group = byClient.get(invoice.clientId) ?? { clientName, rows: [] };
+      group.rows.push({
+        invoice,
+        projectName,
+        paid: money.paidUsd,
+        outstanding: money.outstandingUsd,
+        status: money.status,
+      });
+      byClient.set(invoice.clientId, group);
+    }
+
+    return [...byClient.values()]
+      .map((group) => ({
+        ...group,
+        rows: group.rows.sort((a, b) =>
+          b.invoice.invoiceDate.localeCompare(a.invoice.invoiceDate) ||
+          b.invoice.invoiceNumber.localeCompare(a.invoice.invoiceNumber),
+        ),
+      }))
+      .sort((a, b) => a.clientName.localeCompare(b.clientName));
+  }, [snapshot]);
+
+  if (groups.length === 0) {
+    return <p className="border-t border-line py-6 text-[13.5px] text-muted">{t("accounting.issuedEmpty")}</p>;
+  }
+
+  return (
+    <div data-testid="v5-open-invoice-projects">
+      {groups.map((group) => (
+        <div key={group.clientName} className="pt-3" data-testid="v5-issued-client-group">
+          <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center border-b border-line-strong">
+            <span aria-hidden />
+            <h3 className="min-w-0 truncate py-2.5 text-[16px] font-semibold tracking-[-0.012em]">{group.clientName}</h3>
+            <span className="tnum shrink-0 pl-4 text-[15px] font-semibold">
+              {moneyExact(group.rows.reduce((sum, row) => sum + row.outstanding, 0))}
+            </span>
+          </div>
+          <ul>
+            {group.rows.map(({ invoice, projectName, paid, outstanding, status }) => (
+              <li
+                key={invoice.id}
+                className="grid grid-cols-[2.75rem_minmax(0,1fr)] border-b border-line"
+                data-testid="v5-issued-row"
+              >
+                <span className="flex h-11 w-11 items-start pt-[18px]" aria-hidden>
+                  <span className={`h-2.5 w-2.5 rounded-full ${status === "PARTIALLY_PAID" ? "bg-pending" : "bg-line-strong"}`} />
+                </span>
+                <Link
+                  href={`/office-v5/tax-invoices/${invoice.id}`}
+                  aria-label={t("invoice.open", { number: invoice.invoiceNumber })}
+                  className="group min-w-0 py-3.5 text-left"
+                >
+                  <span className="flex items-baseline justify-between gap-4">
+                    <span className="min-w-0 truncate text-[15px] font-medium leading-snug tracking-[-0.01em] group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">
+                      {projectName}
+                    </span>
+                    <span className="tnum shrink-0 text-[15px] font-semibold">{moneyExact(invoice.totalUsd)}</span>
+                  </span>
+                  <span className="mt-0.5 block text-[12.5px] text-muted">
+                    <span className="tnum">{invoice.invoiceNumber}</span>
+                    {" · "}
+                    <span className="tnum">{invoice.invoiceDate}</span>
+                    {" · "}
+                    <span data-testid="v5-row-status">{t(`status.${status}` as V5Key)}</span>
+                  </span>
+                  <span className="mt-1.5 block space-y-[3px]">
+                    {invoice.lines.map((line, index) => (
+                      <span
+                        key={`${invoice.id}:${index}`}
+                        className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-[13px] leading-5"
+                      >
+                        <span className="min-w-0 truncate text-text/90">
+                          {line.description}
+                          {line.quantity !== 1 && <span className="tnum text-faint"> ×{line.quantity}</span>}
+                        </span>
+                        <span className="tnum text-right text-muted">{moneyExact(line.amount)}</span>
+                      </span>
+                    ))}
+                  </span>
+                  <span className="tnum mt-1.5 block text-[12.5px] text-muted">
+                    {t("list.paid")} {moneyExact(paid)}
+                    {" · "}
+                    <span className="font-medium text-text" data-testid="v5-row-outstanding">
+                      {t("list.outstanding")} {moneyExact(outstanding)}
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   );
 }
@@ -131,7 +260,8 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
       ) : (
         groups.map((group) => (
           <div key={group.client.id} className="pt-3" data-testid="v5-client-group">
-            <div className="flex items-center justify-between border-b border-line-strong">
+            <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center border-b border-line-strong">
+              <span aria-hidden />
               <h3 className="min-w-0 truncate py-2.5 text-[16px] font-semibold tracking-[-0.012em]">{group.client.name}</h3>
               <span className="tnum shrink-0 pl-4 text-[15px] font-semibold">{moneyExact(group.projects.reduce((sum, p) => sum + p.remaining, 0))}</span>
             </div>
@@ -214,7 +344,7 @@ function ProjectRow({ snapshot, entry, checked, onToggle, onOpen }: { snapshot: 
   const project = snapshot.projects.find((p) => p.id === entry.projectId)!;
   return (
     <li className={`grid grid-cols-[2.75rem_minmax(0,1fr)] border-b border-line ${checked ? "bg-accent/[0.045]" : ""}`} data-project-id={project.id} data-testid="v5-accounting-row">
-      <button type="button" role="checkbox" aria-checked={checked} aria-label={project.name} onClick={onToggle} className="group/check flex h-11 w-11 items-center self-start pt-[26px]" data-testid="v5-select-project">
+      <button type="button" role="checkbox" aria-checked={checked} aria-label={project.name} onClick={onToggle} className="group/check flex h-11 w-11 items-center self-start pt-[13px]" data-testid="v5-select-project">
         <span className={`flex h-[20px] w-[20px] items-center justify-center rounded-[6px] border transition-colors ${checked ? "border-accent bg-accent text-on-accent" : "border-line-strong bg-panel text-transparent group-hover/check:border-accent"}`}>
           <CheckIcon className="h-3.5 w-3.5" />
         </span>
