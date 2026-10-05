@@ -36,6 +36,7 @@ async function env() {
     const project = await open().createProject({ clientId, name });
     const line = await open().createBillingItem({ projectId: project.id, description: name, type: "DESIGN", serviceType: "DESIGN", quantity: 1, amount, finalMode: "MANUAL" });
     await open().setProjectBillingReadiness(project.id, "READY");
+    await open().setProjectBillingReadiness(project.id, "ACCOUNTING");
     return { project, line };
   };
   const issue = (items: { billingItemId?: string; description?: string; quantity?: number; unitPrice?: number; amount?: number; productId?: string }[], extra: Record<string, unknown> = {}) =>
