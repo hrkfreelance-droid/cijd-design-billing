@@ -89,6 +89,8 @@ const en = {
   "prepare.confirmTitle": "Issue this tax invoice?",
   "prepare.confirmBody": "{number} · {total}. Once issued, it is kept exactly as shown; the project moves to Archive.",
   "invoice.back": "Back to Accounting",
+  "invoice.backArchive": "Back to Archive",
+  "invoice.archive": "Archive",
   "invoice.print": "Print / Save PDF",
   "invoice.status.ISSUED": "Issued",
   "invoice.status.CANCELLED": "Cancelled",
@@ -314,6 +316,8 @@ const ja: Record<V5Key, string> = {
   "prepare.confirmTitle": "この Tax Invoice を発行しますか？",
   "prepare.confirmBody": "{number} · {total}。発行後は表示どおりに保存され、案件はアーカイブへ移ります。",
   "invoice.back": "経理に戻る",
+  "invoice.backArchive": "アーカイブに戻る",
+  "invoice.archive": "アーカイブ",
   "invoice.print": "印刷 / PDF 保存",
   "invoice.status.ISSUED": "発行済み",
   "invoice.status.CANCELLED": "取消済み",
@@ -476,6 +480,8 @@ const kh: Record<V5Key, string> = {
   "prepare.title": "រៀបចំវិក្កយបត្រអាករ",
   "prepare.issue": "ចេញវិក្កយបត្រអាករ",
   "invoice.back": "ត្រឡប់ទៅគណនេយ្យ",
+  "invoice.backArchive": "ត្រឡប់ទៅបណ្ណសារ",
+  "invoice.archive": "បណ្ណសារ",
 };
 
 const dictionaries = { en, ja, kh } as const;
