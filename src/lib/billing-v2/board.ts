@@ -217,7 +217,7 @@ export function readinessOf(
   const unpriced = items.find((entry) => entry.amount === null);
   if (unpriced) return { blocker: "PRICE", blockedBy: unpriced };
   if (readiness === "IN_PROGRESS") return { blocker: "STATUS", blockedBy: null };
-  if (readiness === "READY") return { blocker: null, blockedBy: null };
+  if (readiness === "READY" || readiness === "ACCOUNTING") return { blocker: null, blockedBy: null };
   return projectBlocker(items);
 }
 
