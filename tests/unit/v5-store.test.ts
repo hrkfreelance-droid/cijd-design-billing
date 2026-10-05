@@ -138,6 +138,26 @@ test("payments: 1200 − deposit 500 = 700, + 300 = 400, same after reload", asy
   await rejectsWith(open().addProjectPayment({ projectId: project.id, kind: "PARTIAL", amount: -1 }), "INVALID");
 });
 
+test("Accounting handoff is allowed only after Ready to Bill", async () => {
+  const { open, project } = await setup();
+  await open().createBillingItem({
+    projectId: project.id,
+    description: "Design",
+    type: "DESIGN",
+    serviceType: "DESIGN",
+    quantity: 1,
+    amount: 75,
+    finalMode: "MANUAL",
+  });
+
+  await rejectsWith(open().setProjectBillingReadiness(project.id, "ACCOUNTING"), "READY_REQUIRED");
+  assert.equal((await open().getSnapshot()).projects.find((entry) => entry.id === project.id)!.billingReadiness, "AUTO");
+
+  await open().setProjectBillingReadiness(project.id, "READY");
+  await open().setProjectBillingReadiness(project.id, "ACCOUNTING");
+  assert.equal((await open().getSnapshot()).projects.find((entry) => entry.id === project.id)!.billingReadiness, "ACCOUNTING");
+});
+
 async function readyProject() {
   const env = await setup();
   const { open, project } = env;
@@ -150,6 +170,7 @@ async function readyProject() {
   });
   await open().updateBillingItem(print.id, { finalMode: "AUTO", confirmPrice: true });
   await open().setProjectBillingReadiness(project.id, "READY");
+  await open().setProjectBillingReadiness(project.id, "ACCOUNTING");
   return { ...env, design, print };
 }
 
