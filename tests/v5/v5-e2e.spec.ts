@@ -85,6 +85,7 @@ async function readyProject(page: Page, clientId: string, name: string, items: R
     expect((await page.request.post("/api/billing-items", { data: { projectId: project.id, finalMode: "MANUAL", ...item } })).ok()).toBeTruthy();
   }
   expect((await page.request.patch(`/api/projects/${project.id}/readiness`, { data: { readiness: "READY" } })).ok()).toBeTruthy();
+  expect((await page.request.patch(`/api/projects/${project.id}/readiness`, { data: { readiness: "ACCOUNTING" } })).ok()).toBeTruthy();
   return project.id;
 }
 
@@ -137,7 +138,9 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
   await dialog.getByTestId("v2-mark-ready").click();
   await expect(dialog.getByTestId("v2-detail-mark-billed")).toBeVisible();
-  await page.keyboard.press("Escape");
+  await dialog.getByTestId("v2-detail-mark-billed").click();
+  await page.getByTestId("v2-confirm-bill-confirm").click();
+  await expect(dialog).toHaveCount(0);
 
   let st = await state(page);
   const client = st.clients.find((c) => c.name === CLIENT)!;
