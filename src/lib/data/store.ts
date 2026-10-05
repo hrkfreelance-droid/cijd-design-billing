@@ -445,6 +445,13 @@ export class Store implements Repository {
       const items = db.billingItems.filter(
         (item) => item.projectId === id && !item.deletedAt && !isLocked(item),
       );
+      if (readiness === "ACCOUNTING" && project.billingReadiness !== "READY" && project.billingReadiness !== "ACCOUNTING") {
+        throw new RuleError(
+          "READY_REQUIRED",
+          "Move the project to Ready to Bill before sending it to Accounting.",
+          409,
+        );
+      }
       if (readiness === "READY" || readiness === "ACCOUNTING") {
         if (!items.length) throw new RuleError("NO_ITEMS", "Add what should be billed first.", 400);
         if (items.some((item) => item.amount === null)) {
