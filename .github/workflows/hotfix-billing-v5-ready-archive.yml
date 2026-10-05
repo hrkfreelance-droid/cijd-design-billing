@@ -51,28 +51,28 @@ jobs:
           set -euo pipefail
           curl -fsS "$BASE_URL/api/state" > /tmp/v5-state-before.json
 
-          MATCHES="$(jq '[.projects[] | select(.name == "RH Pchum Ben 2026" and (.deletedAt == null))] | length' /tmp/v5-state-before.json)"
+          MATCHES="$(jq '[.data.projects[] | select(.name == "RH Pchum Ben 2026" and (.deletedAt == null))] | length' /tmp/v5-state-before.json)"
           if [ "$MATCHES" != "1" ]; then
             echo "::error::Expected exactly one active project named RH Pchum Ben 2026; found $MATCHES."
             exit 20
           fi
 
-          PID="$(jq -r '.projects[] | select(.name == "RH Pchum Ben 2026" and (.deletedAt == null)) | .id' /tmp/v5-state-before.json)"
-          BEFORE="$(jq -r --arg id "$PID" '.projects[] | select(.id == $id) | (.billingReadiness // "AUTO")' /tmp/v5-state-before.json)"
+          PID="$(jq -r '.data.projects[] | select(.name == "RH Pchum Ben 2026" and (.deletedAt == null)) | .id' /tmp/v5-state-before.json)"
+          BEFORE="$(jq -r --arg id "$PID" '.data.projects[] | select(.id == $id) | (.billingReadiness // "AUTO")' /tmp/v5-state-before.json)"
 
           BAD_STATUS="$(jq --arg pid "$PID" '
-            [ .billingItems[]
+            [ .data.billingItems[]
               | select(.projectId == $pid and (.deletedAt == null))
               | select(.billingStatus == "INVOICED" or .billingStatus == "PAID")
             ] | length
           ' /tmp/v5-state-before.json)"
 
           ACTIVE_ALLOC="$(jq --arg pid "$PID" '
-            [ .billingItems[]
+            [ .data.billingItems[]
               | select(.projectId == $pid and (.deletedAt == null))
               | .id
             ] as $ids
-            | [ ((.billingAllocations // [])[])
+            | [ ((.data.billingAllocations // [])[])
                 | select(.voidedAt == null)
                 | select(.billingItemId as $itemId | ($ids | index($itemId)) != null)
               ] | length
@@ -99,7 +99,7 @@ jobs:
           fi
 
           curl -fsS "$BASE_URL/api/state" > /tmp/v5-state-after-repair.json
-          AFTER="$(jq -r --arg id "$PID" '.projects[] | select(.id == $id) | (.billingReadiness // "AUTO")' /tmp/v5-state-after-repair.json)"
+          AFTER="$(jq -r --arg id "$PID" '.data.projects[] | select(.id == $id) | (.billingReadiness // "AUTO")' /tmp/v5-state-after-repair.json)"
           if [ "$AFTER" != "READY" ]; then
             echo "::error::RH Pchum Ben 2026 did not end in READY; got $AFTER."
             exit 23
@@ -214,8 +214,8 @@ jobs:
             exit 35
           }
 
-          PID="$(jq -r '.projects[] | select(.name == "RH Pchum Ben 2026" and (.deletedAt == null)) | .id' /tmp/v5-final-state.json)"
-          FINAL_READY="$(jq -r --arg id "$PID" '.projects[] | select(.id == $id) | (.billingReadiness // "AUTO")' /tmp/v5-final-state.json)"
+          PID="$(jq -r '.data.projects[] | select(.name == "RH Pchum Ben 2026" and (.deletedAt == null)) | .id' /tmp/v5-final-state.json)"
+          FINAL_READY="$(jq -r --arg id "$PID" '.data.projects[] | select(.id == $id) | (.billingReadiness // "AUTO")' /tmp/v5-final-state.json)"
           [ "$FINAL_READY" = "READY" ] || {
             echo "::error::RH Pchum Ben 2026 is not READY after deploy: $FINAL_READY."
             exit 36
