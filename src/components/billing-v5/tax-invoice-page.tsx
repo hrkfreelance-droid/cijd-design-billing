@@ -64,8 +64,8 @@ export function TaxInvoicePage({ id }: { id: string }) {
             <div className="ml-auto flex items-center gap-2">
               {invoice.status === "ISSUED" && (
                 <>
-                  {!archived && <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>}
-                  {!archived && <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>}
+                  <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>
+                  <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>
                   {archived && <Button variant="secondary" size="sm" onClick={() => window.location.assign("/office-v5/archive")} data-testid="v5-invoice-archive">{t("invoice.archive")}</Button>}
                 </>
               )}
