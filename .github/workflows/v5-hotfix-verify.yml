@@ -1,0 +1,26 @@
+name: V5 Hotfix Verify
+
+on:
+  push:
+    branches:
+      - feature/billing-v5-accounting-integration
+    paths:
+      - ".github/workflows/v5-hotfix-verify.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/billing-v5-accounting-integration
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:unit
