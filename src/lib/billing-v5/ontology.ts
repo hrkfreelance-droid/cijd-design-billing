@@ -55,16 +55,19 @@ export function allocationsFor(data: Data, billingItemId: string): BillingAlloca
 }
 
 /**
- * Projects the invoice engine may accept. ACCOUNTING is the V5 handoff state;
- * READY remains accepted for backward compatibility with pre-V5 records and
- * tests. The Accounting UI itself only exposes explicit ACCOUNTING handoffs.
+ * Projects the invoice engine may accept.
+ *
+ * V5 is deliberately two-step:
+ *   Design -> Ready to Bill -> Accounting -> Tax Invoice
+ *
+ * A READY project is still owned by Design. Only an explicit ACCOUNTING handoff
+ * may be invoiced. Existing partial invoices remain eligible through their
+ * allocations in billingState().
  */
 export function readyProjectIds(data: Data): Set<string> {
   return new Set(
     pendingProjects(data as unknown as Snapshot)
-      .filter((project) =>
-        (project.billingReadiness === "ACCOUNTING" || project.billingReadiness === "READY") && project.blocker === null,
-      )
+      .filter((project) => project.billingReadiness === "ACCOUNTING" && project.blocker === null)
       .map((project) => project.id),
   );
 }
