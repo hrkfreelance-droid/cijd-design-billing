@@ -9,6 +9,7 @@ on:
       - "src/components/billing-v3/project-modal.tsx"
       - "src/components/billing-v5/tax-invoice-page.tsx"
       - "src/lib/billing-v5/i18n.ts"
+      - "src/app/api/v5/hotfix-status/route.ts"
       - ".github/workflows/hotfix-billing-v5-ready-archive.yml"
   workflow_dispatch:
 
@@ -121,7 +122,24 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
+      - name: Wait for Cloudflare connected-source deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          for ATTEMPT in $(seq 1 18); do
+            if curl -fsS "$BASE_URL/api/v5/hotfix-status" 2>/dev/null | jq -e '.hotfix == "ready-before-accounting-20261005"' >/dev/null 2>&1; then
+              echo "CONNECTED_DEPLOY=1" >> "$GITHUB_ENV"
+              echo "Connected-source V5 deployment detected."
+              exit 0
+            fi
+            echo "waiting for connected-source deployment: $ATTEMPT/18"
+            sleep 5
+          done
+          echo "CONNECTED_DEPLOY=0" >> "$GITHUB_ENV"
+          echo "Connected-source deployment not detected; trying Wrangler credentials."
+
       - name: Resolve Cloudflare credentials
+        if: env.CONNECTED_DEPLOY != '1'
         shell: bash
         run: |
           set -euo pipefail
@@ -157,6 +175,7 @@ jobs:
           echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT" >> "$GITHUB_ENV"
 
       - name: Confirm existing V5 Worker and D1
+        if: env.CONNECTED_DEPLOY != '1'
         shell: bash
         run: |
           set -euo pipefail
@@ -180,6 +199,7 @@ jobs:
           jq -S '[.result.bindings[]? | {name,type}]' /tmp/v5-worker-settings-before.json > /tmp/v5-bindings-before.json
 
       - name: Build exact V5 code
+        if: env.CONNECTED_DEPLOY != '1'
         shell: bash
         run: |
           set -euo pipefail
@@ -192,6 +212,7 @@ jobs:
           }
 
       - name: Deploy V5 hotfix only
+        if: env.CONNECTED_DEPLOY != '1'
         run: npx wrangler deploy --config dist/server/wrangler.json --keep-vars
 
       - name: Verify live V5 and bindings
@@ -221,10 +242,18 @@ jobs:
             exit 36
           }
 
-          curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/settings" \
-            > /tmp/v5-worker-settings-after.json
-          jq -S '[.result.bindings[]? | {name,type}]' /tmp/v5-worker-settings-after.json > /tmp/v5-bindings-after.json
-          diff -u /tmp/v5-bindings-before.json /tmp/v5-bindings-after.json
+          HOTFIX="$(curl -fsS "$BASE_URL/api/v5/hotfix-status" | jq -r '.hotfix // ""')"
+          [ "$HOTFIX" = "ready-before-accounting-20261005" ] || {
+            echo "::error::Live V5 code does not include the Ready/Archive hotfix."
+            exit 37
+          }
+
+          if [ "${CONNECTED_DEPLOY:-0}" != "1" ]; then
+            curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/settings" \
+              > /tmp/v5-worker-settings-after.json
+            jq -S '[.result.bindings[]? | {name,type}]' /tmp/v5-worker-settings-after.json > /tmp/v5-bindings-after.json
+            diff -u /tmp/v5-bindings-before.json /tmp/v5-bindings-after.json
+          fi
 
           echo "V5 hotfix verified. RH Pchum Ben 2026 = READY."
