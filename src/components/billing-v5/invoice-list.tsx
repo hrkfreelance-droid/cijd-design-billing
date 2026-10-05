@@ -60,6 +60,67 @@ export function InvoiceList({
       .some((value) => value.toLowerCase().includes(needle));
   });
 
+  if (mode === "open" && !compact) {
+    const grouped = [...shown.reduce((map, row) => {
+      const key = row.customer || row.invoice.customer.companyNameEn || "Customer";
+      const list = map.get(key) ?? [];
+      list.push(row);
+      map.set(key, list);
+      return map;
+    }, new Map<string, typeof shown>())].sort(([a], [b]) => a.localeCompare(b));
+
+    return (
+      <section className="pt-8" data-testid="v5-section-issued">
+        {grouped.length === 0 ? (
+          <p className="border-t border-line py-6 text-[13.5px] text-muted">{t("accounting.issuedEmpty")}</p>
+        ) : (
+          grouped.map(([customer, invoices]) => (
+            <div key={customer} className="pt-3">
+              <div className="flex items-center justify-between border-b border-line-strong">
+                <h3 className="min-w-0 truncate py-2.5 text-[16px] font-semibold tracking-[-0.012em]">{customer}</h3>
+                <span className="tnum shrink-0 pl-4 text-[12.5px] text-muted">{invoices.length} {invoices.length === 1 ? "invoice" : "invoices"}</span>
+              </div>
+              <ul>
+                {invoices.map(({ invoice, money, status: rowStatus }) => {
+                  const projectName = invoice.project.name?.trim() || invoice.invoiceNumber;
+                  return (
+                    <li key={invoice.id} className="border-b border-line">
+                      <Link
+                        href={`/office-v5/tax-invoices/${invoice.id}`}
+                        aria-label={t("invoice.open", { number: invoice.invoiceNumber })}
+                        className="group block min-w-0 py-3.5"
+                        data-testid="v5-issued-row"
+                      >
+                        <span className="flex items-baseline justify-between gap-4">
+                          <span className="min-w-0 text-[15px] font-medium leading-snug tracking-[-0.01em] group-hover:underline group-hover:underline-offset-4">
+                            {projectName}
+                          </span>
+                          <span className="tnum shrink-0 text-[15px] font-semibold">{moneyExact(money.outstandingUsd)}</span>
+                        </span>
+                        <span className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-[13px] leading-5">
+                          <span className="min-w-0 truncate text-muted">
+                            {invoice.invoiceNumber} · {invoice.invoiceDate}
+                          </span>
+                          <span className={rowStatus === "PARTIALLY_PAID" ? "text-pending" : "text-muted"}>
+                            {t(`status.${rowStatus}` as V5Key)}
+                          </span>
+                        </span>
+                        <span className="mt-[3px] grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-[12.5px] leading-5 text-faint">
+                          <span>{t("list.total")} {moneyExact(invoice.totalUsd)}</span>
+                          <span>{t("list.paid")} {moneyExact(money.paidUsd)}</span>
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))
+        )}
+      </section>
+    );
+  }
+
   return (
     <section className={compact ? "pt-10" : "pt-8"} data-testid="v5-section-issued">
       {compact ? (
