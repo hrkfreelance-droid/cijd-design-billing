@@ -252,11 +252,11 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
           ) : (
             <Button
               variant="primary"
-              onClick={() => accountingFlow ? setConfirmingBill(true) : void moveSelected("READY")}
+              onClick={() => void moveSelected("READY")}
               disabled={busy || chosenPending}
               data-testid="v2-selection-mark-ready"
             >
-              {accountingFlow ? v5t("design.sendAccounting") : t("v2.markReady")}
+              {t("v2.markReady")}
             </Button>
           )}
         </SelectionBar>
