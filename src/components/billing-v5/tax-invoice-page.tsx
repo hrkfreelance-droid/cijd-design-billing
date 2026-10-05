@@ -36,6 +36,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
   const clientName = invoice ? (snapshot.clients.find((client) => client.id === invoice.clientId)?.name ?? "") : "";
   const money = invoice ? invoiceCollection(snapshot, invoice) : null;
   const statusKey = invoice?.status === "CANCELLED" ? "status.CANCELLED" : `status.${money?.status ?? "UNPAID"}`;
+  const archived = invoice?.status === "ISSUED" && money?.status === "PAID";
 
   const cancel = async () => {
     const ok = await run(() => api(`/api/v5/tax-invoices/${id}/cancel`, { method: "POST", body: { reason } }));
@@ -47,8 +48,8 @@ export function TaxInvoicePage({ id }: { id: string }) {
     <div className="pb-16">
       <div className="v5-no-print header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
         <div className="mx-auto flex min-h-[52px] max-w-[960px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2 sm:px-8">
-          <Link href="/office-v5/accounting?view=invoices" className="text-[13.5px] font-medium text-accent hover:underline" data-testid="v5-invoice-back">
-            ← {t("invoice.back")}
+          <Link href={archived ? "/office-v5/archive" : "/office-v5/accounting?view=invoices"} className="text-[13.5px] font-medium text-accent hover:underline" data-testid="v5-invoice-back">
+            ← {archived ? t("invoice.backArchive") : t("invoice.back")}
           </Link>
           {invoice && (
             <span className="min-w-0 flex-1 truncate text-[13px] text-muted">
@@ -63,8 +64,9 @@ export function TaxInvoicePage({ id }: { id: string }) {
             <div className="ml-auto flex items-center gap-2">
               {invoice.status === "ISSUED" && (
                 <>
-                  <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>
-                  <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>
+                  {!archived && <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>}
+                  {!archived && <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>}
+                  {archived && <Button variant="secondary" size="sm" onClick={() => window.location.assign("/office-v5/archive")} data-testid="v5-invoice-archive">{t("invoice.archive")}</Button>}
                 </>
               )}
               <Button variant="primary" onClick={() => window.print()} data-testid="v5-print">{t("invoice.print")}</Button>
