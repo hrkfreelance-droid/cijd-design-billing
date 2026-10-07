@@ -52,6 +52,17 @@ async function env() {
   return { d1, open, edit, rate, client, billing, issue, snap };
 }
 
+test("normal Invoice is explicit, has no VAT by default, and never consumes the Tax Invoice sequence", async () => {
+  const t = await env();
+  const normal = await t.issue([{ description: "Direct service", quantity: 2, unitPrice: 25 }], { invoiceType: "INVOICE", vatApplicable: false });
+  assert.equal(normal.invoiceType, "INVOICE");
+  assert.equal(normal.invoiceNumber, "CIJDI2026001");
+  assert.equal(normal.vatUsd, 0);
+  const tax = await t.issue([{ description: "Taxable service", quantity: 1, unitPrice: 100 }], { invoiceType: "TAX_INVOICE", vatApplicable: true });
+  assert.equal(tax.invoiceType, "TAX_INVOICE");
+  assert.equal(tax.invoiceNumber, "CIJDTI2026001");
+});
+
 test("Customer Master and Product Master: create, code, edit, search fields", async () => {
   const { open, client } = await env();
   const customer = await open().saveCustomer({ id: client.id, ...CUSTOMER, contactPerson: "Ms. Test", email: "test@example.com", actor: "TEST" });

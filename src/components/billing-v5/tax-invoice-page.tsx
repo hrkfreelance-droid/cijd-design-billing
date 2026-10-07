@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
@@ -24,6 +25,7 @@ import { InvoiceEditor } from "./invoice-editor";
  */
 export function TaxInvoicePage({ id }: { id: string }) {
   const t = useV5T();
+  const router = useRouter();
   const { snapshot } = useData();
   const { toast } = useToast();
   const { run, busy } = useAction();
@@ -53,6 +55,8 @@ export function TaxInvoicePage({ id }: { id: string }) {
           </Link>
           {invoice && (
             <span className="min-w-0 flex-1 truncate text-[13px] text-muted">
+              <span className="font-medium text-faint">{invoice.invoiceType === "INVOICE" ? "Invoice" : "Tax Invoice"}</span>
+              {" · "}
               <span className="tnum font-semibold text-text" data-testid="v5-invoice-heading">{invoice.invoiceNumber}</span>
               {" · "}
               <span className={invoice.status === "CANCELLED" ? "text-danger" : ""} data-testid="v5-invoice-status">{invoice.historicalSourceId ? "Historical · Payment UNKNOWN" : t(statusKey as V5Key)}</span>
@@ -66,7 +70,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
                 <>
                   <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>
                   <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>
-                  {archived && <Button variant="secondary" size="sm" onClick={() => window.location.assign("/office-v5/archive")} data-testid="v5-invoice-archive">{t("invoice.archive")}</Button>}
+                  {archived && <Button variant="secondary" size="sm" onClick={() => router.push("/office-v5/archive")} data-testid="v5-invoice-archive">{t("invoice.archive")}</Button>}
                 </>
               )}
               <Button variant="primary" onClick={() => window.print()} data-testid="v5-print">{t("invoice.print")}</Button>

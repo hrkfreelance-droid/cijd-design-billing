@@ -14,6 +14,7 @@ export function invoiceInputFrom(body: Record<string, unknown>, actor: string): 
   const rate = body.exchangeRate as Record<string, unknown> | null | undefined;
   const discount = body.discount as Record<string, unknown> | null | undefined;
   return {
+    invoiceType: body.invoiceType === "INVOICE" ? "INVOICE" : "TAX_INVOICE",
     customerId: text(body.customerId) ?? "",
     invoiceDate: text(body.invoiceDate) ?? "",
     customer: {

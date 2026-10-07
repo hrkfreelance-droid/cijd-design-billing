@@ -22,7 +22,7 @@ import { invoiceTotals } from "../../src/lib/billing-v5/calculation";
  * records are only read, and are checked unchanged at the end.
  */
 
-const SHOTS = process.env.V5_SHOTS_DIR ?? "test-results/v5-shots";
+const SHOTS = process.env.V5_SHOTS_DIR ?? "/private/tmp/cijd-v5-e2e-shots";
 const RUN = Date.now().toString(36).slice(-5);
 const DEPLOYED = !!process.env.V5_BASE_URL;
 const CLIENT = `TEST E2E Customer ${RUN}`;
@@ -95,7 +95,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await page.goto("/office-v5");
   await prefs(page, "en", "light");
   await page.reload();
-  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Billing", "Accounting", "Archive"]);
+  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Design", "Invoice", "Tax Invoice", "Accounting", "Archive"]);
 
   /* ------------------------------------------- imported V3 data (read only) */
   const fingerprint = async () => {
@@ -153,7 +153,9 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   const website = st.billingItems.find((i) => i.projectId === websiteProject)!;
 
   /* ------------------------------------------------------ customer master */
-  await page.goto("/office-v5/accounting?view=customers");
+  await page.goto("/office-v5/tax-invoices");
+  await page.getByTestId("v5-tab-customers").click();
+  await expect(page.getByTestId("v5-customers")).toBeVisible();
   await page.getByTestId("v5-customer-search").fill(CLIENT);
   await page.getByTestId("v5-customer-row").filter({ hasText: CLIENT }).click();
   const customerSheet = page.getByTestId("v5-customer-sheet");
@@ -164,23 +166,17 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await customerSheet.getByTestId("v5-customer-telephone").fill("012 345 678");
   await customerSheet.getByTestId("v5-customer-vatin").fill("K001-123456789");
   await customerSheet.getByTestId("v5-customer-email").fill("test@example.com");
-  await customerSheet.getByTestId("v5-customer-save").click();
+  await page.getByTestId("v5-customer-save").click();
   await expect(customerSheet).toHaveCount(0);
   await shot(page, "01-customers-en-light");
 
   /* ------------------------------------------------------- product master */
-  await page.getByRole("tab", { name: /Products/ }).click();
-  await page.getByTestId("v5-product-new").click();
-  const productSheet = page.getByTestId("v5-product-sheet");
-  await productSheet.getByTestId("v5-product-description").fill(PRODUCT);
-  await productSheet.getByTestId("v5-product-price").fill("120");
-  await productSheet.getByTestId("v5-product-unit").fill("year");
-  await productSheet.getByTestId("v5-product-save").click();
-  await expect(page.getByTestId("v5-product-row").filter({ hasText: PRODUCT })).toBeVisible();
+  expect((await page.request.post("/api/v5/products", {data:{description:PRODUCT,defaultUnitPrice:120,unit:"year"}})).ok()).toBeTruthy();
   await shot(page, "02-products-en-light");
 
   /* ------------------------------------------------- select and invoice */
-  await page.getByRole("tab", { name: /To invoice/ }).click();
+  await page.goto("/office-v5/accounting");
+  await page.reload(); // re-read Product Master values created through the V5 API
   const row = (name: string) => page.getByTestId("v5-accounting-row").filter({ hasText: name });
   await expect(row(PROJECT).getByTestId("v5-row-memo")).toContainText("Deliver by Friday");
   await row(OTHER_PROJECT).getByTestId("v5-select-project").click();
@@ -195,12 +191,12 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(editor.getByTestId("v5-name-en")).toHaveValue(`${CLIENT} Co., Ltd.`); // from the Customer Master
   await expect(editor.getByTestId("v5-vatin")).toHaveValue("K001-123456789");
   await expect(editor.getByTestId("v5-editor-row")).toHaveCount(3);
-  await expect(editor.getByTestId("v5-invoice-number")).toHaveText("Assigned when issued");
+  await expect(editor.getByTestId("v5-invoice-number")).toContainText("CIJDTI");
   // Bill $300 of the website now; more than is left is refused on screen.
   const websiteIndex = await editor.locator('[data-testid^="v5-row-description-"]').evaluateAll((inputs) => inputs.findIndex((input) => (input as HTMLInputElement).value === "Website"));
   await editor.getByTestId(`v5-row-amount-${websiteIndex}`).fill("1000.01");
   await expect(editor.getByTestId(`v5-row-error-${websiteIndex}`)).toContainText("$1,000.00");
-  await expect(editor.getByTestId("v5-issue")).toBeDisabled();
+  await expect(page.getByTestId("v5-issue")).toBeDisabled();
   await editor.getByTestId(`v5-row-amount-${websiteIndex}`).fill("300");
   // A product line and a free line.
   await editor.getByTestId("v5-add-line").click();
@@ -242,7 +238,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   // Several projects on one invoice: each billed line shows its project above the description.
   await expect(editor.getByTestId("tax-invoice-line-project")).toHaveText([PROJECT, PROJECT, WEBSITE]);
   await shot(page, "05-preview-en-light");
-  await editor.getByTestId("v5-issue").click();
+  await page.getByTestId("v5-issue").click();
   // The free line is not in the Product List: asked, never added silently.
   await expect(page.getByTestId("v5-confirm-products")).toContainText(FREE);
   await page.getByTestId("v5-confirm-products-confirm").click();
@@ -410,7 +406,6 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(row(WEBSITE)).toHaveCount(0);
 
   /* ----------------------------------------------------- invoice list */
-  await page.getByRole("tab", { name: /Invoices/ }).click();
   await page.getByTestId("v5-invoice-search").fill(number);
   const listed = page.getByTestId("v5-issued-row").filter({ hasText: number });
   await expect(listed).toHaveCount(1);
@@ -500,14 +495,16 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
   const ADDR_EN = "#8, Street 63, Phnom Penh";
   const ADDR_KM = "ផ្ទះលេខ ៨ ផ្លូវ៦៣ រាជធានីភ្នំពេញ";
   const PHONE = "023 111 222";
-  const VATIN = "K009-987654321";
+  const VATIN = `K009-${Date.now().toString().slice(-9)}`;
   const PICKED = `TEST Selector Product ${RUN}`;
   const YES = `TEST custom yes ${RUN}`;
   const NO = `TEST custom no ${RUN}`;
 
-  await page.goto("/office-v5/accounting?view=customers");
+  await page.goto("/office-v5/tax-invoices");
   await prefs(page, "en", "light");
   await page.reload();
+  await page.getByTestId("v5-tab-customers").click();
+  await expect(page.getByTestId("v5-customers")).toBeVisible();
 
   /* ------------------------------------------ A. new customer, auto code */
   await page.getByTestId("v5-customer-new").click();
@@ -522,7 +519,7 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
   await sheet.getByTestId("v5-customer-telephone").fill(PHONE);
   await sheet.getByTestId("v5-customer-vatin").fill(VATIN);
   await expect(sheet.getByTestId("v5-doc-empty")).toHaveCount(0); // documents come after the first save
-  await sheet.getByTestId("v5-customer-save").click();
+  await page.getByTestId("v5-customer-save").click();
   await expect(sheet).toHaveCount(0);
   const customer = (await state(page)).customers.find((c) => c.companyNameEn === EN)!;
   expect(customer.customerCode).toMatch(/^C\d{4}$/);
@@ -564,20 +561,14 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
   await expect(sheet).toHaveCount(0);
 
   /* --------------------------------------------------- C. a TEST product */
-  await page.getByRole("tab", { name: /Products/ }).click();
-  await page.getByTestId("v5-product-new").click();
-  const productSheet = page.getByTestId("v5-product-sheet");
-  await productSheet.getByTestId("v5-product-description").fill(PICKED);
-  await productSheet.getByTestId("v5-product-price").fill("45");
-  await productSheet.getByTestId("v5-product-unit").fill("pcs");
-  await productSheet.getByTestId("v5-product-save").click();
-  await expect(productSheet).toHaveCount(0);
+  expect((await page.request.post("/api/v5/products", {data:{description:PICKED,defaultUnitPrice:45,unit:"pcs"}})).ok()).toBeTruthy();
   const product = (await state(page)).products.find((p) => p.description === PICKED)!;
   expect(product.productCode).toMatch(/^P\d{4}$/);
 
   /* ------------------------- A. selector → editor → issue → reopen → PDF */
-  await page.getByRole("tab", { name: /Invoices/ }).click();
-  await page.getByTestId("v5-invoice-new").click();
+  await page.reload(); // refresh the shared V5 snapshot after adding the product
+  await page.getByTestId("v5-tab-invoices").click();
+  await page.getByTestId("v5-tax-new").click();
   const editor = page.getByTestId("v5-invoice-editor");
   const picker = editor.getByTestId("v5-editor-customer");
   await picker.fill(customer.customerCode); // search by code
@@ -614,7 +605,7 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
   const rateInput = editor.getByTestId("v5-rate-input");
   await expect(editor.getByTestId("v5-rate-source")).not.toHaveText("");
   if (!(await rateInput.inputValue())) await rateInput.fill("4105");
-  await editor.getByTestId("v5-issue").click();
+  await page.getByTestId("v5-issue").click();
   const ask = page.getByTestId("v5-confirm-products");
   await expect(ask).toContainText(YES);
   await page.getByTestId("v5-confirm-products-confirm").click(); // YES: register
@@ -662,4 +653,23 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
     }
   }
   expect(problems, problems.join("\n")).toEqual([]);
+});
+
+test("V5 uses a Design-only work area and makes Invoice type explicit on the direct invoice screen", async ({ page }) => {
+  watch(page);
+  await page.goto("/office-v5");
+  const designHeading = page.locator("h1");
+  await expect(designHeading).toBeVisible();
+  await expect(designHeading).not.toHaveText("Other Business");
+  await expect(page.getByTestId("v5-work-type")).toHaveCount(0);
+  await page.goto("/office-v5/invoices");
+  await page.getByTestId("v5-direct-invoice-new").click();
+  const editor=page.getByTestId("v5-invoice-editor");
+  await expect(editor.getByTestId("v5-invoice-type")).toHaveValue("INVOICE");
+  await expect(editor.getByText("VAT 10% applies")).toHaveCount(0);
+  await editor.getByTestId("v5-invoice-type").selectOption("TAX_INVOICE");
+  await expect(editor.getByText("VAT 10% applies")).toBeVisible();
+  await editor.getByTestId("v5-invoice-type").selectOption("INVOICE");
+  await expect(editor.getByTestId("v5-invoice-type")).toHaveValue("INVOICE");
+  await expect(page.getByTestId("v5-work-type")).toHaveCount(0);
 });

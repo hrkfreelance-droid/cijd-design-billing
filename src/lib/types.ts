@@ -60,6 +60,8 @@ export type WorkType = "DESIGN" | "OTHER_BUSINESS";
 export interface Project {
   /** V5 work area. Legacy projects are DESIGN without rewriting them. */
   workType?: WorkType;
+  /** V5 Design workflow can be explicitly completed without creating an invoice. */
+  billingDisposition?: "NO_INVOICE" | null;
   id: string;
   clientId: string;
   name: string;
@@ -431,6 +433,8 @@ export interface InvoiceDiscount {
  * so a later edit to the project, the client or the rate never changes it.
  */
 export interface TaxInvoiceRecord {
+  /** Chosen per transaction. Missing on historical rows means Tax Invoice. */
+  invoiceType?: "INVOICE" | "TAX_INVOICE";
   /** Source history; payment status is unknown until separately reconciled. */
   historicalSourceId?: string;
   /** Source categories frozen at issue; empty means an unlinked shared invoice. */

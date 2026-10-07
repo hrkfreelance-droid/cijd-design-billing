@@ -21,12 +21,14 @@ export function InvoiceList({
   mode = "all",
   excludeTest = false,
   compactTitle,
+  invoiceType,
 }: {
   snapshot: Snapshot;
   compact?: boolean;
   mode?: "all" | "open" | "completed";
   excludeTest?: boolean;
   compactTitle?: string;
+  invoiceType?: "INVOICE" | "TAX_INVOICE";
 }) {
   const t = useV5T();
   const [query, setQuery] = useState("");
@@ -42,6 +44,7 @@ export function InvoiceList({
           return { invoice, money, customer, status: (invoice.status === "CANCELLED" ? "CANCELLED" : money.status) as Exclude<Status, "ALL"> };
         })
         .filter((row) => !excludeTest || (!row.invoice.invoiceNumber.startsWith("TEST") && !/^TEST\b/i.test(row.customer.trim())))
+        .filter((row) => !invoiceType || (row.invoice.invoiceType ?? "TAX_INVOICE") === invoiceType)
         .filter((row) => {
           if (mode !== "all" && row.invoice.historicalSourceId) return false;
           if (mode === "open") return row.invoice.status === "ISSUED" && row.money.status !== "PAID";
@@ -49,7 +52,7 @@ export function InvoiceList({
           return true;
         })
         .sort((a, b) => b.invoice.invoiceDate.localeCompare(a.invoice.invoiceDate) || b.invoice.invoiceNumber.localeCompare(a.invoice.invoiceNumber)),
-    [snapshot, mode, excludeTest],
+    [snapshot, mode, excludeTest, invoiceType],
   );
   const years = [...new Set(rows.map((row) => row.invoice.invoiceDate.slice(0, 4)))].sort().reverse();
   const needle = query.trim().toLowerCase();
@@ -103,7 +106,7 @@ export function InvoiceList({
                             {invoice.invoiceNumber} · {invoice.invoiceDate}
                           </span>
                           <span className={rowStatus === "PARTIALLY_PAID" ? "text-pending" : "text-muted"}>
-                            {invoice.historicalSourceId ? "Historical" : t(`status.${rowStatus}` as V5Key)}
+                            {invoice.invoiceType === "INVOICE" ? "Invoice" : "Tax Invoice"} · {invoice.historicalSourceId ? "Historical" : t(`status.${rowStatus}` as V5Key)}
                           </span>
                         </span>
                         <span className="mt-[3px] grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-[12.5px] leading-5 text-faint">
@@ -170,6 +173,7 @@ export function InvoiceList({
                   <span className="tnum hidden text-[13px] text-muted md:block">{invoice.invoiceDate}</span>
                   <span className="min-w-0 truncate text-[13px] text-muted">
                     <span className="md:hidden">{invoice.invoiceDate} · </span>
+                    {invoice.invoiceType === "INVOICE" ? <span className="mr-1 rounded bg-fill px-1.5 py-0.5 text-[10px]">Invoice</span> : <span className="mr-1 rounded bg-fill px-1.5 py-0.5 text-[10px]">Tax Invoice</span>}
                     {customer}
                     {invoice.project.name && <span className="text-faint"> · {invoice.project.name}</span>}
                   </span>

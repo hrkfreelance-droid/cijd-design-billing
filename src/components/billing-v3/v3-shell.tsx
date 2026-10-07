@@ -67,6 +67,8 @@ function Header({ variant }: { variant: ShellVariant }) {
     variant === "v5"
       ? [
           { href: base, label: v5t("nav.design") },
+          { href: `${base}/invoices`, label: "Invoice" },
+          { href: `${base}/tax-invoices`, label: "Tax Invoice" },
           { href: `${base}/accounting`, label: v5t("nav.accounting") },
           { href: `${base}/archive`, label: t("v2.nav.archive") },
         ]

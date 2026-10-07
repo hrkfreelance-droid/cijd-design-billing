@@ -29,7 +29,7 @@ import { Modal } from "@/components/billing-v2/modal";
 import { ProjectDetail, projectStatus } from "@/components/billing-v2/project-detail";
 import { saveProject } from "./save-project";
 
-type Confirm = "bill" | "delete" | null;
+type Confirm = "bill" | "delete" | "no-invoice" | null;
 
 /**
  * A project, opened from the Billing list.
@@ -180,6 +180,12 @@ export function ProjectModal({
     if (ok) onClose();
   };
 
+  const completeWithoutInvoice = async () => {
+    const ok = await run(() => api(`/api/v5/projects/${project.id}/complete-no-invoice`, {method:"POST"}));
+    setConfirm(null);
+    if(ok) onClose();
+  };
+
   const addService = async (serviceName: string): Promise<string | null> => {
     try {
       const created = await api<ServiceType>("/api/service-types", {
@@ -230,6 +236,7 @@ export function ProjectModal({
             {t("v2.markReady")}
           </Button>
         )}
+        {accountingFlow && <Button variant="secondary" onClick={() => setConfirm("no-invoice")} disabled={working || !ready || project.pricePendingCount > 0} data-testid="v5-complete-no-invoice">Complete without invoice</Button>}
       </div>
     </div>
   );
@@ -396,6 +403,16 @@ export function ProjectModal({
         }
         confirmLabel={accountingFlow ? v5t("design.sendAccounting") : t("v2.markBilled")}
         testId="v2-confirm-bill"
+      />
+      <ConfirmDialog
+        open={confirm === "no-invoice"}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => void completeWithoutInvoice()}
+        busy={busy}
+        title="Complete without an invoice?"
+        message={<>This closes <strong>{project.name}</strong> without sending it to Accounting or issuing an invoice. The project remains in Archive.</>}
+        confirmLabel="Complete without invoice"
+        testId="v5-confirm-no-invoice"
       />
       <ConfirmDialog
         open={confirm === "delete"}

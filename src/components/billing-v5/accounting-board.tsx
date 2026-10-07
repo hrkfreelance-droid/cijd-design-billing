@@ -177,6 +177,8 @@ function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
                     {" · "}
                     <span className="tnum">{invoice.invoiceDate}</span>
                     {" · "}
+                    <span>{invoice.invoiceType === "INVOICE" ? "Invoice" : "Tax Invoice"}</span>
+                    {" · "}
                     <span data-testid="v5-row-status">{t(`status.${status}` as V5Key)}</span>
                   </span>
                   <span className="mt-1.5 block space-y-[3px]">

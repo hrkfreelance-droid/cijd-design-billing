@@ -56,7 +56,7 @@ function rowAmount(row: Row): number {
 }
 
 export type EditorProps =
-  | { mode: "create"; draft?: InvoiceDraft; snapshot: Snapshot; customerId: string | null; billingItemIds: string[]; onClose: () => void }
+  | { mode: "create"; draft?: InvoiceDraft; snapshot: Snapshot; customerId: string | null; billingItemIds: string[]; invoiceType?: "INVOICE" | "TAX_INVOICE"; onClose: () => void }
   | { mode: "edit"; snapshot: Snapshot; invoice: TaxInvoiceRecord; onClose: () => void };
 
 export function InvoiceEditor(props: EditorProps) {
@@ -67,7 +67,7 @@ export function InvoiceEditor(props: EditorProps) {
   const { runResult, busy } = useAction();
   const { snapshot } = props;
   const draft = props.mode === "create" ? props.draft : undefined;
-  const ds = (draft?.input.editorState ?? {}) as {rows?:Row[];customer?:CustomerFields;customerId?:string;invoiceDate?:string;rate?:{value:string;source:"NBC"|"MANUAL";effectiveDate:string|null;state:"kept"|"loading"|"found"|"none"|"failed"};discountType?:"NONE"|"FIXED"|"PERCENT";discountValue?:string;vatApplicable?:boolean;deposit?:string};
+  const ds = (draft?.input.editorState ?? {}) as {rows?:Row[];customer?:CustomerFields;customerId?:string;invoiceDate?:string;rate?:{value:string;source:"NBC"|"MANUAL";effectiveDate:string|null;state:"kept"|"loading"|"found"|"none"|"failed"};discountType?:"NONE"|"FIXED"|"PERCENT";discountValue?:string;vatApplicable?:boolean;deposit?:string;invoiceType?:"INVOICE"|"TAX_INVOICE"};
   const [draftIdentity, setDraftIdentity] = useState(() => ({id:draft?.id ?? crypto.randomUUID(), revision:draft?.revision ?? 0}));
   const [customerSheet, setCustomerSheet] = useState<string|"new"|null>(null);
   const [suggestedNumber, setSuggestedNumber] = useState("");
@@ -155,10 +155,12 @@ export function InvoiceEditor(props: EditorProps) {
   };
   const [updateMaster, setUpdateMaster] = useState(!editing);
   const [invoiceDate, setInvoiceDate] = useState(ds.invoiceDate ?? editing?.invoiceDate ?? phnomPenhDate());
+  const initialInvoiceType = editing?.invoiceType ?? ds.invoiceType ?? (props.mode === "create" ? props.invoiceType : undefined) ?? "TAX_INVOICE";
+  const [invoiceType, setInvoiceType] = useState<"INVOICE"|"TAX_INVOICE">(initialInvoiceType);
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [discountType, setDiscountType] = useState<"NONE" | "FIXED" | "PERCENT">(ds.discountType ?? editing?.discount?.type ?? "NONE");
   const [discountValue, setDiscountValue] = useState(ds.discountValue ?? (editing?.discount ? String(editing.discount.value) : ""));
-  const [vatApplicable, setVatApplicable] = useState(ds.vatApplicable ?? editing?.vatApplicable ?? true);
+  const [vatApplicable, setVatApplicable] = useState(ds.vatApplicable ?? editing?.vatApplicable ?? (initialInvoiceType === "TAX_INVOICE"));
   const projectIds = [...new Set(rows.filter((r) => r.billingItemId).map((r) => snapshot.billingItems.find((i) => i.id === r.billingItemId)?.projectId).filter(Boolean) as string[])];
   const [deposit, setDeposit] = useState(() => {
     if (ds.deposit !== undefined) return ds.deposit;
@@ -179,11 +181,11 @@ export function InvoiceEditor(props: EditorProps) {
   useEffect(() => {
     if (editing || !/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate)) return;
     let live = true;
-    api<{invoiceNumber:string}>(`/api/v5/invoice-number?year=${invoiceDate.slice(0,4)}&customerId=${encodeURIComponent(customerId)}`)
+    api<{invoiceNumber:string}>(`/api/v5/invoice-number?year=${invoiceDate.slice(0,4)}&customerId=${encodeURIComponent(customerId)}&invoiceType=${invoiceType}`)
       .then(r => {if(live)setSuggestedNumber(r.invoiceNumber);})
       .catch(() => {if(live)setSuggestedNumber("");});
     return () => {live=false;};
-  }, [editing,invoiceDate,customerId]);
+  }, [editing,invoiceDate,customerId,invoiceType]);
 
   // The rate belongs to the invoice date: looked up for a new invoice and
   // whenever the date changes; an edit that keeps the date keeps its rate.
@@ -286,7 +288,7 @@ export function InvoiceEditor(props: EditorProps) {
   };
 
   const view_: InvoiceView = {
-    projectId: projectIds[0] ?? "", projectIds, clientId: customerId, invoiceNumber: editing?.invoiceNumber ?? "", invoiceDate,
+    projectId: projectIds[0] ?? "", projectIds, clientId: customerId, invoiceNumber: editing?.invoiceNumber ?? "", invoiceDate, invoiceType,
     status: "ISSUED", customer, project: { name: "", note: "" },
     lines: rows.map((row) => ({ billingItemId: row.billingItemId, productId: row.productId, projectName: previewProjectName(row.billingItemId), description: row.description, quantity: num(row.quantity) || 0, unit: row.unit || null, unitPrice: roundMoney(num(row.unitPrice) || 0), amount: rowAmount(row) || 0 })),
     vatApplicable, vatPercent: totals.vatPercent, subtotalUsd: totals.subtotalUsd, discount: totals.discountUsd > 0 ? discount : null,
@@ -298,13 +300,14 @@ export function InvoiceEditor(props: EditorProps) {
   const body = (items: Row[]) => ({
     customerId,
     invoiceDate,
+    invoiceType,
     customer,
     items: items.map((row) => ({
       billingItemId: row.billingItemId, productId: row.productId, description: row.description.trim(),
       quantity: num(row.quantity), unit: row.unit.trim() || null, unitPrice: num(row.unitPrice), amount: rowAmount(row),
     })),
     discount,
-    vatApplicable,
+    vatApplicable: invoiceType === "TAX_INVOICE" && vatApplicable,
     exchangeRate: rate.source === "MANUAL" ? { rate: rateNumber, source: "MANUAL" } : { rate: rateNumber, source: "NBC", effectiveDate: rate.effectiveDate },
     depositUsd: deposit.trim() ? num(deposit) : 0,
     updateCustomerMaster: updateMaster,
@@ -314,7 +317,7 @@ export function InvoiceEditor(props: EditorProps) {
 
   const saveDraft = async (items = rows) => {
     if (editing) return null;
-    const saved = await runResult(() => api<InvoiceDraft>("/api/v5/invoice-drafts", {method:"POST",body:{id:draftIdentity.id,revision:draftIdentity.revision,input:{...body(items),editorState:{rows:items,customer,customerId,invoiceDate,rate,discountType,discountValue,vatApplicable,deposit}}}}));
+    const saved = await runResult(() => api<InvoiceDraft>("/api/v5/invoice-drafts", {method:"POST",body:{id:draftIdentity.id,revision:draftIdentity.revision,input:{...body(items),editorState:{rows:items,customer,customerId,invoiceDate,rate,discountType,discountValue,vatApplicable,invoiceType,deposit}}}}));
     if(saved)setDraftIdentity({id:saved.id,revision:saved.revision});
     return saved;
   };
@@ -370,7 +373,7 @@ export function InvoiceEditor(props: EditorProps) {
     else setConfirming(true);
   };
 
-  const title = editing ? t("editor.editTitle", { number: editing.invoiceNumber }) : t("editor.createTitle");
+  const title = editing ? t("editor.editTitle", { number: editing.invoiceNumber }) : invoiceType === "INVOICE" ? "New Invoice" : t("editor.createTitle");
 
   const footer = (
     <div className="flex flex-wrap items-center gap-2 sm:gap-3">
@@ -390,7 +393,7 @@ export function InvoiceEditor(props: EditorProps) {
         </Button>
       )}
       <Button variant="primary" onClick={start} disabled={!valid || busy || rate.state === "loading"} data-testid="v5-issue">
-        {editing ? t("editor.save") : t("prepare.issue")}
+        {editing ? t("editor.save") : invoiceType === "INVOICE" ? "Issue Invoice" : t("prepare.issue")}
       </Button>
     </div>
   );
@@ -476,10 +479,16 @@ export function InvoiceEditor(props: EditorProps) {
                     </span>
                   )}
                 </label>
-                <label className="flex items-center gap-2.5 sm:col-span-2">
-                  <Checkbox checked={vatApplicable} onChange={setVatApplicable} label={t("prepare.vat")} />
-                  <span className="text-[13.5px]">{t("prepare.vat")}</span>
-                </label>
+                <div className="flex flex-wrap items-center gap-2.5 sm:col-span-2">
+                  {props.mode === "create" && <span className="text-[12px] font-medium text-muted">Invoice type</span>}
+                  {props.mode === "create" && <Select aria-label="Invoice type" data-testid="v5-invoice-type" value={invoiceType} onChange={event => { const type = event.target.value as "INVOICE"|"TAX_INVOICE"; setInvoiceType(type); setVatApplicable(type === "TAX_INVOICE"); }}>
+                    <option value="INVOICE">Invoice</option><option value="TAX_INVOICE">Tax Invoice</option>
+                  </Select>}
+                  {invoiceType === "TAX_INVOICE" && <label className="flex items-center gap-2.5">
+                    <Checkbox checked={vatApplicable} onChange={setVatApplicable} label={t("prepare.vat")} />
+                    <span className="text-[13.5px]">{t("prepare.vat")}</span>
+                  </label>}
+                </div>
               </div>
             </fieldset>
           </section>
@@ -606,7 +615,7 @@ export function InvoiceEditor(props: EditorProps) {
         busy={busy}
         title={t("prepare.confirmTitle")}
         message={t("prepare.confirmBody", { number: suggestedNumber || "UNKNOWN", total: moneyExact(totals.totalUsd) })}
-        confirmLabel={t("prepare.issue")}
+        confirmLabel={invoiceType === "INVOICE" ? "Issue Invoice" : t("prepare.issue")}
         testId="v5-confirm-issue"
       />
       <ConfirmDialog
@@ -641,4 +650,3 @@ function Text({ label, value, onChange, testId, type = "text", lang }: { label: 
     </label>
   );
 }
-

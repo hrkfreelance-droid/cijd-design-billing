@@ -56,6 +56,7 @@ export interface RateInput {
 }
 
 export interface InvoiceInput {
+  invoiceType?: "INVOICE" | "TAX_INVOICE";
   customerId: string;
   invoiceDate: string;
   customer: Partial<CustomerFields>;
@@ -468,6 +469,14 @@ export function nextInvoiceNumber(db: Database, year: number, test: boolean): st
   return `${TEST_NUMBER_PREFIX}${prefix}${String(max + 1).padStart(3, "0")}`;
 }
 
+/** Direct normal invoices use their own series and never consume CIJDTI numbers. */
+export function nextNormalInvoiceNumber(db: Database, year: number): string {
+  const prefix = `CIJDI${year}`;
+  const numbers = [...(db.taxInvoices ?? []).filter(i => i.invoiceType === "INVOICE").map(i => i.invoiceNumber), ...(db.invoiceNumberReservations ?? []).map(r => r.invoiceNumber)];
+  const max = numbers.filter(n => n.startsWith(prefix)).reduce((m, n) => Math.max(m, Number(n.slice(prefix.length)) || 0), 0);
+  return `${prefix}${String(max + 1).padStart(3, "0")}`;
+}
+
 export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecord {
   ensureCollections(db);
   const client = db.clients.find((entry) => entry.id === input.customerId);
@@ -488,7 +497,8 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
   // number ever used (cancelled ones included). Unique under the D1 lock and
   // the archive's UNIQUE(invoice_number).
   const year = Number(input.invoiceDate.slice(0, 4));
-  const invoiceNumber = nextInvoiceNumber(db, year, isTestCustomer(client.name));
+  const invoiceType = input.invoiceType === "INVOICE" ? "INVOICE" : "TAX_INVOICE";
+  const invoiceNumber = invoiceType === "INVOICE" ? nextNormalInvoiceNumber(db, year) : nextInvoiceNumber(db, year, isTestCustomer(client.name));
   const at = now();
   const id = newId();
 
@@ -506,6 +516,7 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
   }
   const projects = projectIds.map((pid) => db.projects.find((entry) => entry.id === pid)!);
   const record: TaxInvoiceRecord = {
+    invoiceType,
     id,
     projectId: projectIds[0] ?? "",
     projectIds,

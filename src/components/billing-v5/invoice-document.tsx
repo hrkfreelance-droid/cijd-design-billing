@@ -88,7 +88,7 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
 
         <div className="invoice-title khmer">
           <strong>វិក្កយបត្រអាករ</strong>
-          <span>TAX INVOICE</span>
+          <span>{invoice.invoiceType === "INVOICE" ? "INVOICE" : "TAX INVOICE"}</span>
         </div>
 
         <section className="invoice-parties">
