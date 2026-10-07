@@ -17,7 +17,7 @@ import {
 import { isCostPriced, serviceLabel } from "@/lib/billing-v2/services";
 import { moneyExact } from "@/lib/format";
 import { useV5T } from "@/lib/billing-v5/i18n";
-import type { Snapshot } from "@/lib/types";
+import type { Snapshot, WorkType } from "@/lib/types";
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
 import { NewProjectModal } from "@/components/billing-v2/new-project-modal";
 import { Price, projectReason } from "@/components/billing-v2/project-detail";
@@ -31,7 +31,7 @@ type Section = "READY" | "IN_PROGRESS";
  * each one is, its final price and, for printing, its cost — so a billing
  * decision can be made from the list without opening anything.
  */
-export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot: Snapshot; accountingFlow?: boolean }) {
+export function BillingV3Board({ snapshot, accountingFlow = false, workType, workControl }: { snapshot: Snapshot; accountingFlow?: boolean; workType?: WorkType; workControl?: ReactNode }) {
   const { t } = useI18n();
   const v5t = useV5T();
   const { run, busy } = useAction();
@@ -140,8 +140,9 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">
-              {accountingFlow ? v5t("design.title") : t("v2.billing.title")}
+              {workType === "OTHER_BUSINESS" ? "Other Business" : accountingFlow ? v5t("design.title") : t("v2.billing.title")}
             </h1>
+            {workControl}
             <p className="mt-1 text-[13.5px] text-muted">{accountingFlow ? v5t("design.subtitle") : t("v2.billing.subtitle")}</p>
           </div>
           <Button variant="primary" onClick={() => setCreating(true)} className="mt-1" data-testid="v2-new-project">
@@ -279,6 +280,7 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
       {creating && (
         <NewProjectModal
           clients={selectableClients(snapshot.clients)}
+          workType={workType}
           onClose={() => setCreating(false)}
           onCreated={setHighlight}
         />

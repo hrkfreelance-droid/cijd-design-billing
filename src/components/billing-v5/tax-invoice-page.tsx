@@ -55,14 +55,14 @@ export function TaxInvoicePage({ id }: { id: string }) {
             <span className="min-w-0 flex-1 truncate text-[13px] text-muted">
               <span className="tnum font-semibold text-text" data-testid="v5-invoice-heading">{invoice.invoiceNumber}</span>
               {" · "}
-              <span className={invoice.status === "CANCELLED" ? "text-danger" : ""} data-testid="v5-invoice-status">{t(statusKey as V5Key)}</span>
+              <span className={invoice.status === "CANCELLED" ? "text-danger" : ""} data-testid="v5-invoice-status">{invoice.historicalSourceId ? "Historical · Payment UNKNOWN" : t(statusKey as V5Key)}</span>
               {" · "}
               {clientName} · <span className="tnum">{moneyExact(invoice.totalUsd)}</span>
             </span>
           )}
           {invoice && (
             <div className="ml-auto flex items-center gap-2">
-              {invoice.status === "ISSUED" && (
+              {invoice.status === "ISSUED" && !invoice.historicalSourceId && (
                 <>
                   <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>
                   <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>
@@ -80,7 +80,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
       ) : (
         <>
           <p className="v5-no-print mx-auto max-w-[210mm] px-5 pt-4 text-[12px] text-faint sm:px-0">
-            {t("invoice.issuedOn", { date: phnomPenhDate(new Date(invoice.issuedAt)), name: invoice.issuedBy })}
+            {invoice.historicalSourceId ? "Historical import · original issue timestamp and payment status UNKNOWN" : t("invoice.issuedOn", { date: phnomPenhDate(new Date(invoice.issuedAt)), name: invoice.issuedBy })}
             {(invoice.revision ?? 1) > 1 && ` · ${t("detail.revision", { n: invoice.revision ?? 1 })}`}
             {invoice.cancellationReason ? ` · ${invoice.cancellationReason}` : ""}
           </p>
@@ -92,7 +92,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
             </div>
           </div>
           <div className="v5-no-print mx-auto mt-10 max-w-[210mm] space-y-10 px-5 sm:px-0">
-            <Payments invoice={invoice} snapshot={snapshot} money={money} run={run} busy={busy} />
+            {!invoice.historicalSourceId && <Payments invoice={invoice} snapshot={snapshot} money={money} run={run} busy={busy} />}
             <Billings invoice={invoice} snapshot={snapshot} />
             <History invoice={invoice} snapshot={snapshot} />
           </div>

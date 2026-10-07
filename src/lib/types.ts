@@ -55,7 +55,11 @@ export interface Client {
   createdAt: string;
 }
 
+export type WorkType = "DESIGN" | "OTHER_BUSINESS";
+
 export interface Project {
+  /** V5 work area. Legacy projects are DESIGN without rewriting them. */
+  workType?: WorkType;
   id: string;
   clientId: string;
   name: string;
@@ -268,6 +272,10 @@ export interface Database {
   billingAllocations?: BillingAllocation[];
   invoicePayments?: InvoicePayment[];
   invoiceRevisions?: InvoiceRevision[];
+  /** V5 workbook history and unnumbered drafts (absent on V3/V4). */
+  taxImportHistory?: import("./billing-v5/tax-history").HistoryEntry[];
+  invoiceNumberReservations?: import("./billing-v5/tax-history").NumberReservation[];
+  invoiceDrafts?: import("./billing-v5/tax-history").InvoiceDraft[];
 }
 
 /* ------------------------------------------------------------- V5 accounting */
@@ -423,6 +431,10 @@ export interface InvoiceDiscount {
  * so a later edit to the project, the client or the rate never changes it.
  */
 export interface TaxInvoiceRecord {
+  /** Source history; payment status is unknown until separately reconciled. */
+  historicalSourceId?: string;
+  /** Source categories frozen at issue; empty means an unlinked shared invoice. */
+  workTypes?: WorkType[];
   id: string;
   /** The project it was raised from; the first one when it bills several. */
   projectId: string;

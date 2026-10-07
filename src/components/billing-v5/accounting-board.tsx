@@ -17,6 +17,7 @@ import { billingState, eligibleBilling, invoiceCollection, type BillingState } f
 import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
 import type { Snapshot } from "@/lib/types";
+import { WORK_TYPES, workLabel, workSnapshot } from "@/lib/billing-v5/work-types";
 import { InvoiceEditor } from "./invoice-editor";
 
 /**
@@ -32,7 +33,7 @@ export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
   const toInvoiceTotal = roundMoney(eligible.reduce((sum, state) => sum + state.remainingUsd, 0));
   const outstanding = roundMoney(
     (snapshot.taxInvoices ?? [])
-      .filter((invoice) => invoice.status === "ISSUED" && !invoice.invoiceNumber.startsWith("TEST"))
+      .filter((invoice) => invoice.status === "ISSUED" && !invoice.historicalSourceId && !invoice.invoiceNumber.startsWith("TEST"))
       .reduce((sum, invoice) => sum + invoiceCollection(snapshot, invoice).outstandingUsd, 0),
   );
 
@@ -40,6 +41,7 @@ export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
     <div className="pb-36" data-testid="v5-accounting">
       <header className="px-5 pb-2 pt-6 sm:px-8 sm:pt-8">
         <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">{t("accounting.title")}</h1>
+        <Link href="/office-v5/tax-invoices" className="mt-2 inline-block text-[13px] text-accent" data-testid="v5-tax-workspace-link">Tax Invoices · Customer Master · Import history →</Link>
         <p className="mt-1 text-[13.5px] text-muted">{t("accounting.subtitle")}</p>
         <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-12">
           <Figure label={t("accounting.toInvoice")} strong testId="v5-to-invoice-total">{moneyExact(toInvoiceTotal)}</Figure>
@@ -51,13 +53,18 @@ export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
       </header>
 
       <div className="px-5 sm:px-8">
-        <ToInvoice snapshot={snapshot} eligible={eligible} />
-        <section className="pt-12" data-testid="v5-section-invoices">
-          <div className="border-b border-line-strong pb-2.5">
-            <h2 className="text-[16px] font-semibold tracking-[-0.012em]">{t("accounting.openInvoices")}</h2>
-          </div>
-          <OpenInvoiceProjects snapshot={snapshot} />
-        </section>
+        {[...WORK_TYPES, "SHARED" as const].map(type => {
+          const scoped = workSnapshot(snapshot, type);
+          const ids = new Set(scoped.projects.map(p => p.id));
+          return <section key={type} className="pt-8" data-testid={`v5-accounting-category-${type}`}>
+            <h2 className="border-b border-line-strong pb-2 text-[19px] font-semibold">{type === "SHARED" ? "Shared / multiple categories" : workLabel(type)}</h2>
+            {type !== "SHARED" && <ToInvoice snapshot={scoped} eligible={eligible.filter(s => ids.has(s.item.projectId))} />}
+            <section className="pt-8" data-testid="v5-section-invoices">
+              <h3 className="border-b border-line-strong pb-2.5 text-[16px] font-semibold">{t("accounting.openInvoices")}</h3>
+              <OpenInvoiceProjects snapshot={scoped} />
+            </section>
+          </section>;
+        })}
       </div>
     </div>
   );
@@ -92,7 +99,7 @@ function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
     }>();
 
     for (const invoice of snapshot.taxInvoices ?? []) {
-      if (invoice.status !== "ISSUED" || invoice.invoiceNumber.startsWith("TEST")) continue;
+      if (invoice.historicalSourceId || invoice.status !== "ISSUED" || invoice.invoiceNumber.startsWith("TEST")) continue;
       const clientName = snapshot.clients.find((client) => client.id === invoice.clientId)?.name ?? invoice.customer.companyNameEn;
       if (/^TEST\b/i.test(clientName.trim())) continue;
       const money = invoiceCollection(snapshot, invoice);

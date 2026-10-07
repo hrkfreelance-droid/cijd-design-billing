@@ -198,8 +198,8 @@ test("validation separates blocking errors from warnings", () => {
   assert.equal(validatePayment(0, 700)[0].level, "ERROR");
 });
 
-test("invoice numbers continue after the paper series", () => {
-  assert.equal(nextTaxInvoiceNumber(2026, []), "CIJDTI2026081");
+test("invoice numbers derive from stored history", () => {
+  assert.equal(nextTaxInvoiceNumber(2026, []), "CIJDTI2026001");
   assert.equal(nextTaxInvoiceNumber(2026, ["CIJDTI2026081", "CIJDTI2026090"]), "CIJDTI2026091");
   assert.equal(nextTaxInvoiceNumber(2027, ["CIJDTI2026090"]), "CIJDTI2027001");
 });

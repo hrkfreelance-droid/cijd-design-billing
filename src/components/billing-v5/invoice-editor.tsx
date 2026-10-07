@@ -17,6 +17,8 @@ import { billingState, customerFor, unappliedProjectDeposit } from "@/lib/billin
 import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
 import type { ExchangeRate, Product, Snapshot, TaxInvoiceRecord } from "@/lib/types";
+import type { InvoiceDraft } from "@/lib/billing-v5/tax-history";
+import { CustomerSheet } from "./masters";
 import { Combobox, type ComboOption } from "./combobox";
 import { FitA4 } from "./fit-a4";
 import { InvoiceDocument, type InvoiceView } from "./invoice-document";
@@ -54,7 +56,7 @@ function rowAmount(row: Row): number {
 }
 
 export type EditorProps =
-  | { mode: "create"; snapshot: Snapshot; customerId: string | null; billingItemIds: string[]; onClose: () => void }
+  | { mode: "create"; draft?: InvoiceDraft; snapshot: Snapshot; customerId: string | null; billingItemIds: string[]; onClose: () => void }
   | { mode: "edit"; snapshot: Snapshot; invoice: TaxInvoiceRecord; onClose: () => void };
 
 export function InvoiceEditor(props: EditorProps) {
@@ -64,6 +66,11 @@ export function InvoiceEditor(props: EditorProps) {
   const router = useRouter();
   const { runResult, busy } = useAction();
   const { snapshot } = props;
+  const draft = props.mode === "create" ? props.draft : undefined;
+  const ds = (draft?.input.editorState ?? {}) as {rows?:Row[];customer?:CustomerFields;customerId?:string;invoiceDate?:string;rate?:{value:string;source:"NBC"|"MANUAL";effectiveDate:string|null;state:"kept"|"loading"|"found"|"none"|"failed"};discountType?:"NONE"|"FIXED"|"PERCENT";discountValue?:string;vatApplicable?:boolean;deposit?:string};
+  const [draftIdentity, setDraftIdentity] = useState(() => ({id:draft?.id ?? crypto.randomUUID(), revision:draft?.revision ?? 0}));
+  const [customerSheet, setCustomerSheet] = useState<string|"new"|null>(null);
+  const [suggestedNumber, setSuggestedNumber] = useState("");
   const editing = props.mode === "edit" ? props.invoice : null;
   const products = (snapshot.products ?? []).filter((product) => product.active);
   const productOptions: ComboOption[] = products.map((product) => ({
@@ -87,6 +94,7 @@ export function InvoiceEditor(props: EditorProps) {
   }, [snapshot, editing]);
 
   const initialRows = (): Row[] => {
+    if (ds.rows) return ds.rows.map(row => ({...row,key:nextKey()}));
     if (editing) {
       return editing.lines.map((line) => ({
         key: nextKey(), billingItemId: line.billingItemId, productId: line.productId ?? null, description: line.description,
@@ -111,7 +119,7 @@ export function InvoiceEditor(props: EditorProps) {
     });
   };
 
-  const startCustomer = editing?.clientId ?? (props.mode === "create" ? props.customerId : null) ?? "";
+  const startCustomer = ds.customerId ?? editing?.clientId ?? (props.mode === "create" ? props.customerId : null) ?? "";
   const [customerId, setCustomerId] = useState(startCustomer);
   // The invoice's own snapshot for its customer; the Customer Master for any
   // customer chosen explicitly (a new invoice, or a changed customer on edit).
@@ -120,7 +128,7 @@ export function InvoiceEditor(props: EditorProps) {
     const master = customerFor(snapshot, id);
     return { companyNameEn: master.companyNameEn, companyNameKm: master.companyNameKm, addressEn: master.addressEn, addressKm: master.addressKm, telephone: master.telephone, vatin: master.vatin };
   };
-  const [customer, setCustomer] = useState<CustomerFields>(() => fieldsFor(startCustomer));
+  const [customer, setCustomer] = useState<CustomerFields>(() => ds.customer ?? fieldsFor(startCustomer));
   // Active customers from the Customer Master (the current one stays listed on edit).
   const customerOptions = useMemo<ComboOption[]>(
     () =>
@@ -132,7 +140,7 @@ export function InvoiceEditor(props: EditorProps) {
             id: client.id,
             label: master.customerCode ? `${master.customerCode} · ${client.name}` : client.name,
             hint: [master.companyNameEn !== client.name ? master.companyNameEn : "", master.companyNameKm].filter(Boolean).join(" · ") || undefined,
-            keywords: [master.customerCode, client.name, master.companyNameEn, master.companyNameKm, master.vatin],
+            keywords: [master.customerCode, client.name, master.companyNameEn, master.companyNameKm, master.vatin, master.telephone],
           };
         })
         .sort((a, b) => a.label.localeCompare(b.label)),
@@ -146,57 +154,55 @@ export function InvoiceEditor(props: EditorProps) {
     setCustomerQuery(customerLabel(id));
   };
   const [updateMaster, setUpdateMaster] = useState(!editing);
-  const [invoiceDate, setInvoiceDate] = useState(editing?.invoiceDate ?? phnomPenhDate());
+  const [invoiceDate, setInvoiceDate] = useState(ds.invoiceDate ?? editing?.invoiceDate ?? phnomPenhDate());
   const [rows, setRows] = useState<Row[]>(initialRows);
-  const [discountType, setDiscountType] = useState<"NONE" | "FIXED" | "PERCENT">(editing?.discount?.type ?? "NONE");
-  const [discountValue, setDiscountValue] = useState(editing?.discount ? String(editing.discount.value) : "");
-  const [vatApplicable, setVatApplicable] = useState(editing?.vatApplicable ?? true);
+  const [discountType, setDiscountType] = useState<"NONE" | "FIXED" | "PERCENT">(ds.discountType ?? editing?.discount?.type ?? "NONE");
+  const [discountValue, setDiscountValue] = useState(ds.discountValue ?? (editing?.discount ? String(editing.discount.value) : ""));
+  const [vatApplicable, setVatApplicable] = useState(ds.vatApplicable ?? editing?.vatApplicable ?? true);
   const projectIds = [...new Set(rows.filter((r) => r.billingItemId).map((r) => snapshot.billingItems.find((i) => i.id === r.billingItemId)?.projectId).filter(Boolean) as string[])];
   const [deposit, setDeposit] = useState(() => {
+    if (ds.deposit !== undefined) return ds.deposit;
     if (editing) return (editing.depositUsd ?? 0) > 0 ? String(editing.depositUsd) : "";
     const suggested = unappliedProjectDeposit(snapshot, projectIds);
     return suggested > 0 ? suggested.toFixed(2) : "";
   });
   const [rate, setRate] = useState<{ value: string; source: "NBC" | "MANUAL"; effectiveDate: string | null; state: "kept" | "loading" | "found" | "none" | "failed" }>(
-    editing
+    ds.rate ?? (editing
       ? { value: String(editing.exchangeRate), source: editing.exchangeRateSource, effectiveDate: editing.exchangeRateEffectiveDate, state: "kept" }
-      : { value: "", source: "NBC", effectiveDate: null, state: "loading" },
+      : { value: "", source: "NBC", effectiveDate: null, state: "loading" }),
   );
   const [reason, setReason] = useState("");
   const [view, setView] = useState<"form" | "preview">("form");
   const [confirming, setConfirming] = useState(false);
   const [newProducts, setNewProducts] = useState<Row[] | null>(null);
 
+  useEffect(() => {
+    if (editing || !/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate)) return;
+    let live = true;
+    api<{invoiceNumber:string}>(`/api/v5/invoice-number?year=${invoiceDate.slice(0,4)}&customerId=${encodeURIComponent(customerId)}`)
+      .then(r => {if(live)setSuggestedNumber(r.invoiceNumber);})
+      .catch(() => {if(live)setSuggestedNumber("");});
+    return () => {live=false;};
+  }, [editing,invoiceDate,customerId]);
+
   // The rate belongs to the invoice date: looked up for a new invoice and
   // whenever the date changes; an edit that keeps the date keeps its rate.
-  const lookupRate = (date: string) => {
-    if (editing && date === editing.invoiceDate) {
-      setRate({ value: String(editing.exchangeRate), source: editing.exchangeRateSource, effectiveDate: editing.exchangeRateEffectiveDate, state: "kept" });
-      return;
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
-    setRate((current) => ({ ...current, state: "loading" }));
-    api<RateAnswer>(`/api/v5/exchange-rate?date=${date}`)
-      .then((result) => setRate(rateState(result)))
-      .catch(() => setRate({ value: "", source: "MANUAL", effectiveDate: null, state: "failed" }));
-  };
   const changeDate = (date: string) => {
     setInvoiceDate(date);
-    lookupRate(date);
+    if (editing && date === editing.invoiceDate) setRate({value:String(editing.exchangeRate),source:editing.exchangeRateSource,effectiveDate:editing.exchangeRateEffectiveDate,state:"kept"});
+    else if (ds.rate && date === ds.invoiceDate) setRate(ds.rate);
+    else setRate(current => ({...current,value:"",state:"loading"}));
   };
-  // A new invoice starts on today's date: look its rate up once.
   useEffect(() => {
-    if (editing) return;
+    if (editing && invoiceDate === editing.invoiceDate) return;
+    if (ds.rate && invoiceDate === ds.invoiceDate) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate)) return;
     let live = true;
-    api<RateAnswer>(`/api/v5/exchange-rate?date=${phnomPenhDate()}`)
-      .then((result) => {
-        if (live) setRate((current) => (current.state !== "loading" ? current : rateState(result)));
-      })
-      .catch(() => live && setRate((current) => (current.state !== "loading" ? current : { value: "", source: "MANUAL", effectiveDate: null, state: "failed" })));
-    return () => {
-      live = false;
-    };
-  }, [editing]);
+    api<RateAnswer>(`/api/v5/exchange-rate?date=${invoiceDate}`)
+      .then(result => {if(live)setRate(rateState(result));})
+      .catch(() => {if(live)setRate({value:"",source:"MANUAL",effectiveDate:null,state:"failed"});});
+    return () => {live=false;};
+  }, [editing,invoiceDate,ds.rate,ds.invoiceDate]);
 
   // The draft shows the project name the server will snapshot (an edit keeps the printed one).
   const previewProjectName = (billingItemId: string | null | undefined) => {
@@ -218,6 +224,7 @@ export function InvoiceEditor(props: EditorProps) {
   });
 
   const errors: string[] = [];
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(invoiceDate)) errors.push("Enter a valid invoice date.");
   if (!customerId) errors.push(t("editor.chooseCustomer"));
   // One invoice bills one customer: billing lines of another customer block it.
   const foreign = rows.filter((row) => {
@@ -305,11 +312,19 @@ export function InvoiceEditor(props: EditorProps) {
     ...(editing ? { invoiceNumber: editing.invoiceNumber } : {}),
   });
 
+  const saveDraft = async (items = rows) => {
+    if (editing) return null;
+    const saved = await runResult(() => api<InvoiceDraft>("/api/v5/invoice-drafts", {method:"POST",body:{id:draftIdentity.id,revision:draftIdentity.revision,input:{...body(items),editorState:{rows:items,customer,customerId,invoiceDate,rate,discountType,discountValue,vatApplicable,deposit}}}}));
+    if(saved)setDraftIdentity({id:saved.id,revision:saved.revision});
+    return saved;
+  };
   const submit = async (items: Row[]) => {
+    const savedDraft = !editing ? await saveDraft(items) : null;
+    if(!editing && !savedDraft)return;
     const saved = await runResult(() =>
       editing
         ? api<TaxInvoiceRecord>(`/api/v5/tax-invoices/${editing.id}`, { method: "PATCH", body: body(items) })
-        : api<TaxInvoiceRecord>("/api/v5/tax-invoices", { method: "POST", body: body(items) }),
+        : api<TaxInvoiceRecord>("/api/v5/tax-invoices", { method: "POST", body: {...body(items),draftId:savedDraft?.id,draftRevision:savedDraft?.revision} }),
     );
     setConfirming(false);
     if (!saved) return;
@@ -362,6 +377,7 @@ export function InvoiceEditor(props: EditorProps) {
       <Button variant="secondary" onClick={() => (view === "preview" ? setView("form") : props.onClose())} disabled={busy} data-testid="v5-editor-back">
         {view === "preview" ? t("prepare.edit") : t3("common.cancel")}
       </Button>
+      {!editing && <Button variant="secondary" onClick={() => void saveDraft().then(saved => {if(saved){toast("Draft saved");props.onClose();}})} disabled={busy} data-testid="v5-save-draft">Save Draft</Button>}
       <span className="tnum ml-auto min-w-0 text-right">
         <span className="block text-[11.5px] text-muted">{totals.depositUsd > 0 ? t("totals.balanceDue") : t("prepare.totalUsd")}</span>
         <span className="block text-[18px] font-semibold leading-tight tracking-[-0.02em]" data-testid="v5-editor-total">
@@ -406,6 +422,10 @@ export function InvoiceEditor(props: EditorProps) {
                     empty={t("editor.noCustomer")}
                     testId="v5-editor-customer"
                   />
+                  <div className="mt-2 flex gap-4 text-[12px] text-accent">
+                    <button type="button" onClick={() => setCustomerSheet("new")} data-testid="v5-quick-customer-new">+ New customer</button>
+                    {customerId && <button type="button" onClick={() => setCustomerSheet(customerId)} data-testid="v5-quick-customer-edit">Edit customer</button>}
+                  </div>
                   {foreign.length > 0 && <span className="mt-1 block text-[12px] text-danger" data-testid="v5-editor-customer-error">{t("editor.otherCustomer", { count: foreign.length })}</span>}
                 </label>
                 <Text label={t("prepare.nameEn")} value={customer.companyNameEn} onChange={(v) => setCustomer({ ...customer, companyNameEn: v })} testId="v5-name-en" />
@@ -426,7 +446,7 @@ export function InvoiceEditor(props: EditorProps) {
                 <label className="block">
                   <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.number")}</span>
                   <span className="tnum flex h-11 items-center text-[15px] text-muted" data-testid="v5-invoice-number">
-                    {editing?.invoiceNumber ?? t("editor.numberAuto")}
+                    {editing?.invoiceNumber ?? (suggestedNumber || "UNKNOWN")}
                   </span>
                 </label>
                 <Text label={t("prepare.date")} type="date" value={invoiceDate} onChange={changeDate} testId="v5-invoice-date" />
@@ -578,13 +598,14 @@ export function InvoiceEditor(props: EditorProps) {
         </div>
       )}
 
+      {customerSheet && <CustomerSheet snapshot={snapshot} id={customerSheet === "new" ? null : customerSheet} onClose={() => setCustomerSheet(null)} onSaved={saved => {setCustomerId(saved.id);setCustomer({...saved});setCustomerQuery(saved.companyNameEn);}} />}
       <ConfirmDialog
         open={confirming}
         onClose={() => setConfirming(false)}
         onConfirm={() => void submit(rows)}
         busy={busy}
         title={t("prepare.confirmTitle")}
-        message={t("prepare.confirmBody", { number: t("editor.numberAuto"), total: moneyExact(totals.totalUsd) })}
+        message={t("prepare.confirmBody", { number: suggestedNumber || "UNKNOWN", total: moneyExact(totals.totalUsd) })}
         confirmLabel={t("prepare.issue")}
         testId="v5-confirm-issue"
       />

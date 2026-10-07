@@ -370,7 +370,7 @@ test("invoices cannot be deleted: there is no delete operation or route", async 
   if (route) assert.equal((route as Record<string, unknown>).DELETE, undefined);
 });
 
-test("numbers run per year: 2026 continues after the paper series, 2027 restarts at 001; cancelled numbers are not reused", async () => {
+test("numbers run per year: stored history determines the sequence, 2027 restarts at 001; cancelled numbers are not reused", async () => {
   const t = await env();
   const free = (date: string) => t.issue([{ description: "TEST numbering", quantity: 1, unitPrice: 1 }], { invoiceDate: date });
   const a = await free("2026-09-29");
@@ -379,17 +379,17 @@ test("numbers run per year: 2026 continues after the paper series, 2027 restarts
   const c = await free("2026-12-30");
   const d = await free("2027-01-04");
   const e = await free("2027-01-04");
-  assert.deepEqual([a, b, c, d, e].map((i) => i.invoiceNumber), ["CIJDTI2026081", "CIJDTI2026082", "CIJDTI2026083", "CIJDTI2027001", "CIJDTI2027002"]);
+  assert.deepEqual([a, b, c, d, e].map((i) => i.invoiceNumber), ["CIJDTI2026001", "CIJDTI2026002", "CIJDTI2026003", "CIJDTI2027001", "CIJDTI2027002"]);
 });
 
 test("TEST customers are numbered in their own series and never touch the real sequence", async () => {
   const t = await env();
   const testClient = await t.open().createClient({ name: "TEST E2E Customer" });
   const testInvoice = (date: string) =>
-    t.open().issueInvoice({ customerId: testClient.id, invoiceDate: date, customer: CUSTOMER, items: [{ description: "TEST", quantity: 1, unitPrice: 1 }], actor: "TEST" });
+    t.open().issueInvoice({ customerId: testClient.id, invoiceDate: date, customer: {...CUSTOMER, vatin:"TEST-VAT"}, items: [{ description: "TEST", quantity: 1, unitPrice: 1 }], actor: "TEST" });
   assert.equal((await testInvoice("2026-09-29")).invoiceNumber, "TEST-CIJDTI2026001");
   assert.equal((await testInvoice("2026-09-29")).invoiceNumber, "TEST-CIJDTI2026002");
-  assert.equal((await t.issue([{ description: "Real", quantity: 1, unitPrice: 1 }])).invoiceNumber, "CIJDTI2026081");
+  assert.equal((await t.issue([{ description: "Real", quantity: 1, unitPrice: 1 }])).invoiceNumber, "CIJDTI2026001");
   assert.equal((await testInvoice("2027-01-04")).invoiceNumber, "TEST-CIJDTI2027001");
 });
 

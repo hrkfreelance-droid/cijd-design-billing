@@ -351,16 +351,16 @@ export function formatTaxInvoiceNumber(year: number, sequence: number): string {
   return `CIJDTI${year}${String(sequence).padStart(3, "0")}`;
 }
 
-/** Paper invoices up to CIJDTI2026080 already exist; V4 reserves the same floor. */
-export function invoiceSequenceFloor(year: number): number {
-  return year === 2026 ? 81 : 1;
+/** Stored invoice/reservation history determines the sequence; no paper floor. */
+export function invoiceSequenceFloor(): number {
+  return 1;
 }
 
 export function nextTaxInvoiceNumber(year: number, existing: readonly string[]): string {
   const prefix = `CIJDTI${year}`;
-  let max = invoiceSequenceFloor(year) - 1;
+  let max = invoiceSequenceFloor() - 1;
   for (const number of existing) {
-    if (!number.startsWith(prefix)) continue;
+    if (!new RegExp(`^${prefix}\\d{3,}$`).test(number)) continue;
     const sequence = Number(number.slice(prefix.length));
     if (Number.isInteger(sequence) && sequence > max) max = sequence;
   }

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { api, useData, useI18n, useToast } from "@/components/providers";
 import { useAction } from "@/components/use-action";
 import { Button, Input, Select } from "@/components/ui";
-import type { Client, Project } from "@/lib/types";
+import type { Client, Project, WorkType } from "@/lib/types";
 import { Modal } from "./modal";
 
 const NEW_CLIENT = "__new__";
@@ -17,10 +17,12 @@ const NEW_CLIENT = "__new__";
  */
 export function NewProjectModal({
   clients,
+  workType,
   onClose,
   onCreated,
 }: {
   clients: Client[];
+  workType?: WorkType;
   onClose: () => void;
   onCreated: (projectId: string) => void;
 }) {
@@ -49,9 +51,9 @@ export function NewProjectModal({
         // Keep the new client selected, so a retry does not add it twice.
         setClientId(client.id);
       }
-      const project = await api<Project>("/api/projects", {
+      const project = await api<Project>(workType ? "/api/v5/projects" : "/api/projects", {
         method: "POST",
-        body: { clientId: targetId, name: name.trim() },
+        body: { clientId: targetId, name: name.trim(), ...(workType ? {workType} : {}) },
       });
       await refresh();
       toast(t("v2.created"));

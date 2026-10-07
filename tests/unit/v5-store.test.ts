@@ -203,7 +203,7 @@ test("issue: Final amounts become the lines; VAT, USD and KHR; snapshot survives
   const { open, project, client, design, d1 } = env;
   await storeRate(d1, "2026-09-29", 4105);
   const issued = await open().issueInvoice(input(env));
-  assert.equal(issued.invoiceNumber, "CIJDTI2026081");
+  assert.equal(issued.invoiceNumber, "CIJDTI2026001");
   assert.deepEqual(
     issued.lines.map(({ description, quantity, unitPrice, amount }) => ({ description, quantity, unitPrice, amount })),
     [
@@ -240,7 +240,7 @@ test("issue is refused without a rate, a legal name, or ready work; the number i
   await rejectsWith(open().issueInvoice(input(env, { exchangeRate: { rate: 0, source: "MANUAL" } })), "INVALID");
   await rejectsWith(open().issueInvoice(input(env, { customer: {} , exchangeRate: { rate: 4105, source: "MANUAL" } })), "INVALID");
   const manual = await open().issueInvoice(input(env, { invoiceNumber: "WHATEVER-1", exchangeRate: { rate: 4105, source: "MANUAL" } }));
-  assert.equal(manual.invoiceNumber, "CIJDTI2026081"); // a requested number is not used
+  assert.equal(manual.invoiceNumber, "CIJDTI2026001"); // a requested number is not used
   assert.equal(manual.exchangeRateSource, "MANUAL");
   await storeRate(d1, "2026-09-29", 4105);
 
@@ -263,7 +263,7 @@ test("the issued invoice is archived immutably in D1; cancel keeps the record", 
   await open().cancelTaxInvoice(issued.id, "Wrong customer name");
   const snap = await open().getSnapshot();
   assert.equal(snap.taxInvoices![0].status, "CANCELLED");
-  assert.equal(snap.taxInvoices![0].invoiceNumber, "CIJDTI2026081");
+  assert.equal(snap.taxInvoices![0].invoiceNumber, "CIJDTI2026001");
   assert.ok(snap.billingItems.filter((entry) => entry.projectId === project.id).every((entry) => entry.billingStatus === "READY_TO_INVOICE"));
   assert.equal((d1.raw.prepare("SELECT count(*) AS n FROM v5_tax_invoice_archive").get() as { n: number }).n, 1);
 });

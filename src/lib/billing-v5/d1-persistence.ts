@@ -55,6 +55,9 @@ const COLLECTIONS = [
   "billingAllocations",
   "invoicePayments",
   "invoiceRevisions",
+  "taxImportHistory",
+  "invoiceNumberReservations",
+  "invoiceDrafts",
 ] as const satisfies readonly (keyof Database)[];
 
 export class ConflictError extends RuleError {
@@ -135,6 +138,14 @@ export function d1Persistence(
         const list = (parts.get(key) ?? []).sort((a, b) => a.index - b.index);
         (loaded as unknown as Record<string, unknown>)[key] = list.flatMap((part) => JSON.parse(part.data) as unknown[]);
       }
+      // Include consumed archive numbers even when an older state omitted them.
+      const registry = await db.prepare("SELECT invoice_number, owner_id FROM v5_invoice_numbers").all<{invoice_number:string;owner_id:string}>();
+      loaded.invoiceNumberReservations ??= [];
+      for (const row of registry.results) {
+        if (loaded.invoiceNumberReservations.some(r => r.invoiceNumber === row.invoice_number)) continue;
+        if ((loaded.taxInvoices ?? []).some(i => i.invoiceNumber === row.invoice_number && i.id === row.owner_id)) continue;
+        loaded.invoiceNumberReservations.push({invoiceNumber:row.invoice_number,ownerId:row.owner_id,sourceId:"stored-registry",reason:"Previously consumed invoice number"});
+      }
       reads.set(loaded, { version, json });
       return loaded;
     },
@@ -188,6 +199,18 @@ export function d1Persistence(
             )
             .bind(entry.id, entry.at, entry.actor, entry.action, entry.entity, entry.entityId, entry.detail ?? null, token),
         );
+      }
+
+      const owners = new Map((next.invoiceNumberReservations ?? []).map(r => [r.invoiceNumber, r.ownerId]));
+      for (const invoice of next.taxInvoices ?? []) {
+        const reserved = owners.get(invoice.invoiceNumber);
+        if (reserved && reserved !== invoice.id) throw new RuleError("NUMBER_CONSUMED", "Invoice number is already reserved.", 409);
+        owners.set(invoice.invoiceNumber, invoice.id);
+      }
+      for (const [number, owner] of owners) {
+        statements.push(db.prepare(`INSERT INTO v5_invoice_numbers (invoice_number, owner_id, reserved_at)
+          SELECT ?, ?, ? WHERE ${mine}
+          ON CONFLICT(invoice_number) DO UPDATE SET owner_id = excluded.owner_id`).bind(number, owner, at, token));
       }
 
       for (const invoice of (next.taxInvoices ?? []) as TaxInvoiceRecord[]) {

@@ -18,6 +18,7 @@ const PRE_EXISTING = ["clients", "projects", "billingItems", "invoices", "invoic
 async function preImsDatabase() {
   const d1 = sqliteD1({ through: "0001_v5_state.sql" });
   assert.equal((d1.raw.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name = 'v5_invoice_revisions'").get() as { n: number }).n, 0);
+  d1.migrate("0004_v5_tax_history.sql");
   const open = () => new Store(d1Persistence(d1, buildV5Seed));
   const edit = async (change: (db: Database) => void) => {
     const persistence = d1Persistence(d1, buildV5Seed);
@@ -100,7 +101,7 @@ test("F. pre-existing V5 data is unchanged by migration 0002 and the back-fill; 
   assert.equal(fresh.invoiceNumber, "TEST-CIJDTI2026001"); // TEST customer: own series
   const realClient = await open().saveCustomer({ name: "Real Co", companyNameEn: "Real Co., Ltd.", actor: "Accounting" });
   const real = await open().issueInvoice({
-    customerId: realClient.id, invoiceDate: "2026-09-20", customer: { ...CUSTOMER, companyNameEn: "Real Co., Ltd." }, actor: "Accounting",
+    customerId: realClient.id, invoiceDate: "2026-09-20", customer: { ...CUSTOMER, vatin:"REAL-VAT", companyNameEn: "Real Co., Ltd." }, actor: "Accounting",
     items: [{ description: "After migration", quantity: 1, unitPrice: 10 }],
   });
   assert.equal(real.invoiceNumber, "CIJDTI2026084"); // after 081–083; the cancelled 083 is not reused
@@ -141,7 +142,7 @@ test("F. pre-existing V5 data is unchanged by migration 0002 and the back-fill; 
   );
 });
 
-test("F. an empty 2026 database starts the real series at CIJDTI2026081, never at or below the paper series", async () => {
+test("F. an empty database starts at 001; stored history determines the sequence", async () => {
   const d1 = sqliteD1();
   const open = () => new Store(d1Persistence(d1, buildV5Seed));
   const persistence = d1Persistence(d1, buildV5Seed);
@@ -150,8 +151,8 @@ test("F. an empty 2026 database starts the real series at CIJDTI2026081, never a
   db.exchangeRates.push({ id: "nbc", currencyPair: "USD/KHR", rate: 4100, source: "NBC", effectiveDate: "2026-09-20", fetchedAt: "2026-09-20T03:00:00Z" });
   await persistence.write(db);
   const customer = await open().saveCustomer({ name: "Real Co", companyNameEn: "Real Co., Ltd.", actor: "Accounting" });
-  const issued = await open().issueInvoice({ customerId: customer.id, invoiceDate: "2026-09-20", customer: { ...CUSTOMER, companyNameEn: "Real Co., Ltd." }, actor: "Accounting", items: [{ description: "x", quantity: 1, unitPrice: 1 }] });
-  assert.equal(issued.invoiceNumber, "CIJDTI2026081");
+  const issued = await open().issueInvoice({ customerId: customer.id, invoiceDate: "2026-09-20", customer: { ...CUSTOMER, vatin:"REAL-VAT", companyNameEn: "Real Co., Ltd." }, actor: "Accounting", items: [{ description: "x", quantity: 1, unitPrice: 1 }] });
+  assert.equal(issued.invoiceNumber, "CIJDTI2026001");
 });
 
 test("deploy reconciliation: old-code snapshot vs new-code snapshot passes; any change, loss or real number is caught", async () => {

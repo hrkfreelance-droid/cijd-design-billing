@@ -11,6 +11,7 @@
  *   content                       editable; each change keeps the previous version
  *   exchange rate                 follows the invoice date only when the date changes
  */
+import { projectWorkType } from "./work-types";
 import { RuleError } from "../data/repository";
 import type {
   BillingAllocation,
@@ -149,6 +150,11 @@ function backfillCustomerCodes(db: Database): boolean {
 
 export function saveCustomer(db: Database, input: CustomerInput): Customer {
   ensureCollections(db);
+  const identity = (value: string) => value.normalize("NFKC").replace(/[\u200b-\u200f\ufeff]/g, "").toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, "");
+  const vat = identity(input.vatin ?? "");
+  if (vat && db.customers!.some(c => c.id !== input.id && identity(c.vatin) === vat)) throw new RuleError("DUPLICATE_VATIN", "This VATIN already belongs to a registered customer.", 409);
+  const legalName = identity(input.companyNameEn ?? input.name ?? "");
+  if (!input.id && legalName && db.customers!.some(c => identity(c.companyNameEn) === legalName && (!vat || !c.vatin || identity(c.vatin) === vat))) throw new RuleError("DUPLICATE_CLIENT", "This company is already registered.", 409);
   const at = now();
   let client = input.id ? db.clients.find((entry) => entry.id === input.id) : undefined;
   if (input.id && !client) throw new RuleError("NOT_FOUND", "Customer was not found.", 404);
@@ -359,6 +365,7 @@ function resolveRate(db: Database, date: string, provided: RateInput | null | un
   if (!official) {
     throw new RuleError("RATE_REQUIRED", `No NBC rate can be established for ${date}. Enter the rate by hand.`, 409);
   }
+  if (provided && (!Number.isFinite(provided.rate) || provided.rate !== official.rate.rate)) throw new RuleError("RATE_CHANGED", "The stored NBC rate changed. Check the displayed rate before issuing.", 409);
   return { rate: official.rate.rate, source: "NBC", effectiveDate: official.rate.effectiveDate, basis: official.basis, forDate: date };
 }
 
@@ -452,8 +459,8 @@ export function isTestCustomer(name: string): boolean {
 
 export const TEST_NUMBER_PREFIX = "TEST-";
 
-function nextInvoiceNumber(db: Database, year: number, test: boolean): string {
-  const numbers = db.taxInvoices!.map((invoice) => invoice.invoiceNumber);
+export function nextInvoiceNumber(db: Database, year: number, test: boolean): string {
+  const numbers = [...(db.taxInvoices ?? []).map(i => i.invoiceNumber), ...db.invoices.map(i => i.invoiceNumber ?? ""), ...(db.invoiceNumberReservations ?? []).map(r => r.invoiceNumber)];
   if (!test) return nextTaxInvoiceNumber(year, numbers);
   const testNumbers = numbers.filter((n) => n.startsWith(TEST_NUMBER_PREFIX)).map((n) => n.slice(TEST_NUMBER_PREFIX.length));
   const prefix = `CIJDTI${year}`;
@@ -502,6 +509,7 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
     id,
     projectId: projectIds[0] ?? "",
     projectIds,
+    workTypes: [...new Set(projects.map(projectWorkType))],
     clientId: client.id,
     ledgerInvoiceId,
     invoiceNumber,
@@ -550,6 +558,7 @@ export function editInvoice(db: Database, invoiceId: string, input: InvoiceInput
   ensureCollections(db);
   const record = db.taxInvoices!.find((entry) => entry.id === invoiceId);
   if (!record) throw new RuleError("NOT_FOUND", "Tax invoice was not found.", 404);
+  if (record.historicalSourceId) throw new RuleError("HISTORY_READ_ONLY", "Imported historical invoices are read-only; source conflicts are reviewed separately.", 409);
   if (record.status !== "ISSUED") throw new RuleError("INVOICE_CANCELLED", "A cancelled invoice cannot be edited.");
   if (input.invoiceNumber !== undefined && input.invoiceNumber !== record.invoiceNumber) {
     throw new RuleError("NUMBER_IMMUTABLE", "An invoice number never changes.", 400);
@@ -593,6 +602,7 @@ export function editInvoice(db: Database, invoiceId: string, input: InvoiceInput
     clientId: input.customerId,
     projectId: projectIds[0] ?? record.projectId,
     projectIds,
+    workTypes: projectIds.length ? [...new Set(projects.map(projectWorkType))] : record.workTypes,
     invoiceDate: input.invoiceDate,
     customer,
     project: projectIds.length ? { name: projects.map((p) => p.name).join(" · "), note: projects.map((p) => p.note ?? "").filter(Boolean).join("\n") } : record.project,

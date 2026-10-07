@@ -43,6 +43,7 @@ export function InvoiceList({
         })
         .filter((row) => !excludeTest || (!row.invoice.invoiceNumber.startsWith("TEST") && !/^TEST\b/i.test(row.customer.trim())))
         .filter((row) => {
+          if (mode !== "all" && row.invoice.historicalSourceId) return false;
           if (mode === "open") return row.invoice.status === "ISSUED" && row.money.status !== "PAID";
           if (mode === "completed") return row.invoice.status === "ISSUED" && row.money.status === "PAID";
           return true;
@@ -102,7 +103,7 @@ export function InvoiceList({
                             {invoice.invoiceNumber} · {invoice.invoiceDate}
                           </span>
                           <span className={rowStatus === "PARTIALLY_PAID" ? "text-pending" : "text-muted"}>
-                            {t(`status.${rowStatus}` as V5Key)}
+                            {invoice.historicalSourceId ? "Historical" : t(`status.${rowStatus}` as V5Key)}
                           </span>
                         </span>
                         <span className="mt-[3px] grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-[12.5px] leading-5 text-faint">
@@ -173,14 +174,14 @@ export function InvoiceList({
                     {invoice.project.name && <span className="text-faint"> · {invoice.project.name}</span>}
                   </span>
                   <span className={`tnum hidden text-right text-[14px] font-semibold md:block ${cancelled ? "text-faint line-through" : ""}`}>{moneyExact(invoice.totalUsd)}</span>
-                  <span className="tnum hidden text-right text-[13px] text-muted md:block">{cancelled ? "—" : moneyExact(money.paidUsd)}</span>
-                  <span className="tnum hidden text-right text-[13px] md:block" data-testid="v5-row-outstanding">{cancelled ? "—" : moneyExact(money.outstandingUsd)}</span>
+                  <span className="tnum hidden text-right text-[13px] text-muted md:block">{invoice.historicalSourceId ? "UNKNOWN" : cancelled ? "—" : moneyExact(money.paidUsd)}</span>
+                  <span className="tnum hidden text-right text-[13px] md:block" data-testid="v5-row-outstanding">{invoice.historicalSourceId ? "UNKNOWN" : cancelled ? "—" : moneyExact(money.outstandingUsd)}</span>
                   <span
                     className={`text-right text-[12.5px] ${cancelled ? "text-danger" : rowStatus === "PAID" ? "text-paid" : rowStatus === "PARTIALLY_PAID" ? "text-pending" : "text-muted"}`}
                     data-testid="v5-row-status"
                   >
-                    {t(`status.${rowStatus}` as V5Key)}
-                    {!cancelled && rowStatus !== "PAID" && <span className="tnum md:hidden"> · {moneyExact(money.outstandingUsd)}</span>}
+                    {invoice.historicalSourceId ? "Historical" : t(`status.${rowStatus}` as V5Key)}
+                    {!invoice.historicalSourceId && !cancelled && rowStatus !== "PAID" && <span className="tnum md:hidden"> · {moneyExact(money.outstandingUsd)}</span>}
                   </span>
                 </Link>
               </li>

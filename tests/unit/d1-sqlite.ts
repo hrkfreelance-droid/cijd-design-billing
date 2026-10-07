@@ -8,8 +8,9 @@ import type { D1DatabaseLike, D1PreparedStatementLike } from "../../src/lib/bill
  * applied, so the persistence is tested against actual SQL — batches run in
  * one transaction, exactly as D1 runs them.
  */
-export function sqliteD1(options: { through?: string } = {}): D1DatabaseLike & { raw: DatabaseSync; migrate: (file: string) => void } {
+export function sqliteD1(options: { through?: string; initialSql?: string } = {}): D1DatabaseLike & { raw: DatabaseSync; migrate: (file: string) => void } {
   const raw = new DatabaseSync(":memory:");
+  if(options.initialSql) raw.exec(options.initialSql);
   const dir = new URL("../../migrations-v5/", import.meta.url);
   const migrate = (file: string) => raw.exec(readFileSync(new URL(file, dir), "utf8"));
   // `through` stops after that migration, to test a database as deployed before a later one.

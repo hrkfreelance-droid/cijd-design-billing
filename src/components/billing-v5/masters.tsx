@@ -48,6 +48,8 @@ export function CustomerMaster({ snapshot }: { snapshot: Snapshot }) {
                   <span className="block truncate text-[12.5px] text-muted">
                     {[customer.companyNameEn !== client.name ? customer.companyNameEn : "", customer.companyNameKm].filter(Boolean).join(" · ") || "—"}
                   </span>
+                  <span className="block text-[12px] text-muted">{customer.telephone || "UNKNOWN"} · {customer.addressEn || customer.addressKm || "UNKNOWN"}</span>
+                  <span className="block text-[12px] text-faint">{(snapshot.taxInvoices ?? []).filter(i => i.clientId === client.id).length} Tax Invoices · Edit</span>
                 </span>
                 <span className="text-right text-[12.5px] text-muted">
                   {customer.vatin || "—"}
@@ -63,7 +65,7 @@ export function CustomerMaster({ snapshot }: { snapshot: Snapshot }) {
   );
 }
 
-function CustomerSheet({ snapshot, id, onClose }: { snapshot: Snapshot; id: string | null; onClose: () => void }) {
+export function CustomerSheet({ snapshot, id, onClose, onSaved }: { snapshot: Snapshot; id: string | null; onClose: () => void; onSaved?: (customer:Customer)=>void }) {
   const t = useV5T();
   const { t: t3 } = useI18n();
   const { toast } = useToast();
@@ -95,6 +97,7 @@ function CustomerSheet({ snapshot, id, onClose }: { snapshot: Snapshot; id: stri
     );
     if (saved) {
       toast(t("master.saved"));
+      onSaved?.(saved);
       onClose();
     }
   };
