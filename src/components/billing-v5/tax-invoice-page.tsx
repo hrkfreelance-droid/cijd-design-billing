@@ -65,7 +65,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
             </span>
           )}
           {invoice && (
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex max-w-full min-w-0 flex-wrap items-center justify-end gap-2">
               {invoice.status === "ISSUED" && !invoice.historicalSourceId && (
                 <>
                   <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>

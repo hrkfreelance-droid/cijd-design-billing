@@ -113,7 +113,7 @@ function Header({ variant }: { variant: ShellVariant }) {
           <AccountMenu />
         </div>
       </div>
-      <nav aria-label="Billing" className="-mb-px flex h-10 items-stretch gap-6 px-5 sm:hidden">
+      <nav aria-label="Billing" className="-mb-px flex h-10 min-w-0 items-stretch gap-6 overflow-x-auto px-5 sm:hidden">
         {tabs}
       </nav>
     </header>

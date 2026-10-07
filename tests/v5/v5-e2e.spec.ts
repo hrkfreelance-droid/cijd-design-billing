@@ -231,7 +231,9 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(editor.getByTestId("v5-total-khr")).toHaveText(`${expected.totalKhr.toLocaleString("en-US")} ៛`);
   await expect(editor.getByTestId("v5-balance-due")).toHaveText("$1,237.60");
   await shot(page, "04-editor-en-light");
-  await editor.getByTestId("v5-preview").click();
+  // The V5 editor body is wrapped by the modal test id; footer actions are
+  // rendered in the modal footer sibling, so locate Preview from the page.
+  await page.getByTestId("v5-preview").click();
   await expect(editor.getByTestId("tax-invoice-number")).toHaveText("DRAFT");
   await expect(editor.getByTestId("tax-invoice-discount")).toContainText("(20.00)");
   await expect(editor.getByTestId("tax-invoice-balance-due")).toContainText("1,237.60");
@@ -364,7 +366,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   const freeIndex = await edit.locator('[data-testid^="v5-row-description-"]').evaluateAll((inputs, free) => inputs.findIndex((input) => (input as HTMLInputElement).value === free), FREE);
   await edit.getByTestId(`v5-row-price-${freeIndex}`).fill("60");
   await edit.getByTestId("v5-edit-reason").fill("TEST rush fee corrected");
-  await edit.getByTestId("v5-issue").click();
+  await page.getByTestId("v5-issue").click();
   await expect(edit).toHaveCount(0);
   let saved = (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!;
   expect([saved.exchangeRate, saved.revision, saved.totalUsd]).toEqual([rateBefore, 2, 1348.6]); // (1246 − 20) × 1.1
@@ -406,6 +408,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(row(WEBSITE)).toHaveCount(0);
 
   /* ----------------------------------------------------- invoice list */
+  await page.goto("/office-v5/tax-invoices");
   await page.getByTestId("v5-invoice-search").fill(number);
   const listed = page.getByTestId("v5-issued-row").filter({ hasText: number });
   await expect(listed).toHaveCount(1);
@@ -442,7 +445,8 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   for (const [path, name] of [["/office-v5/accounting", "accounting"], ["/office-v5/accounting?view=invoices", "invoices"], [invoiceUrl, "invoice"]] as const) {
     await page.goto(path);
     await page.waitForLoadState("networkidle");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${name} scrolls sideways`).toBeLessThanOrEqual(0);
+    const dimensions = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth }));
+    expect(dimensions.document - dimensions.viewport, `${name} scrolls sideways`).toBeLessThanOrEqual(0);
     await shot(page, `11-${name}-phone`);
   }
   await page.setViewportSize({ width: 1360, height: 900 });
@@ -657,14 +661,26 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
 
 test("V5 uses a Design-only work area and makes Invoice type explicit on the direct invoice screen", async ({ page }) => {
   watch(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/office-v5");
   const designHeading = page.locator("h1");
   await expect(designHeading).toBeVisible();
   await expect(designHeading).not.toHaveText("Other Business");
   await expect(page.getByTestId("v5-work-type")).toHaveCount(0);
+  const mobileNav = page.getByRole("navigation", { name: "Billing" }).last();
+  await expect(mobileNav.getByRole("link", { name: "Invoice", exact: true })).toBeVisible();
+  await expect(mobileNav.getByRole("link", { name: "Tax Invoice", exact: true })).toBeVisible();
   await page.goto("/office-v5/invoices");
   await page.getByTestId("v5-direct-invoice-new").click();
   const editor=page.getByTestId("v5-invoice-editor");
+  await expect(editor.getByTestId("v5-editor-customer")).toBeVisible();
+  await expect(editor.getByTestId("v5-row-description-0")).toBeVisible();
+  await expect(editor.getByTestId("v5-total-usd")).toBeVisible();
+  await expect(page.getByTestId("v5-save-draft")).toBeVisible();
+  await expect(page.getByTestId("v5-preview")).toBeVisible();
+  await expect(page.getByTestId("v5-issue")).toBeVisible();
+  const invoiceForm = await page.evaluate(() => ({ viewport: document.documentElement.clientWidth, document: document.documentElement.scrollWidth }));
+  expect(invoiceForm.document).toBeLessThanOrEqual(invoiceForm.viewport);
   await expect(editor.getByTestId("v5-invoice-type")).toHaveValue("INVOICE");
   await expect(editor.getByText("VAT 10% applies")).toHaveCount(0);
   await editor.getByTestId("v5-invoice-type").selectOption("TAX_INVOICE");
