@@ -2,39 +2,59 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-/** A4 width at 96 dpi. */
-const A4_WIDTH = 794;
-const A4_HEIGHT = 1123;
+import { A4_HEIGHT_PX, A4_WIDTH_PX, invoicePageScale } from "./print-fit";
 
 /**
- * Shows the A4 sheet at full size when there is room and scaled down to the
- * available width when there is not. The height follows the sheet, so an
- * invoice that runs onto a second page is shown whole. Printing ignores it.
+ * The invoice is one A4 page both on screen and in printed/PDF output.
+ * A long invoice stays in its original DOM/layout; only its final rendering
+ * is scaled proportionally to fit, as with Excel's Fit to One Page.
  */
 export function FitA4({ children }: { children: ReactNode }) {
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-  const [height, setHeight] = useState(A4_HEIGHT);
+  const [screenScale, setScreenScale] = useState(1);
 
   useEffect(() => {
     const element = outer.current;
     const content = inner.current;
     if (!element || !content) return;
+
     const measure = () => {
-      setScale(Math.min(1, element.clientWidth / A4_WIDTH));
-      setHeight(Math.max(A4_HEIGHT, content.scrollHeight));
+      // scrollHeight is the untransformed document height, including signatures.
+      const naturalHeight = Math.max(A4_HEIGHT_PX, content.scrollHeight);
+      const printScale = invoicePageScale(naturalHeight);
+      const widthScale = Math.min(1, element.clientWidth / A4_WIDTH_PX);
+      element.style.setProperty("--v5-print-scale", String(printScale));
+      setScreenScale(widthScale * printScale);
     };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(element);
     observer.observe(content);
-    return () => observer.disconnect();
+    window.addEventListener("beforeprint", measure);
+    // Loaded Khmer web fonts or the logo can change the document's height.
+    void document.fonts?.ready.then(measure);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("beforeprint", measure);
+    };
   }, []);
 
   return (
-    <div ref={outer} className="v5-invoice-fit w-full" style={{ height: height * scale }}>
-      <div ref={inner} style={{ width: A4_WIDTH, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+    <div
+      ref={outer}
+      className="v5-invoice-fit w-full"
+      style={{ height: A4_HEIGHT_PX * screenScale }}
+    >
+      <div
+        ref={inner}
+        className="v5-invoice-page-content"
+        style={{
+          width: A4_WIDTH_PX,
+          transform: `scale(${screenScale})`,
+          transformOrigin: "top left",
+        }}
+      >
         {children}
       </div>
     </div>
