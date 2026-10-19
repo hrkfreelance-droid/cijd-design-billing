@@ -13,6 +13,7 @@ export function FitA4({ children }: { children: ReactNode }) {
   const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const [screenScale, setScreenScale] = useState(1);
+  const [viewportScale, setViewportScale] = useState(1);
 
   useEffect(() => {
     const element = outer.current;
@@ -25,6 +26,7 @@ export function FitA4({ children }: { children: ReactNode }) {
       const printScale = invoicePageScale(naturalHeight);
       const widthScale = Math.min(1, element.clientWidth / A4_WIDTH_PX);
       element.style.setProperty("--v5-print-scale", String(printScale));
+      setViewportScale(widthScale);
       setScreenScale(widthScale * printScale);
     };
     measure();
@@ -44,7 +46,7 @@ export function FitA4({ children }: { children: ReactNode }) {
     <div
       ref={outer}
       className="v5-invoice-fit w-full"
-      style={{ height: A4_HEIGHT_PX * screenScale }}
+      style={{ height: A4_HEIGHT_PX * viewportScale }}
     >
       <div
         ref={inner}
