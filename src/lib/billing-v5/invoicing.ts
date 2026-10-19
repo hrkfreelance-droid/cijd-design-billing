@@ -25,12 +25,12 @@ import type {
   TaxInvoiceRecord,
 } from "../types";
 import { invoiceTotals, nextCode, nextTaxInvoiceNumber, nextTestTaxInvoiceNumber, roundMoney, toCents } from "./calculation";
+import { MAX_INVOICE_ITEMS } from "./invoice-limits";
+export { MAX_INVOICE_ITEMS };
 import { billingState, customerFor, invoiceCollection, officialRateForDate, readyProjectIds } from "./ontology";
 
 const newId = () => globalThis.crypto.randomUUID();
 const now = () => new Date().toISOString();
-/** Enough for a long invoice; the PDF flows onto more pages beyond 10 lines. */
-export const MAX_INVOICE_ITEMS = 40;
 
 type CustomerFields = Pick<
   Customer,

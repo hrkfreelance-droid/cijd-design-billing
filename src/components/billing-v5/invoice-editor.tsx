@@ -16,6 +16,7 @@ import { useV5T } from "@/lib/billing-v5/i18n";
 import { billingState, customerFor, unappliedProjectDeposit } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
+import { MAX_INVOICE_ITEMS, additionalInvoiceRows } from "@/lib/billing-v5/invoice-limits";
 import type { ExchangeRate, Product, Snapshot, TaxInvoiceRecord } from "@/lib/types";
 import { Combobox, type ComboOption } from "./combobox";
 import { FitA4 } from "./fit-a4";
@@ -39,6 +40,10 @@ type CustomerFields = { companyNameEn: string; companyNameKm: string; addressEn:
 
 let keySeq = 0;
 const nextKey = () => `row-${++keySeq}`;
+const blankRow = (): Row => ({
+  key: nextKey(), billingItemId: null, productId: null, description: "",
+  quantity: "1", unit: "", unitPrice: "", amount: "",
+});
 const num = (value: string) => (value.trim() === "" ? Number.NaN : Number(value));
 
 /** `/api/v5/exchange-rate?date=`: the NBC rate for that date, or null (enter by hand). */
@@ -95,7 +100,7 @@ export function InvoiceEditor(props: EditorProps) {
     }
     const ids = props.mode === "create" ? props.billingItemIds : [];
     // Started from the customer: one empty line to type or pick a product into.
-    if (!ids.length) return [{ key: nextKey(), billingItemId: null, productId: null, description: "", quantity: "1", unit: "", unitPrice: "", amount: "" }];
+    if (!ids.length) return [blankRow()];
     return ids.map((id) => {
       const item = snapshot.billingItems.find((entry) => entry.id === id)!;
       const left = leftFor.get(id) ?? 0;
@@ -243,6 +248,7 @@ export function InvoiceEditor(props: EditorProps) {
   if (!customer.companyNameEn.trim() && !customer.companyNameKm.trim()) errors.push(t("prepare.errName"));
   if (!(rateNumber > 0)) errors.push(t("prepare.errRate"));
   if (!rows.length) errors.push(t("editor.addLine"));
+  if (rows.length > MAX_INVOICE_ITEMS) errors.push(t("editor.lineCount", { count: rows.length, max: MAX_INVOICE_ITEMS }));
   const rowError = (row: Row): string | null => {
     if (!row.description.trim()) return t3("v2.description");
     if (!(num(row.quantity) > 0)) return t("editor.qty");
@@ -260,6 +266,20 @@ export function InvoiceEditor(props: EditorProps) {
   if (discount && (!(discount.value >= 0) || (discount.type === "PERCENT" && discount.value > 100) || (discount.type === "FIXED" && toCents(discount.value) > toCents(totals.discountUsd)))) errors.push(t("editor.discount"));
   if (deposit.trim() && !(num(deposit) >= 0 && toCents(num(deposit)) <= toCents(totals.totalUsd))) errors.push(t("editor.deposit"));
   const valid = errors.length === 0;
+
+  const addBlankRows = (count: number) => setRows((current) => [
+    ...current,
+    ...Array.from({ length: additionalInvoiceRows(current.length, count) }, blankRow),
+  ]);
+
+  // Only free-text/product lines can be duplicated. Linked billing allocations
+  // must never be copied, because that could bill the same job twice.
+  const duplicateRow = (key: string) => setRows((current) => {
+    if (current.length >= MAX_INVOICE_ITEMS) return current;
+    return current.flatMap((row) => row.key === key && !row.billingItemId
+      ? [row, { ...row, key: nextKey() }]
+      : [row]);
+  });
 
   const update = (key: string, patch: Partial<Row>) =>
     setRows((current) => current.map((row) => {
@@ -491,7 +511,10 @@ export function InvoiceEditor(props: EditorProps) {
           </section>
 
           <section>
-            <h3 className="mb-1 text-[13px] font-semibold">{t("editor.lines")}</h3>
+            <div className="mb-2 flex items-baseline justify-between gap-4">
+              <h3 className="text-[13px] font-semibold">{t("editor.lines")}</h3>
+              <span className="tnum text-[12px] text-faint" data-testid="v5-line-count">{t("editor.lineCount", { count: rows.length, max: MAX_INVOICE_ITEMS })}</span>
+            </div>
             <div className="border-t border-line">
               <div className="hidden grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_6.5rem_7rem_2rem] gap-x-2 border-b border-line py-2 text-[11px] font-medium uppercase tracking-[0.06em] text-faint sm:grid">
                 <span>{t("editor.description")}</span>
@@ -522,8 +545,15 @@ export function InvoiceEditor(props: EditorProps) {
                         />
                       )}
                       <span className="mt-1 block text-[12px] text-faint">
+                        <span className="tnum">#{index + 1} · </span>
                         {item ? t("editor.fromBilling", { project: project?.name ?? "", left: moneyExact(leftFor.get(item.id) ?? 0) }) : row.productId ? products.find((p) => p.id === row.productId)?.productCode : t("detail.freeLine")}
                       </span>
+                      {!row.billingItemId && (
+                        <button type="button" disabled={rows.length >= MAX_INVOICE_ITEMS}
+                          onClick={() => duplicateRow(row.key)}
+                          className="mt-1 text-[12px] text-accent hover:underline disabled:opacity-40"
+                          data-testid={`v5-row-duplicate-${index}`}>{t("editor.duplicateLine")}</button>
+                      )}
                       {problem && <span className="mt-0.5 block text-[12px] text-danger" data-testid={`v5-row-error-${index}`}>{problem}</span>}
                     </div>
                     <button type="button" onClick={() => setRows((current) => current.filter((entry) => entry.key !== row.key))} aria-label={t("editor.removeLine")} className="h-11 text-[18px] text-faint hover:text-danger sm:order-last" data-testid={`v5-row-remove-${index}`}>×</button>
@@ -545,13 +575,25 @@ export function InvoiceEditor(props: EditorProps) {
             </div>
             <button
               type="button"
-              onClick={() => setRows((current) => [...current, { key: nextKey(), billingItemId: null, productId: null, description: "", quantity: "1", unit: "", unitPrice: "", amount: "" }])}
-              className="mt-3 inline-flex h-9 items-center gap-1.5 text-[13.5px] font-medium text-accent hover:underline"
+              onClick={() => addBlankRows(1)}
+              disabled={rows.length >= MAX_INVOICE_ITEMS}
+              className="mt-3 inline-flex h-9 items-center gap-1.5 text-[13.5px] font-medium text-accent hover:underline disabled:opacity-40"
               data-testid="v5-add-line"
             >
               <span aria-hidden className="text-[17px] leading-none">+</span>
               {t("editor.addLine")}
             </button>
+            <button
+              type="button"
+              disabled={rows.length >= MAX_INVOICE_ITEMS}
+              onClick={() => addBlankRows(5)}
+              className="ml-5 inline-flex h-9 items-center gap-1.5 text-[13.5px] font-medium text-accent hover:underline disabled:opacity-40"
+              data-testid="v5-add-five-lines"
+            >
+              <span aria-hidden className="text-[17px] leading-none">+</span>
+              {t("editor.addFiveLines")}
+            </button>
+            {rows.length >= 20 && <p className="mt-1 text-[12px] text-faint">{t("editor.smallPrint")}</p>}
           </section>
 
           <section className="grid gap-6 border-t border-line pt-5 sm:grid-cols-[minmax(0,1fr)_18rem]">

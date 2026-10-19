@@ -60,6 +60,8 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
   const named = invoice.lines.filter((line) => line.projectName).length;
   const ruled = INVOICE_ROWS - extras - Math.ceil(named * PROJECT_LINE_ROWS);
   const long = invoice.lines.length > ruled;
+  const compact = invoice.lines.length > INVOICE_ROWS;
+  const dense = invoice.lines.length >= 18;
   const rows = [
     ...invoice.lines,
     ...Array.from({ length: Math.max(0, ruled - invoice.lines.length) }, () => null),
@@ -69,7 +71,7 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
   const customer = invoice.customer;
   return (
     <div className="v5-invoice">
-      <article className={`invoice-sheet${long ? " long" : ""}`} data-testid="tax-invoice-sheet">
+      <article className={`invoice-sheet${long ? " long" : ""}${compact ? " compact" : ""}${dense ? " dense" : ""}`} data-testid="tax-invoice-sheet">
         <header className="invoice-company">
           <div className="company-name">
             <Image src="/assets/cijd-logo.jpg" alt="CIJD" width={339} height={63} priority unoptimized />

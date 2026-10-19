@@ -63,7 +63,7 @@ body {
 .v5-invoice .invoice-sheet > * { flex-shrink: 0; }
 .v5-invoice .invoice-signatures { margin-top: auto; padding-top: 12mm; }
 .v5-invoice .invoice-sheet.long { height: auto; }
-.v5-invoice .invoice-sheet.long .invoice-signatures { margin-top: 0; padding-top: 24mm; }
+.v5-invoice .invoice-sheet.long .invoice-signatures { margin-top: 0; padding-top: 12mm; }
 .v5-invoice .invoice-signatures div { padding-top: 2.5mm; border-top: 1px solid #000; }
 .v5-invoice .invoice-lines tfoot tr.extra { height: 8.5mm; }
 .v5-invoice .invoice-sheet.long { min-height: 0; overflow: visible; }
@@ -74,6 +74,22 @@ body {
 .v5-invoice .invoice-signatures span { font-family: Arial, sans-serif; font-weight: 400; }
 .v5-invoice .cancelled-watermark { position: absolute; z-index: 3; top: 128mm; left: 25mm; transform: rotate(-24deg); color: #b6202042; font-size: 42pt; font-weight: 900; letter-spacing: .12em; pointer-events: none; }
 .v5-invoice .draft-watermark { position: absolute; z-index: 3; top: 128mm; left: 48mm; transform: rotate(-24deg); color: #1d4ed833; font-size: 48pt; font-weight: 900; letter-spacing: .12em; pointer-events: none; }
+
+/* Multi-line invoice: reclaim white space before shrinking the entire A4 sheet.
+   Existing <=10-line invoices keep their original V4 appearance. */
+.v5-invoice .invoice-sheet.compact .invoice-company { height: 31mm; }
+.v5-invoice .invoice-sheet.compact .invoice-title { height: 14mm; }
+.v5-invoice .invoice-sheet.compact .invoice-parties { min-height: 31mm; }
+.v5-invoice .invoice-sheet.compact .invoice-lines th,
+.v5-invoice .invoice-sheet.compact .invoice-lines td { padding: .5mm .8mm; }
+.v5-invoice .invoice-sheet.compact .invoice-lines tbody tr { height: 4.7mm; }
+.v5-invoice .invoice-sheet.compact .invoice-lines tfoot tr { height: 9.7mm; }
+.v5-invoice .invoice-sheet.compact .invoice-lines tfoot tr.extra { height: 8mm; }
+.v5-invoice .invoice-sheet.compact .bank-accounts { min-height: 21mm; padding-top: 2mm; }
+.v5-invoice .invoice-sheet.dense .invoice-lines { font-size: 7.5pt; }
+.v5-invoice .invoice-sheet.dense .invoice-lines tbody tr { height: 4.3mm; }
+.v5-invoice .invoice-sheet.dense .invoice-lines th,
+.v5-invoice .invoice-sheet.dense .invoice-lines td { padding: .35mm .65mm; }
 
 /* Keep one A4 page in preview, even when a long invoice needs scaling. */
 .v5-invoice-fit { position: relative; overflow: hidden; }
