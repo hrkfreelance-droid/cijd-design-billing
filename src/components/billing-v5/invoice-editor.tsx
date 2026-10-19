@@ -11,7 +11,7 @@ import { useAction } from "@/components/use-action";
 import { selectableClients } from "@/lib/billing-v2/board";
 import { serviceForItem, serviceLabel } from "@/lib/billing-v2/services";
 import { storedFinalUnitPrice } from "@/lib/billing-v2/board";
-import { invoiceTotals, invoiceUnitPrice, roundMoney, toCents } from "@/lib/billing-v5/calculation";
+import { invoiceTotals, invoiceUnitPrice, nextTaxInvoiceNumber, nextTestTaxInvoiceNumber, roundMoney, toCents } from "@/lib/billing-v5/calculation";
 import { useV5T } from "@/lib/billing-v5/i18n";
 import { billingState, customerFor, unappliedProjectDeposit } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
@@ -142,11 +142,22 @@ export function InvoiceEditor(props: EditorProps) {
   const [customerQuery, setCustomerQuery] = useState(() => customerLabel(startCustomer));
   const pickCustomer = (id: string) => {
     setCustomerId(id);
+    setNumberOverride(null);
     setCustomer(fieldsFor(id));
     setCustomerQuery(customerLabel(id));
   };
   const [updateMaster, setUpdateMaster] = useState(!editing);
   const [invoiceDate, setInvoiceDate] = useState(editing?.invoiceDate ?? phnomPenhDate());
+  // Null means follow the latest automatic sequence; a typed value is a manual override.
+  const [numberOverride, setNumberOverride] = useState<string | null>(null);
+  const year = Number(invoiceDate.slice(0, 4));
+  const testCustomer = /^TEST\b/i.test(snapshot.clients.find((client) => client.id === customerId)?.name ?? "");
+  const usedNumbers = [
+    ...(snapshot.taxInvoices ?? []).map((invoice) => invoice.invoiceNumber),
+    ...snapshot.invoices.map((invoice) => invoice.invoiceNumber ?? ""),
+  ];
+  const suggestedNumber = testCustomer ? nextTestTaxInvoiceNumber(year, usedNumbers) : nextTaxInvoiceNumber(year, usedNumbers);
+  const selectedNumber = numberOverride ?? suggestedNumber;
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [discountType, setDiscountType] = useState<"NONE" | "FIXED" | "PERCENT">(editing?.discount?.type ?? "NONE");
   const [discountValue, setDiscountValue] = useState(editing?.discount ? String(editing.discount.value) : "");
@@ -218,6 +229,9 @@ export function InvoiceEditor(props: EditorProps) {
   });
 
   const errors: string[] = [];
+  if (!editing && numberOverride?.trim() && (testCustomer || !new RegExp(`^CIJD${year}\\d{3,}$`).test(numberOverride.trim()))) {
+    errors.push(t("editor.number"));
+  }
   if (!customerId) errors.push(t("editor.chooseCustomer"));
   // One invoice bills one customer: billing lines of another customer block it.
   const foreign = rows.filter((row) => {
@@ -279,7 +293,7 @@ export function InvoiceEditor(props: EditorProps) {
   };
 
   const view_: InvoiceView = {
-    projectId: projectIds[0] ?? "", projectIds, clientId: customerId, invoiceNumber: editing?.invoiceNumber ?? "", invoiceDate,
+    projectId: projectIds[0] ?? "", projectIds, clientId: customerId, invoiceNumber: editing?.invoiceNumber ?? selectedNumber, invoiceDate,
     status: "ISSUED", customer, project: { name: "", note: "" },
     lines: rows.map((row) => ({ billingItemId: row.billingItemId, productId: row.productId, projectName: previewProjectName(row.billingItemId), description: row.description, quantity: num(row.quantity) || 0, unit: row.unit || null, unitPrice: roundMoney(num(row.unitPrice) || 0), amount: rowAmount(row) || 0 })),
     vatApplicable, vatPercent: totals.vatPercent, subtotalUsd: totals.subtotalUsd, discount: totals.discountUsd > 0 ? discount : null,
@@ -302,7 +316,7 @@ export function InvoiceEditor(props: EditorProps) {
     depositUsd: deposit.trim() ? num(deposit) : 0,
     updateCustomerMaster: updateMaster,
     reason: reason.trim() || null,
-    ...(editing ? { invoiceNumber: editing.invoiceNumber } : {}),
+    ...(editing ? { invoiceNumber: editing.invoiceNumber } : numberOverride === null ? {} : { invoiceNumber: numberOverride.trim() }),
   });
 
   const submit = async (items: Row[]) => {
@@ -425,9 +439,21 @@ export function InvoiceEditor(props: EditorProps) {
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block">
                   <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.number")}</span>
-                  <span className="tnum flex h-11 items-center text-[15px] text-muted" data-testid="v5-invoice-number">
-                    {editing?.invoiceNumber ?? t("editor.numberAuto")}
-                  </span>
+                  {editing ? (
+                    <span className="tnum flex h-11 items-center text-[15px] text-muted" data-testid="v5-invoice-number">{editing.invoiceNumber}</span>
+                  ) : (
+                    <>
+                      <Input
+                        value={selectedNumber}
+                        onChange={(event) => setNumberOverride(event.target.value)}
+                        className="tnum"
+                        data-testid="v5-invoice-number"
+                        aria-invalid={errors.includes(t("editor.number")) || undefined}
+                        disabled={testCustomer}
+                      />
+                      <span className="mt-1 block text-[11.5px] text-faint">{t("editor.numberAuto")}</span>
+                    </>
+                  )}
                 </label>
                 <Text label={t("prepare.date")} type="date" value={invoiceDate} onChange={changeDate} testId="v5-invoice-date" />
                 <label className="block sm:col-span-2">
@@ -584,7 +610,7 @@ export function InvoiceEditor(props: EditorProps) {
         onConfirm={() => void submit(rows)}
         busy={busy}
         title={t("prepare.confirmTitle")}
-        message={t("prepare.confirmBody", { number: t("editor.numberAuto"), total: moneyExact(totals.totalUsd) })}
+        message={t("prepare.confirmBody", { number: selectedNumber, total: moneyExact(totals.totalUsd) })}
         confirmLabel={t("prepare.issue")}
         testId="v5-confirm-issue"
       />

@@ -24,7 +24,7 @@ import type {
   TaxInvoiceLine,
   TaxInvoiceRecord,
 } from "../types";
-import { invoiceTotals, nextCode, nextTaxInvoiceNumber, roundMoney, toCents } from "./calculation";
+import { invoiceTotals, nextCode, nextTaxInvoiceNumber, nextTestTaxInvoiceNumber, roundMoney, toCents } from "./calculation";
 import { billingState, customerFor, invoiceCollection, officialRateForDate, readyProjectIds } from "./ontology";
 
 const newId = () => globalThis.crypto.randomUUID();
@@ -441,11 +441,7 @@ function upsertCustomerMaster(db: Database, customerId: string, fields: TaxInvoi
   if (!same) saveCustomer(db, { id: customerId, ...fields, actor });
 }
 
-/**
- * Clients named "TEST …" are test records. Their invoices are numbered in a
- * separate TEST-CIJDTI series, so testing on the live V5 never uses up (or
- * leaves gaps in) the real CIJDTI sequence.
- */
+/** TEST customers use a separate series; they never consume a real number. */
 export function isTestCustomer(name: string): boolean {
   return /^TEST\b/i.test(name.trim());
 }
@@ -453,12 +449,11 @@ export function isTestCustomer(name: string): boolean {
 export const TEST_NUMBER_PREFIX = "TEST-";
 
 function nextInvoiceNumber(db: Database, year: number, test: boolean): string {
-  const numbers = db.taxInvoices!.map((invoice) => invoice.invoiceNumber);
-  if (!test) return nextTaxInvoiceNumber(year, numbers);
-  const testNumbers = numbers.filter((n) => n.startsWith(TEST_NUMBER_PREFIX)).map((n) => n.slice(TEST_NUMBER_PREFIX.length));
-  const prefix = `CIJDTI${year}`;
-  const max = testNumbers.filter((n) => n.startsWith(prefix)).reduce((m, n) => Math.max(m, Number(n.slice(prefix.length)) || 0), 0);
-  return `${TEST_NUMBER_PREFIX}${prefix}${String(max + 1).padStart(3, "0")}`;
+  const numbers = [
+    ...db.taxInvoices!.map((invoice) => invoice.invoiceNumber),
+    ...db.invoices.map((invoice) => invoice.invoiceNumber ?? ""),
+  ];
+  return test ? nextTestTaxInvoiceNumber(year, numbers) : nextTaxInvoiceNumber(year, numbers);
 }
 
 export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecord {
@@ -477,11 +472,20 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
     throw new RuleError("INVALID", "The deposit is more than the invoice total.", 400);
   }
 
-  // The number is the system's: next in the invoice-date year, after every
-  // number ever used (cancelled ones included). Unique under the D1 lock and
-  // the archive's UNIQUE(invoice_number).
+  // Manual numbering is allowed BEFORE issue. The immutable archive and revision
+  // trail retain the exact issued number; issued documents cannot be renumbered.
+  // Automatic numbering includes cancelled invoices and follows the highest
+  // CIJD/year number already recorded (never the historical CIJDTI series).
   const year = Number(input.invoiceDate.slice(0, 4));
-  const invoiceNumber = nextInvoiceNumber(db, year, isTestCustomer(client.name));
+  const testCustomer = isTestCustomer(client.name);
+  const requestedNumber = input.invoiceNumber?.trim() ?? "";
+  if (requestedNumber && (testCustomer || !new RegExp(`^CIJD${year}\\d{3,}$`).test(requestedNumber))) {
+    throw new RuleError("INVALID_INVOICE_NUMBER", `Use CIJD${year} followed by at least three digits, or leave blank for automatic numbering.`, 400);
+  }
+  const invoiceNumber = requestedNumber || nextInvoiceNumber(db, year, testCustomer);
+  const exists = db.taxInvoices!.some((invoice) => invoice.invoiceNumber.toUpperCase() === invoiceNumber.toUpperCase()) ||
+    db.invoices.some((invoice) => invoice.invoiceNumber?.toUpperCase() === invoiceNumber.toUpperCase());
+  if (exists) throw new RuleError("DUPLICATE_INVOICE_NUMBER", `Invoice ${invoiceNumber} already exists.`, 409);
   const at = now();
   const id = newId();
 

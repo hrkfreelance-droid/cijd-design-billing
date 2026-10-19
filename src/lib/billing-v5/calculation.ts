@@ -346,25 +346,36 @@ export function invoiceUnitPrice(line: { quantity: number; unitPrice: number | n
 
 /* ------------------------------------------------------ invoice numbering */
 
-/** CIJDTI + year + 3-digit sequence, as on the existing Excel tax invoices. */
+/** New tax invoices use CIJD + year + 3+ digits. Historical CIJDTI numbers remain unchanged. */
 export function formatTaxInvoiceNumber(year: number, sequence: number): string {
-  return `CIJDTI${year}${String(sequence).padStart(3, "0")}`;
+  return `CIJD${year}${String(sequence).padStart(3, "0")}`;
 }
 
-/** Paper invoices up to CIJDTI2026080 already exist; V4 reserves the same floor. */
+/** Authorized next number for 2026 is CIJD2026124; other years begin at 001. */
 export function invoiceSequenceFloor(year: number): number {
-  return year === 2026 ? 81 : 1;
+  return year === 2026 ? 124 : 1;
 }
 
 export function nextTaxInvoiceNumber(year: number, existing: readonly string[]): string {
-  const prefix = `CIJDTI${year}`;
+  const prefix = `CIJD${year}`;
   let max = invoiceSequenceFloor(year) - 1;
   for (const number of existing) {
-    if (!number.startsWith(prefix)) continue;
+    if (!new RegExp(`^CIJD${year}\\d{3,}$`).test(number)) continue;
     const sequence = Number(number.slice(prefix.length));
     if (Number.isInteger(sequence) && sequence > max) max = sequence;
   }
   return formatTaxInvoiceNumber(year, max + 1);
+}
+
+/** TEST numbers never use up the real CIJD sequence. */
+export function nextTestTaxInvoiceNumber(year: number, existing: readonly string[]): string {
+  const prefix = `TEST-CIJDTI${year}`;
+  let max = 0;
+  for (const number of existing) {
+    if (!number.startsWith(prefix) || !/^\d{3,}$/.test(number.slice(prefix.length))) continue;
+    max = Math.max(max, Number(number.slice(prefix.length)));
+  }
+  return `${prefix}${String(max + 1).padStart(3, "0")}`;
 }
 
 /* --------------------------------------------------- invoice management */

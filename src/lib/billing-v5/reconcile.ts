@@ -25,7 +25,7 @@ export interface ReconcileResult {
 /** Collections whose existing records must come out of a deploy unchanged. */
 export const PRESERVED = ["clients", "projects", "billingItems", "invoices", "invoiceItems", "projectPayments", "clientTaxProfiles", "taxInvoices", "customers", "products", "billingAllocations", "invoicePayments", "invoiceRevisions"] as const;
 
-const REAL_NUMBER = /^CIJDTI(\d{4})(\d{3,})$/;
+const REAL_NUMBER = /^(CIJDTI\d{4}|CIJD\d{4})(\d{3,})$/;
 
 function keyOf(record: Record<string, unknown>): string {
   if (typeof record.id === "string") return record.id;
@@ -93,7 +93,7 @@ export function reconcileV5(before: AnySnapshot, after: AnySnapshot, options: { 
       if (!options.allowNewRealNumbers) problems.push(`new real number ${invoice.invoiceNumber} was consumed`);
       else if (Number(match[2]) <= (maxBefore.get(match[1]) ?? 0)) problems.push(`new ${invoice.invoiceNumber} is not after the existing series`);
     }
-    check("invoice numbers", problems, `${beforeInvoices.length} existing number(s) kept; ${afterInvoices.length - beforeInvoices.length} new (TEST series only)`);
+    check("invoice numbers", problems, `${beforeInvoices.length} existing number(s) kept; ${afterInvoices.length - beforeInvoices.length} new`);
   }
 
   // 3. Billing links: each existing invoice's billed lines are allocated exactly once.

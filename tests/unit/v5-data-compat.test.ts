@@ -103,7 +103,7 @@ test("F. pre-existing V5 data is unchanged by migration 0002 and the back-fill; 
     customerId: realClient.id, invoiceDate: "2026-09-20", customer: { ...CUSTOMER, companyNameEn: "Real Co., Ltd." }, actor: "Accounting",
     items: [{ description: "After migration", quantity: 1, unitPrice: 10 }],
   });
-  assert.equal(real.invoiceNumber, "CIJDTI2026084"); // after 081–083; the cancelled 083 is not reused
+  assert.equal(real.invoiceNumber, "CIJD2026124"); // new requested series; historical 081–083 stay unchanged
 
   const after = (await d1Persistence(d1, buildV5Seed).read())!;
   for (const name of PRE_EXISTING) {
@@ -141,7 +141,7 @@ test("F. pre-existing V5 data is unchanged by migration 0002 and the back-fill; 
   );
 });
 
-test("F. an empty 2026 database starts the real series at CIJDTI2026081, never at or below the paper series", async () => {
+test("F. an empty 2026 database starts the new CIJD series at CIJD2026124, leaving paper numbers untouched", async () => {
   const d1 = sqliteD1();
   const open = () => new Store(d1Persistence(d1, buildV5Seed));
   const persistence = d1Persistence(d1, buildV5Seed);
@@ -151,7 +151,7 @@ test("F. an empty 2026 database starts the real series at CIJDTI2026081, never a
   await persistence.write(db);
   const customer = await open().saveCustomer({ name: "Real Co", companyNameEn: "Real Co., Ltd.", actor: "Accounting" });
   const issued = await open().issueInvoice({ customerId: customer.id, invoiceDate: "2026-09-20", customer: { ...CUSTOMER, companyNameEn: "Real Co., Ltd." }, actor: "Accounting", items: [{ description: "x", quantity: 1, unitPrice: 1 }] });
-  assert.equal(issued.invoiceNumber, "CIJDTI2026081");
+  assert.equal(issued.invoiceNumber, "CIJD2026124");
 });
 
 test("deploy reconciliation: old-code snapshot vs new-code snapshot passes; any change, loss or real number is caught", async () => {
