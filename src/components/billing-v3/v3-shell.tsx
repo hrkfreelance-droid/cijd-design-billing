@@ -68,6 +68,7 @@ function Header({ variant }: { variant: ShellVariant }) {
       ? [
           { href: base, label: v5t("nav.design") },
           { href: `${base}/accounting`, label: v5t("nav.accounting") },
+          { href: `${base}/customers`, label: v5t("nav.customers") },
           { href: `${base}/archive`, label: t("v2.nav.archive") },
         ]
       : TABS.map(({ href, key }) => ({ href, label: t(key) }));

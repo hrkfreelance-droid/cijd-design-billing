@@ -11,6 +11,8 @@ import { useI18n } from "@/components/providers";
 const en = {
   "nav.design": "Design",
   "nav.accounting": "Accounting",
+  "nav.customers": "Customers",
+  "customers.subtitle": "Search, review and edit customer details for future invoices.",
   "design.title": "Design",
   "design.subtitle": "Set the final amounts here. Move finished work to Ready to Bill; only Ready work can be sent to Accounting.",
   "design.sendAccounting": "Send to Accounting",
@@ -242,6 +244,8 @@ export type V5Key = keyof typeof en;
 const ja: Record<V5Key, string> = {
   "nav.design": "デザイン",
   "nav.accounting": "経理",
+  "nav.customers": "顧客",
+  "customers.subtitle": "顧客情報の検索・確認・編集。変更は次回以降の請求書作成に使用されます。",
   "design.title": "デザイン",
   "design.subtitle": "ここで金額を確定し、完了した案件をまず請求準備完了へ移します。経理へ送れるのは請求準備完了の案件だけです。",
   "design.sendAccounting": "経理へ送る",
@@ -472,6 +476,7 @@ const kh: Record<V5Key, string> = {
   ...en,
   "nav.design": "រចនា",
   "nav.accounting": "គណនេយ្យ",
+  "nav.customers": "អតិថិជន",
   "design.title": "រចនា",
   "design.sendAccounting": "ផ្ញើទៅគណនេយ្យ",
   "design.sendAccountingTitle": "ផ្ញើទៅគណនេយ្យ?",
