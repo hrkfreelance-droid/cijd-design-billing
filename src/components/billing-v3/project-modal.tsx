@@ -4,13 +4,13 @@ import { useState } from "react";
 
 import { api, useData, useI18n, useToast } from "@/components/providers";
 import { useAction } from "@/components/use-action";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 import type { BoardProject } from "@/lib/billing-v2/board";
 import { serviceLabel } from "@/lib/billing-v2/services";
 import { projectBalance, roundCents } from "@/lib/billing-v2/pricing";
 import { moneyExact } from "@/lib/format";
 import { useV5T } from "@/lib/billing-v5/i18n";
-import type { ServiceType } from "@/lib/types";
+import type { Client, ServiceType } from "@/lib/types";
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
 import { ItemEditor } from "./item-editor";
 import { ProjectBalanceSummary } from "./project-balance";
@@ -42,6 +42,7 @@ type Confirm = "bill" | "delete" | null;
 export function ProjectModal({
   project,
   clientName,
+  clients = [],
   serviceTypes = [],
   depositLocked = false,
   accountingFlow = false,
@@ -49,6 +50,7 @@ export function ProjectModal({
 }: {
   project: BoardProject;
   clientName: string;
+  clients?: Client[];
   serviceTypes?: ServiceType[];
   /** The project already has billed work, so its deposit is read-only. */
   depositLocked?: boolean;
@@ -63,6 +65,7 @@ export function ProjectModal({
   const { run, busy, describe } = useAction();
   const [mode, setMode] = useState<"view" | "edit">("view");
   const [name, setName] = useState(project.name);
+  const [clientId, setClientId] = useState(project.clientId);
   const [note, setNote] = useState(project.note);
   const [drafts, setDrafts] = useState<ItemDraft[]>([]);
   const [deposit, setDeposit] = useState("");
@@ -76,6 +79,7 @@ export function ProjectModal({
 
   const startEditing = () => {
     setName(project.name);
+    setClientId(project.clientId);
     setNote(project.note);
     setDrafts(project.items.length ? project.items.map(draftFromItem) : [blankDraft()]);
     setDeposit(project.balance.deposit > 0 ? project.balance.deposit.toFixed(2) : "");
@@ -101,6 +105,7 @@ export function ProjectModal({
     name.trim() !== "" && drafts.every((draft) => draftIsComplete(draft, serviceTypes)) && !depositInvalid;
   const dirty =
     name.trim() !== project.name ||
+    clientId !== project.clientId ||
     note.trim() !== project.note ||
     depositChanged ||
     drafts.some((draft) => (draft.id ? draftChanged(draft) : true));
@@ -122,6 +127,8 @@ export function ProjectModal({
     try {
       await saveProject({
         projectId: project.id,
+        clientId,
+        originalClientId: project.clientId,
         name,
         note,
         originalName: project.name,
@@ -307,6 +314,12 @@ export function ProjectModal({
                 disabled={saving}
                 data-testid="v2-project-name"
               />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[12px] font-medium text-muted">Customer</span>
+              <Select value={clientId} onChange={(event) => setClientId(event.target.value)} disabled={saving || depositLocked} data-testid="v2-project-client">
+                {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+              </Select>
             </label>
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-muted">{t("v2.note")}</span>

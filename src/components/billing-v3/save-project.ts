@@ -31,6 +31,8 @@ import {
  */
 export interface ProjectSaveInput {
   projectId: string;
+  clientId: string;
+  originalClientId: string;
   name: string;
   note: string;
   originalName: string;
@@ -49,10 +51,10 @@ export interface ProjectSaveInput {
 }
 
 export async function saveProject(input: ProjectSaveInput): Promise<void> {
-  if (input.name.trim() !== input.originalName || input.note.trim() !== input.originalNote) {
+  if (input.name.trim() !== input.originalName || input.note.trim() !== input.originalNote || input.clientId !== input.originalClientId) {
     await api(`/api/projects/${input.projectId}`, {
       method: "PATCH",
-      body: { name: input.name.trim(), note: input.note.trim() },
+      body: { name: input.name.trim(), note: input.note.trim(), clientId: input.clientId },
     });
   }
 

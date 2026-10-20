@@ -267,6 +267,7 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
           key={open.project.id}
           project={open.project}
           clientName={open.clientName}
+          clients={selectableClients(snapshot.clients)}
           serviceTypes={snapshot.serviceTypes}
           depositLocked={snapshot.billingItems.some(
             (item) => item.projectId === open.project.id && !item.deletedAt && isBilled(item),
