@@ -199,10 +199,11 @@ test("validation separates blocking errors from warnings", () => {
 });
 
 test("invoice numbers continue after the paper series", () => {
-  assert.equal(nextTaxInvoiceNumber(2026, []), "CIJD2026124");
-  assert.equal(nextTaxInvoiceNumber(2026, ["CIJDTI2026081", "CIJDTI2026090"]), "CIJD2026124");
-  assert.equal(nextTaxInvoiceNumber(2026, ["CIJD2026124", "CIJD2026145"]), "CIJD2026146");
-  assert.equal(nextTaxInvoiceNumber(2027, ["CIJD2026145"]), "CIJD2027001");
+  assert.equal(nextTaxInvoiceNumber(2026, []), "CIJDTI2026124");
+  assert.equal(nextTaxInvoiceNumber(2026, ["CIJDTI2026081", "CIJDTI2026090"]), "CIJDTI2026124");
+  assert.equal(nextTaxInvoiceNumber(2026, ["CIJDTI2026124", "CIJDTI2026145"]), "CIJDTI2026146");
+  assert.equal(nextTaxInvoiceNumber(2026, ["CIJD2026150", "CIJDTI2026145"]), "CIJDTI2026151");
+  assert.equal(nextTaxInvoiceNumber(2027, ["CIJDTI2026145"]), "CIJDTI2027001");
 });
 
 test("editor: a fresh line switched to Printing follows Recommended; a typed price stays manual", async () => {

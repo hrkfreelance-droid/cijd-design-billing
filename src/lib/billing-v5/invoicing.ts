@@ -474,13 +474,13 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
 
   // Manual numbering is allowed BEFORE issue. The immutable archive and revision
   // trail retain the exact issued number; issued documents cannot be renumbered.
-  // Automatic numbering includes cancelled invoices and follows the highest
-  // CIJD/year number already recorded (never the historical CIJDTI series).
+  // Automatic numbering includes cancelled invoices and the highest existing
+  // CIJD or CIJDTI suffix for the year. Issued records themselves remain immutable.
   const year = Number(input.invoiceDate.slice(0, 4));
   const testCustomer = isTestCustomer(client.name);
   const requestedNumber = input.invoiceNumber?.trim() ?? "";
-  if (requestedNumber && (testCustomer || !new RegExp(`^CIJD${year}\\d{3,}$`).test(requestedNumber))) {
-    throw new RuleError("INVALID_INVOICE_NUMBER", `Use CIJD${year} followed by at least three digits, or leave blank for automatic numbering.`, 400);
+  if (requestedNumber && (testCustomer || !new RegExp(`^CIJDTI${year}\\d{3,}$`).test(requestedNumber))) {
+    throw new RuleError("INVALID_INVOICE_NUMBER", `Use CIJDTI${year} followed by at least three digits, or leave blank for automatic numbering.`, 400);
   }
   const invoiceNumber = requestedNumber || nextInvoiceNumber(db, year, testCustomer);
   const exists = db.taxInvoices!.some((invoice) => invoice.invoiceNumber.toUpperCase() === invoiceNumber.toUpperCase()) ||

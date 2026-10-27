@@ -346,28 +346,30 @@ export function invoiceUnitPrice(line: { quantity: number; unitPrice: number | n
 
 /* ------------------------------------------------------ invoice numbering */
 
-/** New tax invoices use CIJD + year + 3+ digits. Historical CIJDTI numbers remain unchanged. */
+/** New tax invoices use CIJDTI + year + 3+ digits; existing CIJD/CIJDTI issued numbers remain immutable. */
 export function formatTaxInvoiceNumber(year: number, sequence: number): string {
-  return `CIJD${year}${String(sequence).padStart(3, "0")}`;
+  return `CIJDTI${year}${String(sequence).padStart(3, "0")}`;
 }
 
-/** Authorized next number for 2026 is CIJD2026124; other years begin at 001. */
+/** First 2026 number is CIJDTI2026124; other years begin at 001. */
 export function invoiceSequenceFloor(year: number): number {
   return year === 2026 ? 124 : 1;
 }
 
 export function nextTaxInvoiceNumber(year: number, existing: readonly string[]): string {
-  const prefix = `CIJD${year}`;
   let max = invoiceSequenceFloor(year) - 1;
   for (const number of existing) {
-    if (!new RegExp(`^CIJD${year}\\d{3,}$`).test(number)) continue;
-    const sequence = Number(number.slice(prefix.length));
-    if (Number.isInteger(sequence) && sequence > max) max = sequence;
+    // The 2026 CIJD series was temporarily issued by V5; keep its suffixes
+    // reserved so switching back to CIJDTI never reuses an issued sequence.
+    const match = new RegExp(`^CIJD(?:TI)?${year}(\\d{3,})$`).exec(number);
+    if (!match) continue;
+    const sequence = Number(match[1]);
+    if (Number.isSafeInteger(sequence) && sequence > max) max = sequence;
   }
   return formatTaxInvoiceNumber(year, max + 1);
 }
 
-/** TEST numbers never use up the real CIJD sequence. */
+/** TEST numbers never use up the real CIJDTI sequence. */
 export function nextTestTaxInvoiceNumber(year: number, existing: readonly string[]): string {
   const prefix = `TEST-CIJDTI${year}`;
   let max = 0;

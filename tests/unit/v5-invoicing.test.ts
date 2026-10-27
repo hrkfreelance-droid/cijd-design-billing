@@ -379,27 +379,27 @@ test("numbers run per year: 2026 continues after the paper series, 2027 restarts
   const c = await free("2026-12-30");
   const d = await free("2027-01-04");
   const e = await free("2027-01-04");
-  assert.deepEqual([a, b, c, d, e].map((i) => i.invoiceNumber), ["CIJD2026124", "CIJD2026125", "CIJD2026126", "CIJD2027001", "CIJD2027002"]);
+  assert.deepEqual([a, b, c, d, e].map((i) => i.invoiceNumber), ["CIJDTI2026124", "CIJDTI2026125", "CIJDTI2026126", "CIJDTI2027001", "CIJDTI2027002"]);
 });
 
-test("manual CIJD number is unique, year-matched, audited, and advances automatic numbering", async () => {
+test("manual CIJDTI number is unique, year-matched, audited, and advances automatic numbering", async () => {
   const t = await env();
   const lines = [{ description: "TEST Numbering", quantity: 1, unitPrice: 1 }];
-  const first = await t.issue(lines, { invoiceNumber: "CIJD2026124" });
-  assert.equal(first.invoiceNumber, "CIJD2026124");
-  await rejectsWith(t.issue(lines, { invoiceNumber: "CIJD2026124" }), "DUPLICATE_INVOICE_NUMBER");
-  await rejectsWith(t.issue(lines, { invoiceNumber: "CIJDTI2026125" }), "INVALID_INVOICE_NUMBER");
-  await rejectsWith(t.issue(lines, { invoiceNumber: "CIJD2027125" }), "INVALID_INVOICE_NUMBER");
+  const first = await t.issue(lines, { invoiceNumber: "CIJDTI2026124" });
+  assert.equal(first.invoiceNumber, "CIJDTI2026124");
+  await rejectsWith(t.issue(lines, { invoiceNumber: "CIJDTI2026124" }), "DUPLICATE_INVOICE_NUMBER");
+  await rejectsWith(t.issue(lines, { invoiceNumber: "CIJD2026125" }), "INVALID_INVOICE_NUMBER");
+  await rejectsWith(t.issue(lines, { invoiceNumber: "CIJDTI2027125" }), "INVALID_INVOICE_NUMBER");
   const second = await t.issue(lines);
-  assert.equal(second.invoiceNumber, "CIJD2026125");
-  const manual = await t.issue(lines, { invoiceNumber: "CIJD2026140" });
-  assert.equal(manual.invoiceNumber, "CIJD2026140");
+  assert.equal(second.invoiceNumber, "CIJDTI2026125");
+  const manual = await t.issue(lines, { invoiceNumber: "CIJDTI2026140" });
+  assert.equal(manual.invoiceNumber, "CIJDTI2026140");
   await t.open().cancelTaxInvoice(manual.id, "TEST");
   const after = await t.issue(lines);
-  assert.equal(after.invoiceNumber, "CIJD2026141");
-  assert.equal((await t.snap()).taxInvoices!.find((i) => i.id === first.id)?.invoiceNumber, "CIJD2026124");
+  assert.equal(after.invoiceNumber, "CIJDTI2026141");
+  assert.equal((await t.snap()).taxInvoices!.find((i) => i.id === first.id)?.invoiceNumber, "CIJDTI2026124");
   const archived = t.d1.raw.prepare("SELECT invoice_number FROM v5_tax_invoice_archive WHERE id = ?").get(first.id) as { invoice_number: string };
-  assert.equal(archived.invoice_number, "CIJD2026124");
+  assert.equal(archived.invoice_number, "CIJDTI2026124");
 });
 
 test("TEST customers are numbered in their own series and never touch the real sequence", async () => {
@@ -409,7 +409,7 @@ test("TEST customers are numbered in their own series and never touch the real s
     t.open().issueInvoice({ customerId: testClient.id, invoiceDate: date, customer: CUSTOMER, items: [{ description: "TEST", quantity: 1, unitPrice: 1 }], actor: "TEST" });
   assert.equal((await testInvoice("2026-09-29")).invoiceNumber, "TEST-CIJDTI2026001");
   assert.equal((await testInvoice("2026-09-29")).invoiceNumber, "TEST-CIJDTI2026002");
-  assert.equal((await t.issue([{ description: "Real", quantity: 1, unitPrice: 1 }])).invoiceNumber, "CIJD2026124");
+  assert.equal((await t.issue([{ description: "Real", quantity: 1, unitPrice: 1 }])).invoiceNumber, "CIJDTI2026124");
   assert.equal((await testInvoice("2027-01-04")).invoiceNumber, "TEST-CIJDTI2027001");
 });
 
@@ -463,6 +463,6 @@ test("V3-billed lines stay billed; invoices issued before invoice management get
   assert.equal(billingState(s, s.billingItems.find((i) => i.id === old.line.id)!).state, "FULLY_INVOICED");
   await rejectsWith(t.issue([{ billingItemId: legacy.line.id, amount: 80 }]), "ALREADY_BILLED");
   // The next number continues after the old one; running the backfill again adds nothing.
-  assert.equal((await t.issue([{ description: "TEST next", quantity: 1, unitPrice: 1 }])).invoiceNumber, "CIJD2026124");
+  assert.equal((await t.issue([{ description: "TEST next", quantity: 1, unitPrice: 1 }])).invoiceNumber, "CIJDTI2026124");
   assert.equal((await t.snap()).billingAllocations!.filter((a) => a.invoiceId === "old-invoice").length, 1);
 });
