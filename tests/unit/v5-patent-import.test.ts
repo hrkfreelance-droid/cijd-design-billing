@@ -23,6 +23,20 @@ test("Patent Tax PDF text: legal name, TIN, owner and year extracted without inv
   assert.equal(result.addressKm, "");
 });
 
+test("Real PDF.js ligature splitting does not contaminate the company name", () => {
+  const text = [
+    "Enterprise's name   :   IDEAFACTORY ADVERTISING CO., LTD.",
+    "Tax Identi fi cation Number (TIN)   :   K007-107012391",
+    "Registered at   :   General Department of Taxation",
+    "Owner's name   :   CHHENG SOKHA   Nationality   :   Cambodian",
+    "PATENT TAX 2026",
+  ].join("\n");
+  const extracted = parseCambodianPatent(text);
+  assert.equal(extracted.enterpriseName, "IDEAFACTORY ADVERTISING CO., LTD.");
+  assert.equal(extracted.tin, "K007-107012391");
+  assert.equal(extracted.ownerName, "CHHENG SOKHA");
+});
+
 test("Duplicate Tax ID comparison accepts spacing, punctuation and case variants", () => {
   assert.equal(normalizedTin("k007-123456789"), normalizedTin("K007 123456789"));
   assert.equal(normalizedTin(""), "");

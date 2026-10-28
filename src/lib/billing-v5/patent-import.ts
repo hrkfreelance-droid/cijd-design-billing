@@ -22,9 +22,14 @@ export function parseCambodianPatent(rawText: string): PatentCandidate {
     .map((line) => line.trim())
     .filter(Boolean);
   const compact = lines.join(" ").replace(/\s+/g, " ");
+  // PDF.js preserves line breaks in many certificates, while font ligatures
+  // can split "Identification" into "Identi fi cation". Prefer line boundaries
+  // to avoid swallowing the next field into the company's legal name.
+  const nameLine = lines.find((line) => /^Enterprise['’]s\s+name\s*[:：]/i.test(line)) ?? "";
   const englishName =
-    firstMatch(compact, /Enterprise['’]s\s+name\s*[:：]\s*(.+?)(?=\s+Tax\s+Identification\s+Number\b|\s+Registered\s+at\b|$)/i) ||
-    firstMatch(compact, /Enterprise\s+name\s*[:：]\s*(.+?)(?=\s+Tax\s+Identification\s+Number\b|$)/i);
+    firstMatch(nameLine, /^Enterprise['’]s\s+name\s*[:：]\s*(.+?)(?=\s+Tax\s+Identi\s*fi\s*cation\s+Number\b|$)/i) ||
+    firstMatch(compact, /Enterprise['’]s\s+name\s*[:：]\s*(.+?)(?=\s+Tax\s+Identi\s*fi\s*cation\s+Number\b|\s+Registered\s+at\b|$)/i) ||
+    firstMatch(compact, /Enterprise\s+name\s*[:：]\s*(.+?)(?=\s+Tax\s+Identi\s*fi\s*cation\s+Number\b|$)/i);
   const tin = (compact.match(/\bK\d{3}\s*[-–]\s*\d{9}\b/i)?.[0] ?? "").replace(/\s/g, "").replace("–", "-").toUpperCase();
   const owner = firstMatch(compact, /Owner['’]s\s+name\s*[:：]\s*(.+?)(?=\s+Nationality\s*[:：]|\s+Phnom\s+Penh\b|$)/i);
   const year = firstMatch(compact, /PATENT\s+TAX\s+(20\d{2})\b/i);
