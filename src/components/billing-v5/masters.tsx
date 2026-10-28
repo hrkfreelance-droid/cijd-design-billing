@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Modal } from "@/components/billing-v2/modal";
 import { api, useI18n, useToast } from "@/components/providers";
@@ -12,6 +12,8 @@ import { customerFor } from "@/lib/billing-v5/ontology";
 import { moneyExact } from "@/lib/format";
 import type { Customer, Product, Snapshot } from "@/lib/types";
 import { CustomerDocuments } from "./customer-documents";
+import { inspectPatentPdf, type PatentDraft } from "@/lib/billing-v5/patent-import-client";
+import { normalizedTin } from "@/lib/billing-v5/patent-import";
 
 /* ------------------------------------------------------------- customers */
 
@@ -20,6 +22,10 @@ export function CustomerMaster({ snapshot }: { snapshot: Snapshot }) {
   const t = useV5T();
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | "new" | null>(null);
+  const [patent, setPatent] = useState<PatentDraft | null>(null);
+  const [patentError, setPatentError] = useState<string | null>(null);
+  const [readingPatent, setReadingPatent] = useState(false);
+  const patentInput = useRef<HTMLInputElement>(null);
   const clients = useMemo(() => {
     const all = [...selectableClients(snapshot.clients), ...snapshot.clients.filter((c) => !c.active && c.name !== "DAISHIN")];
     return all.map((client) => ({ client, customer: customerFor(snapshot, client.id) }));
@@ -29,12 +35,31 @@ export function CustomerMaster({ snapshot }: { snapshot: Snapshot }) {
     !needle || [client.name, customer.customerCode, customer.companyNameEn, customer.companyNameKm, customer.vatin, customer.telephone, customer.email].some((v) => v.toLowerCase().includes(needle)),
   );
 
+  const importPatent = async (file: File) => {
+    setPatentError(null);
+    setReadingPatent(true);
+    try {
+      const draft = await inspectPatentPdf(file);
+      const duplicate = clients.find(({ customer }) => normalizedTin(customer.vatin) === normalizedTin(draft.candidate.tin));
+      setPatent(draft);
+      setEditing(duplicate?.client.id ?? "new");
+    } catch (error) {
+      setPatent(null);
+      setPatentError(error instanceof Error ? error.message : "Unable to read the PDF.");
+    } finally {
+      setReadingPatent(false);
+    }
+  };
+
   return (
     <section className="pt-8" data-testid="v5-customers">
-      <div className="flex gap-2 pb-4">
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("master.search")} aria-label={t("master.search")} data-testid="v5-customer-search" />
-        <Button variant="secondary" onClick={() => setEditing("new")} data-testid="v5-customer-new">+ {t("master.new")}</Button>
+      <div className="flex flex-wrap gap-2 pb-4">
+        <div className="min-w-[180px] flex-1"><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("master.search")} aria-label={t("master.search")} data-testid="v5-customer-search" /></div>
+        <Button variant="secondary" onClick={() => { setPatent(null); setEditing("new"); }} data-testid="v5-customer-new">+ {t("master.new")}</Button>
+        <Button variant="secondary" onClick={() => patentInput.current?.click()} disabled={readingPatent} data-testid="v5-patent-import">{readingPatent ? t("patent.reading") : t("patent.import")}</Button>
+        <input ref={patentInput} type="file" accept=".pdf,application/pdf" hidden data-testid="v5-patent-file" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importPatent(file); }} />
       </div>
+      {patentError && <p className="pb-3 text-[13px] text-danger" role="alert" data-testid="v5-patent-error">{patentError}</p>}
       {shown.length === 0 ? (
         <p className="border-t border-line py-6 text-[13.5px] text-muted">{t("customer.empty")}</p>
       ) : (
@@ -58,27 +83,30 @@ export function CustomerMaster({ snapshot }: { snapshot: Snapshot }) {
           ))}
         </ul>
       )}
-      {editing && <CustomerSheet snapshot={snapshot} id={editing === "new" ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && <CustomerSheet snapshot={snapshot} id={editing === "new" ? null : editing} patent={patent} onClose={() => { setEditing(null); setPatent(null); }} />}
     </section>
   );
 }
 
-function CustomerSheet({ snapshot, id, onClose }: { snapshot: Snapshot; id: string | null; onClose: () => void }) {
+function CustomerSheet({ snapshot, id, patent, onClose }: { snapshot: Snapshot; id: string | null; patent: PatentDraft | null; onClose: () => void }) {
   const t = useV5T();
   const { t: t3 } = useI18n();
   const { toast } = useToast();
   const { runResult, busy } = useAction();
+  const [storedCustomerId, setStoredCustomerId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const client = id ? snapshot.clients.find((c) => c.id === id) : undefined;
   const base = id ? customerFor(snapshot, id) : null;
   const [form, setForm] = useState({
-    name: client?.name ?? "",
+    name: client?.name ?? patent?.candidate.enterpriseName ?? "",
     customerCode: base?.customerCode ?? "",
-    companyNameEn: base?.companyNameEn ?? "",
-    companyNameKm: base?.companyNameKm ?? "",
+    companyNameEn: base?.companyNameEn ?? patent?.candidate.enterpriseName ?? "",
+    companyNameKm: base?.companyNameKm ?? patent?.candidate.companyNameKm ?? "",
     addressEn: base?.addressEn ?? "",
-    addressKm: base?.addressKm ?? "",
+    addressKm: base?.addressKm ?? patent?.candidate.addressKm ?? "",
     telephone: base?.telephone ?? "",
-    vatin: base?.vatin ?? "",
+    vatin: base?.vatin ?? patent?.candidate.tin ?? "",
     contactPerson: base?.contactPerson ?? "",
     email: base?.email ?? "",
     active: client?.active ?? true,
@@ -89,13 +117,43 @@ function CustomerSheet({ snapshot, id, onClose }: { snapshot: Snapshot; id: stri
   // The code is not sent: the server assigns it and never changes it.
   const { customerCode: _code, ...editable } = form;
   void _code;
+  const attachPatent = async (targetId: string) => {
+    if (!patent) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const body = new FormData();
+      body.set("file", patent.file);
+      body.set("documentType", "PATENT_TAX");
+      const response = await fetch(`/api/v5/customers/${targetId}/documents`, { method: "POST", body });
+      const result = (await response.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+      if (!response.ok || !result?.ok) throw new Error(result?.message ?? "Patent PDF upload failed.");
+      toast(t("patent.attached"));
+      onClose();
+    } catch (error) {
+      // Customer creation may already have succeeded. Do not create another.
+      setUploadError(error instanceof Error ? error.message : "Patent PDF upload failed. Customer has been saved.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const save = async () => {
+    if (storedCustomerId) {
+      await attachPatent(storedCustomerId);
+      return;
+    }
     const saved = await runResult(() =>
       id ? api<Customer>(`/api/v5/customers/${id}`, { method: "PATCH", body: editable }) : api<Customer>("/api/v5/customers", { method: "POST", body: editable }),
     );
     if (saved) {
       toast(t("master.saved"));
-      onClose();
+      if (patent) {
+        setStoredCustomerId(saved.id);
+        await attachPatent(saved.id);
+      } else {
+        onClose();
+      }
     }
   };
 
@@ -110,18 +168,29 @@ function CustomerSheet({ snapshot, id, onClose }: { snapshot: Snapshot; id: stri
     <Modal
       open
       onClose={onClose}
-      busy={busy}
+      busy={busy || uploading}
       kicker={form.customerCode || undefined}
       title={id ? form.name || t("customer.newTitle") : t("customer.newTitle")}
       closeLabel={t3("common.close")}
       testId="v5-customer-sheet"
       footer={
         <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onClose} disabled={busy}>{t3("common.cancel")}</Button>
-          <Button variant="primary" onClick={() => void save()} disabled={!valid || busy} data-testid="v5-customer-save">{t3("common.save")}</Button>
+          <Button variant="secondary" onClick={onClose} disabled={busy || uploading}>{t3("common.cancel")}</Button>
+          {id && patent && <Button variant="secondary" onClick={() => void attachPatent(id)} disabled={busy || uploading} data-testid="v5-patent-attach-existing">{t("patent.attach")}</Button>}
+          <Button variant="primary" onClick={() => void save()} disabled={!valid || busy || uploading} data-testid="v5-customer-save">{storedCustomerId ? t("patent.retry") : t3("common.save")}</Button>
         </div>
       }
     >
+      {patent && (
+        <div className="mb-5 border-b border-line pb-4 text-[12.5px]" data-testid="v5-patent-review">
+          <p className="font-semibold">{t("patent.review")}</p>
+          <p className="mt-1 break-all text-muted">{patent.file.name}</p>
+          <p className="mt-1">{patent.candidate.enterpriseName} · {patent.candidate.tin} · {patent.candidate.patentYear || t("patent.unknownYear")}</p>
+          <p className="mt-1 text-muted">{t("patent.owner")}: {patent.candidate.ownerName || t("patent.missingOwner")}</p>
+          <p className="mt-1 text-muted">{id ? t("patent.matched") : t("patent.newNote")}</p>
+        </div>
+      )}
+      {uploadError && <p className="mb-4 text-[12.5px] text-danger" role="alert" data-testid="v5-patent-upload-error">{t("patent.uploadFailed")} {uploadError}</p>}
       <div className="grid gap-3 sm:grid-cols-2">
         {field("name", t("customer.name"))}
         <div className="block min-w-0">
