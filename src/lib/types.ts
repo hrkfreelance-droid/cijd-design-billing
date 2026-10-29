@@ -418,6 +418,41 @@ export interface InvoiceDiscount {
   value: number;
 }
 
+export type TaxInvoiceKind = "FULL" | "DEPOSIT_FIXED" | "DEPOSIT_PERCENT" | "FINAL";
+
+/** Frozen billing-line contract basis captured when the first deposit invoice is issued. */
+export interface TaxInvoiceContractLine {
+  billingItemId: string;
+  description: string;
+  projectName?: string;
+  quantity: number;
+  unit?: string | null;
+  unitPrice: number;
+  /** Full pre-VAT amount available when this deposit contract began. */
+  amount: number;
+}
+
+export interface TaxInvoiceContractSnapshot {
+  id: string;
+  clientId: string;
+  lines: TaxInvoiceContractLine[];
+  subtotalUsd: number;
+  vatApplicable: boolean;
+  vatPercent: number;
+  vatUsd: number;
+  totalUsd: number;
+}
+
+/** Snapshot reference to a previously issued deposit tax invoice. */
+export interface TaxInvoiceDepositReference {
+  invoiceId: string;
+  invoiceNumber: string;
+  subtotalUsd: number;
+  vatUsd: number;
+  totalUsd: number;
+  allocations: { billingItemId: string; description: string; amount: number }[];
+}
+
 /**
  * An issued Tax Invoice. Everything printed on it is copied in at issue time,
  * so a later edit to the project, the client or the rate never changes it.
@@ -471,6 +506,18 @@ export interface TaxInvoiceRecord {
   updatedAt?: string;
   updatedBy?: string;
   note?: string | null;
+  /** Absent on historical invoices; those remain ordinary FULL invoices. */
+  invoiceKind?: TaxInvoiceKind;
+  /** Shared by all deposit/final invoices in one server-created contract group. */
+  contractId?: string;
+  contractSnapshot?: TaxInvoiceContractSnapshot;
+  /** Pre-VAT basis entered for a DEPOSIT_FIXED or DEPOSIT_PERCENT invoice. */
+  depositValue?: number;
+  /** Earlier issued deposits, copied into this invoice for reconciliation. */
+  depositReferences?: TaxInvoiceDepositReference[];
+  /** Client retry token, checked inside the same invoice transaction. */
+  requestKey?: string;
+  requestFingerprint?: string;
   cancelledAt?: string | null;
   cancelledBy?: string | null;
   cancellationReason?: string | null;

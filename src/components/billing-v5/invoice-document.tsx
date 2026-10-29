@@ -50,6 +50,8 @@ export const INVOICE_ROWS = 10;
 const PROJECT_LINE_ROWS = 0.5;
 
 export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
+  const invoiceKind = invoice.invoiceKind ?? "FULL";
+  const depositKind = invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT";
   // Ten ruled rows as on the workbook. Each extra totals row (discount,
   // deposit, balance due) takes the place of one empty ruled row, so the page
   // keeps its height; an invoice with more lines than fit flows onto a further
@@ -58,7 +60,8 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
   // Lines that also print their project name are taller: they give up empty
   // ruled rows too, so the page never outgrows A4.
   const named = invoice.lines.filter((line) => line.projectName).length;
-  const ruled = INVOICE_ROWS - extras - Math.ceil(named * PROJECT_LINE_ROWS);
+  const contractRows = invoice.contractSnapshot ? Math.min(6, 3 + (invoice.depositReferences?.length ?? 0)) : 0;
+  const ruled = INVOICE_ROWS - extras - Math.ceil(named * PROJECT_LINE_ROWS) - contractRows;
   const long = invoice.lines.length > ruled;
   const compact = invoice.lines.length > INVOICE_ROWS;
   const dense = invoice.lines.length >= 18;
@@ -88,9 +91,23 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
           </div>
         </header>
 
-        <div className="invoice-title khmer">
-          <strong>វិក្កយបត្រអាករ</strong>
-          <span>TAX INVOICE</span>
+        <div className={`invoice-title khmer${invoiceKind === "FULL" ? "" : " invoice-title-kind"}`}>
+          {depositKind ? (
+            <>
+              <strong>វិក្កយបត្រអាករ សម្រាប់ប្រាក់បង់ជាមុន</strong>
+              <span>DEPOSIT TAX INVOICE</span>
+            </>
+          ) : invoiceKind === "FINAL" ? (
+            <>
+              <strong>វិក្កយបត្រអាករចុងក្រោយ</strong>
+              <span>FINAL TAX INVOICE</span>
+            </>
+          ) : (
+            <>
+              <strong>វិក្កយបត្រអាករ</strong>
+              <span>TAX INVOICE</span>
+            </>
+          )}
         </div>
 
         <section className="invoice-parties">
@@ -119,6 +136,41 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
 
         {invoice.status === "CANCELLED" && <div className="cancelled-watermark">CANCELLED</div>}
         {invoice.draft && <div className="draft-watermark">DRAFT</div>}
+
+        {invoice.contractSnapshot && (depositKind || invoiceKind === "FINAL") && (
+          <section className="invoice-contract-summary" data-testid="tax-invoice-contract-summary">
+            <h2>Contract reconciliation <span className="khmer">ការផ្គូផ្គងកិច្ចសន្យា</span></h2>
+            <dl>
+              <div><dt>Contract amount before VAT</dt><dd><Accounting value={invoice.contractSnapshot.subtotalUsd} /></dd></div>
+              <div><dt>Contract VAT ({invoice.contractSnapshot.vatPercent}%)</dt><dd><Accounting value={invoice.contractSnapshot.vatUsd} /></dd></div>
+              <div><dt>Contract total</dt><dd><Accounting value={invoice.contractSnapshot.totalUsd} /></dd></div>
+              {invoiceKind === "FINAL" && (
+                <div className="invoice-contract-current"><dt>Final remaining amount on this invoice</dt><dd><Accounting value={invoice.totalUsd} /></dd></div>
+              )}
+            </dl>
+            {!!invoice.depositReferences?.length && (
+              <div className="invoice-contract-references">
+                <h3>Earlier deposit tax invoices — reference only <span className="khmer">យោងវិក្កយបត្រប្រាក់បង់ជាមុនមុននេះ</span></h3>
+                <table>
+                  <thead><tr><th>Invoice No.</th><th>Allocated before VAT</th><th>VAT</th><th>Invoice total</th></tr></thead>
+                  <tbody>
+                    {invoice.depositReferences.map((reference) => (
+                      <tr key={reference.invoiceId} data-testid="tax-invoice-deposit-reference">
+                        <td>
+                          <b>{reference.invoiceNumber}</b>
+                          {reference.allocations.length > 0 && <small>{reference.allocations.map((allocation) => `${allocation.description}: $${usd(allocation.amount)}`).join(" · ")}</small>}
+                        </td>
+                        <td><Accounting value={reference.subtotalUsd} /></td>
+                        <td><Accounting value={reference.vatUsd} /></td>
+                        <td><Accounting value={reference.totalUsd} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
 
         <table className="invoice-lines" data-testid="tax-invoice-lines">
           <colgroup>

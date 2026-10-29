@@ -451,7 +451,10 @@ function ProjectSheet({
                   {state.item.description}
                   {state.invoiceIds.length > 0 && (
                     <span className="block text-[12px] text-faint">
-                      {t("billing.linked")}: {state.invoiceIds.map((id) => snapshot.taxInvoices?.find((i) => i.id === id)?.invoiceNumber).join(", ")}
+                      {t("billing.linked")}: {state.invoiceIds.map((id) => {
+                        const invoice = snapshot.taxInvoices?.find((entry) => entry.id === id);
+                        return invoice ? `${invoice.invoiceNumber} (${t(`list.kind.${invoice.invoiceKind ?? "FULL"}` as V5Key)})` : id;
+                      }).join(", ")}
                     </span>
                   )}
                 </span>

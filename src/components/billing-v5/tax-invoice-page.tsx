@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
@@ -24,6 +25,7 @@ import { InvoiceEditor } from "./invoice-editor";
  */
 export function TaxInvoicePage({ id }: { id: string }) {
   const t = useV5T();
+  const router = useRouter();
   const { snapshot } = useData();
   const { toast } = useToast();
   const { run, busy } = useAction();
@@ -37,6 +39,17 @@ export function TaxInvoicePage({ id }: { id: string }) {
   const money = invoice ? invoiceCollection(snapshot, invoice) : null;
   const statusKey = invoice?.status === "CANCELLED" ? "status.CANCELLED" : `status.${money?.status ?? "UNPAID"}`;
   const archived = invoice?.status === "ISSUED" && money?.status === "PAID";
+  const invoiceKind = invoice?.invoiceKind ?? "FULL";
+  const activeContractInvoices = invoice?.contractId
+    ? (snapshot.taxInvoices ?? []).filter((entry) => entry.contractId === invoice.contractId && entry.status === "ISSUED")
+    : [];
+  const depositLocked = (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") && activeContractInvoices.some((entry) => entry.invoiceKind === "FINAL");
+  const laterDeposit = (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") && activeContractInvoices.some(
+    (entry) => (entry.invoiceKind === "DEPOSIT_FIXED" || entry.invoiceKind === "DEPOSIT_PERCENT") && entry.id !== invoice?.id && (
+      entry.issuedAt.localeCompare(invoice?.issuedAt ?? "") > 0 ||
+      (entry.issuedAt === invoice?.issuedAt && entry.invoiceNumber.localeCompare(invoice?.invoiceNumber ?? "") > 0)
+    ),
+  );
 
   const cancel = async () => {
     const ok = await run(() => api(`/api/v5/tax-invoices/${id}/cancel`, { method: "POST", body: { reason } }));
@@ -56,17 +69,18 @@ export function TaxInvoicePage({ id }: { id: string }) {
               <span className="tnum font-semibold text-text" data-testid="v5-invoice-heading">{invoice.invoiceNumber}</span>
               {" · "}
               <span className={invoice.status === "CANCELLED" ? "text-danger" : ""} data-testid="v5-invoice-status">{t(statusKey as V5Key)}</span>
+              {" · "}<span data-testid="v5-invoice-kind">{t(`list.kind.${invoiceKind}` as V5Key)}</span>
               {" · "}
               {clientName} · <span className="tnum">{moneyExact(invoice.totalUsd)}</span>
             </span>
           )}
           {invoice && (
             <div className="ml-auto flex items-center gap-2">
-              {invoice.status === "ISSUED" && (
+              {invoice.status === "ISSUED" && !depositLocked && !laterDeposit && (
                 <>
                   <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>
                   <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>
-                  {archived && <Button variant="secondary" size="sm" onClick={() => window.location.assign("/office-v5/archive")} data-testid="v5-invoice-archive">{t("invoice.archive")}</Button>}
+                  {archived && <Button variant="secondary" size="sm" onClick={() => router.push("/office-v5/archive")} data-testid="v5-invoice-archive">{t("invoice.archive")}</Button>}
                 </>
               )}
               <Button variant="primary" onClick={() => window.print()} data-testid="v5-print">{t("invoice.print")}</Button>
@@ -84,6 +98,11 @@ export function TaxInvoicePage({ id }: { id: string }) {
             {(invoice.revision ?? 1) > 1 && ` · ${t("detail.revision", { n: invoice.revision ?? 1 })}`}
             {invoice.cancellationReason ? ` · ${invoice.cancellationReason}` : ""}
           </p>
+          {(depositLocked || laterDeposit) && (
+            <p className="v5-no-print mx-auto max-w-[210mm] px-5 pt-2 text-[12px] text-pending sm:px-0">
+              {t(depositLocked ? "detail.depositLocked" : "detail.depositSequenceLocked")}
+            </p>
+          )}
           <div className="mx-auto mt-3 max-w-[210mm] px-3 sm:px-0">
             <div className="v5-print-root">
               <FitA4>

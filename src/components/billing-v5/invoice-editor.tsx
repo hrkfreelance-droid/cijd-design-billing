@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
 import { Modal } from "@/components/billing-v2/modal";
@@ -11,13 +11,14 @@ import { useAction } from "@/components/use-action";
 import { selectableClients } from "@/lib/billing-v2/board";
 import { serviceForItem, serviceLabel } from "@/lib/billing-v2/services";
 import { storedFinalUnitPrice } from "@/lib/billing-v2/board";
-import { invoiceTotals, invoiceUnitPrice, nextTaxInvoiceNumber, nextTestTaxInvoiceNumber, roundMoney, toCents } from "@/lib/billing-v5/calculation";
-import { useV5T } from "@/lib/billing-v5/i18n";
+import { fromCents, invoiceTotals, invoiceUnitPrice, nextTaxInvoiceNumber, nextTestTaxInvoiceNumber, roundMoney, toCents, totalKhrForCents } from "@/lib/billing-v5/calculation";
+import { allocateCentsProportionally, cumulativeVatSliceCents, percentageOfCents } from "@/lib/billing-v5/deposit";
+import { useV5T, type V5Key } from "@/lib/billing-v5/i18n";
 import { billingState, customerFor, unappliedProjectDeposit } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
 import { MAX_INVOICE_ITEMS, additionalInvoiceRows } from "@/lib/billing-v5/invoice-limits";
-import type { ExchangeRate, Product, Snapshot, TaxInvoiceRecord } from "@/lib/types";
+import type { ExchangeRate, Product, Snapshot, TaxInvoiceContractSnapshot, TaxInvoiceDepositReference, TaxInvoiceKind, TaxInvoiceRecord } from "@/lib/types";
 import { Combobox, type ComboOption } from "./combobox";
 import { FitA4 } from "./fit-a4";
 import { InvoiceDocument, type InvoiceView } from "./invoice-document";
@@ -58,6 +59,53 @@ function rowAmount(row: Row): number {
   return roundMoney(num(row.quantity) * num(row.unitPrice));
 }
 
+function isDepositKind(kind: TaxInvoiceKind): kind is "DEPOSIT_FIXED" | "DEPOSIT_PERCENT" {
+  return kind === "DEPOSIT_FIXED" || kind === "DEPOSIT_PERCENT";
+}
+
+function contractRemainingCents(snapshot: Snapshot, contract: TaxInvoiceContractSnapshot, excludeInvoiceId: string | null = null): Map<string, number> {
+  const invoiceIds = new Set((snapshot.taxInvoices ?? [])
+    .filter((invoice) => invoice.contractId === contract.id && invoice.status === "ISSUED" && invoice.id !== excludeInvoiceId)
+    .map((invoice) => invoice.id));
+  return new Map(contract.lines.map((line) => {
+    const allocated = (snapshot.billingAllocations ?? [])
+      .filter((allocation) => allocation.billingItemId === line.billingItemId && !allocation.voidedAt && allocation.invoiceId !== excludeInvoiceId && invoiceIds.has(allocation.invoiceId))
+      .reduce((sum, allocation) => sum + toCents(allocation.amount), 0);
+    return [line.billingItemId, Math.max(toCents(line.amount) - allocated, 0)];
+  }));
+}
+
+function contractRows(snapshot: Snapshot, contract: TaxInvoiceContractSnapshot, excludeInvoiceId: string | null = null): Row[] {
+  const remainingById = contractRemainingCents(snapshot, contract, excludeInvoiceId);
+  return contract.lines.flatMap((line) => {
+    const remainingCents = remainingById.get(line.billingItemId) ?? 0;
+    if (remainingCents <= 0) return [];
+    const remaining = fromCents(remainingCents);
+    return [{
+      key: nextKey(), billingItemId: line.billingItemId, productId: null, description: line.description,
+      quantity: "1", unit: "balance", unitPrice: remaining.toFixed(2), amount: remaining.toFixed(2),
+    }];
+  });
+}
+
+function contractDepositReferences(snapshot: Snapshot, contractId: string, excludeInvoiceId: string | null = null): TaxInvoiceDepositReference[] {
+  return (snapshot.taxInvoices ?? [])
+    .filter((invoice) => invoice.contractId === contractId && invoice.status === "ISSUED" && invoice.id !== excludeInvoiceId && isDepositKind(invoice.invoiceKind ?? "FULL"))
+    .sort((a, b) => a.issuedAt.localeCompare(b.issuedAt) || a.invoiceNumber.localeCompare(b.invoiceNumber))
+    .map((invoice) => ({
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      subtotalUsd: invoice.subtotalUsd,
+      vatUsd: invoice.vatUsd,
+      totalUsd: invoice.totalUsd,
+      allocations: invoice.lines.filter((line) => line.billingItemId).map((line) => ({
+        billingItemId: line.billingItemId!,
+        description: line.description.replace(/^Advance portion: /, ""),
+        amount: line.amount,
+      })),
+    }));
+}
+
 export type EditorProps =
   | { mode: "create"; snapshot: Snapshot; customerId: string | null; billingItemIds: string[]; onClose: () => void }
   | { mode: "edit"; snapshot: Snapshot; invoice: TaxInvoiceRecord; onClose: () => void };
@@ -70,6 +118,11 @@ export function InvoiceEditor(props: EditorProps) {
   const { runResult, busy } = useAction();
   const { snapshot } = props;
   const editing = props.mode === "edit" ? props.invoice : null;
+  const [invoiceKind, setInvoiceKind] = useState<TaxInvoiceKind>(editing?.invoiceKind ?? "FULL");
+  const [contractId, setContractId] = useState(editing?.contractId ?? "");
+  const [depositValue, setDepositValue] = useState(editing?.depositValue == null ? "" : String(editing.depositValue));
+  const requestKey = useRef<string | null>(null);
+  const requestSignature = useRef<string | null>(null);
   const products = (snapshot.products ?? []).filter((product) => product.active);
   const productOptions: ComboOption[] = products.map((product) => ({
     id: product.id,
@@ -93,6 +146,9 @@ export function InvoiceEditor(props: EditorProps) {
 
   const initialRows = (): Row[] => {
     if (editing) {
+      if (editing.contractSnapshot && (editing.invoiceKind ?? "FULL") !== "FULL") {
+        return contractRows(snapshot, editing.contractSnapshot, editing.id);
+      }
       return editing.lines.map((line) => ({
         key: nextKey(), billingItemId: line.billingItemId, productId: line.productId ?? null, description: line.description,
         quantity: String(line.quantity), unit: line.unit ?? "", unitPrice: String(line.unitPrice), amount: String(line.amount),
@@ -118,6 +174,40 @@ export function InvoiceEditor(props: EditorProps) {
 
   const startCustomer = editing?.clientId ?? (props.mode === "create" ? props.customerId : null) ?? "";
   const [customerId, setCustomerId] = useState(startCustomer);
+  const contractOptions = useMemo(() => {
+    const grouped = new Map<string, TaxInvoiceContractSnapshot>();
+    for (const invoice of snapshot.taxInvoices ?? []) {
+      if (invoice.status === "ISSUED" && isDepositKind(invoice.invoiceKind ?? "FULL") && invoice.contractId && invoice.contractSnapshot && invoice.clientId === customerId) {
+        grouped.set(invoice.contractId, invoice.contractSnapshot);
+      }
+    }
+    return [...grouped.entries()].flatMap(([id, contract]) => {
+      const siblings = (snapshot.taxInvoices ?? []).filter((invoice) => invoice.contractId === id && invoice.status === "ISSUED");
+      const hasFinal = siblings.some((invoice) => invoice.invoiceKind === "FINAL");
+      if (hasFinal && editing?.contractId !== id) return [];
+      const remainingRows = contractRows(snapshot, contract, editing?.contractId === id ? editing.id : null);
+      const remainingUsd = remainingRows.reduce((sum, row) => sum + rowAmount(row), 0);
+      if (remainingUsd <= 0 && editing?.contractId !== id) return [];
+      const firstNumber = siblings.filter((invoice) => isDepositKind(invoice.invoiceKind ?? "FULL")).sort((a, b) => a.issuedAt.localeCompare(b.issuedAt))[0]?.invoiceNumber ?? id;
+      return [{ id, contract, remainingUsd, firstNumber }];
+    });
+  }, [snapshot, customerId, editing]);
+  const selectedContract = contractOptions.find((option) => option.id === contractId)?.contract
+    ?? (editing?.contractId === contractId ? editing.contractSnapshot : undefined)
+    ?? (snapshot.taxInvoices ?? []).find((invoice) =>
+      invoice.status === "ISSUED" && invoice.contractId === contractId && invoice.clientId === customerId && invoice.contractSnapshot,
+    )?.contractSnapshot;
+  const depositBillingOptions = useMemo<ComboOption[]>(() => snapshot.billingItems
+    .filter((item) => {
+      const project = snapshot.projects.find((entry) => entry.id === item.projectId);
+      const hasAllocation = (snapshot.billingAllocations ?? []).some((allocation) => allocation.billingItemId === item.id && !allocation.voidedAt);
+      return project?.clientId === customerId && billingState(snapshot, item).eligible && !hasAllocation;
+    })
+    .map((item) => {
+      const project = snapshot.projects.find((entry) => entry.id === item.projectId);
+      const left = leftFor.get(item.id) ?? 0;
+      return { id: item.id, label: item.description, hint: `${project?.name ?? ""} · ${moneyExact(left)} remaining`, keywords: [project?.name ?? ""] };
+    }), [snapshot, customerId, leftFor]);
   // The invoice's own snapshot for its customer; the Customer Master for any
   // customer chosen explicitly (a new invoice, or a changed customer on edit).
   const fieldsFor = (id: string): CustomerFields => {
@@ -147,6 +237,7 @@ export function InvoiceEditor(props: EditorProps) {
   const [customerQuery, setCustomerQuery] = useState(() => customerLabel(startCustomer));
   const pickCustomer = (id: string) => {
     setCustomerId(id);
+    setContractId("");
     setNumberOverride(null);
     setCustomer(fieldsFor(id));
     setCustomerQuery(customerLabel(id));
@@ -164,6 +255,7 @@ export function InvoiceEditor(props: EditorProps) {
   const suggestedNumber = testCustomer ? nextTestTaxInvoiceNumber(year, usedNumbers) : nextTaxInvoiceNumber(year, usedNumbers);
   const selectedNumber = numberOverride ?? suggestedNumber;
   const [rows, setRows] = useState<Row[]>(initialRows);
+  const [billingChoice, setBillingChoice] = useState("");
   const [discountType, setDiscountType] = useState<"NONE" | "FIXED" | "PERCENT">(editing?.discount?.type ?? "NONE");
   const [discountValue, setDiscountValue] = useState(editing?.discount ? String(editing.discount.value) : "");
   const [vatApplicable, setVatApplicable] = useState(editing?.vatApplicable ?? true);
@@ -182,6 +274,53 @@ export function InvoiceEditor(props: EditorProps) {
   const [view, setView] = useState<"form" | "preview">("form");
   const [confirming, setConfirming] = useState(false);
   const [newProducts, setNewProducts] = useState<Row[] | null>(null);
+
+  const chooseInvoiceKind = (kind: TaxInvoiceKind) => {
+    setInvoiceKind(kind);
+    if (kind === "FULL") {
+      setContractId("");
+      setRows(initialRows());
+      return;
+    }
+    setDiscountType("NONE");
+    setDiscountValue("");
+    setDeposit("");
+    if (kind === "FINAL") setDepositValue("");
+    if (contractId) setRows(initialRows());
+    setContractId("");
+  };
+
+  const chooseContract = (id: string) => {
+    setContractId(id);
+    const option = contractOptions.find((entry) => entry.id === id);
+    if (!option) {
+      if (id === "") {
+        setRows(initialRows());
+        setVatApplicable(true);
+        setBillingChoice("");
+      }
+      return;
+    }
+    setRows(contractRows(snapshot, option.contract));
+    setVatApplicable(option.contract.vatApplicable);
+    setDiscountType("NONE");
+    setDiscountValue("");
+    setDeposit("");
+    if (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") setDepositValue("");
+  };
+
+  const addLinkedBillingLine = (id: string) => {
+    const item = snapshot.billingItems.find((entry) => entry.id === id);
+    if (!item || rows.some((row) => row.billingItemId === id)) return;
+    const left = leftFor.get(id) ?? 0;
+    const unitPrice = invoiceUnitPrice({ quantity: item.quantity, unitPrice: storedFinalUnitPrice(item), amount: left });
+    const label = serviceLabel(serviceForItem(item, snapshot.serviceTypes), t3);
+    setRows((current) => [
+      ...current.filter((row) => row.billingItemId),
+      { key: nextKey(), billingItemId: id, productId: null, description: item.description.trim() || label, quantity: String(item.quantity), unit: "", unitPrice: unitPrice.toFixed(2), amount: left.toFixed(2) },
+    ]);
+    setBillingChoice("");
+  };
 
   // The rate belongs to the invoice date: looked up for a new invoice and
   // whenever the date changes; an edit that keeps the date keeps its rate.
@@ -222,19 +361,121 @@ export function InvoiceEditor(props: EditorProps) {
     const item = snapshot.billingItems.find((entry) => entry.id === billingItemId);
     return snapshot.projects.find((project) => project.id === item?.projectId)?.name.trim() || undefined;
   };
-  const lines = rows.map((row) => ({ amount: Number.isFinite(rowAmount(row)) ? rowAmount(row) : 0 }));
+  const special = invoiceKind !== "FULL";
   const rateNumber = num(rate.value);
+  // The lookup is asynchronous. Keep draft arithmetic renderable while it is
+  // pending; KHR stays blank and issuing remains disabled until a real rate exists.
+  const calculationRate = rateNumber > 0 ? rateNumber : 1;
   const discount = discountType === "NONE" ? null : { type: discountType, value: num(discountValue) };
-  const totals = invoiceTotals({
-    lines,
+  const normalTotals = invoiceTotals({
+    lines: rows.map((row) => ({ amount: Number.isFinite(rowAmount(row)) ? rowAmount(row) : 0 })),
     discount: discount && Number.isFinite(discount.value) ? discount : null,
     vatApplicable,
-    exchangeRate: Number.isFinite(rateNumber) ? rateNumber : 0,
+    exchangeRate: calculationRate,
     deposit: Number.isFinite(num(deposit)) ? num(deposit) : 0,
   });
+  const references = contractId ? contractDepositReferences(snapshot, contractId, editing?.id ?? null) : [];
+  const sourceLineIds = new Set<string>();
+  const sourceLines = selectedContract?.lines ?? rows.flatMap((row) => {
+    if (!row.billingItemId || sourceLineIds.has(row.billingItemId)) return [];
+    sourceLineIds.add(row.billingItemId);
+    const item = snapshot.billingItems.find((entry) => entry.id === row.billingItemId);
+    if (!item) return [];
+    const projectName = previewProjectName(item.id);
+    return [{
+      billingItemId: item.id,
+      description: item.description,
+      ...(projectName ? { projectName } : {}),
+      quantity: item.quantity > 0 ? item.quantity : 1,
+      unit: null,
+      unitPrice: invoiceUnitPrice({ quantity: item.quantity, unitPrice: item.unitPrice, amount: item.amount ?? 0 }),
+      amount: leftFor.get(item.id) ?? 0,
+    }];
+  });
+  const remainingById = selectedContract
+    ? contractRemainingCents(snapshot, selectedContract, editing?.id ?? null)
+    : new Map(sourceLines.map((line) => [line.billingItemId, toCents(line.amount)]));
+  const remainingBaseCents = sourceLines.reduce((sum, line) => sum + (remainingById.get(line.billingItemId) ?? 0), 0);
+  const contractBaseCents = selectedContract
+    ? toCents(selectedContract.subtotalUsd)
+    : sourceLines.reduce((sum, line) => sum + toCents(line.amount), 0);
+  const contractVatCents = selectedContract
+    ? toCents(selectedContract.vatUsd)
+    : toCents(invoiceTotals({ lines: sourceLines, vatApplicable, exchangeRate: calculationRate }).vatUsd);
+  const previousBaseCents = references.reduce((sum, reference) => sum + toCents(reference.subtotalUsd), 0);
+  const previousVatCents = references.reduce((sum, reference) => sum + toCents(reference.vatUsd), 0);
+  let displayLines: InvoiceView["lines"] = rows.map((row) => ({
+    billingItemId: row.billingItemId, productId: row.productId, projectName: previewProjectName(row.billingItemId), description: row.description,
+    quantity: num(row.quantity) || 0, unit: row.unit || null, unitPrice: roundMoney(num(row.unitPrice) || 0), amount: rowAmount(row) || 0,
+  }));
+  let totals = normalTotals;
+  let contractSnapshotForView = selectedContract;
+  const specialTotal = (subtotalCents: number, vatCents: number, vatPercent: number) => {
+    const totalCents = subtotalCents + vatCents;
+    const subtotal = fromCents(subtotalCents);
+    const total = fromCents(totalCents);
+    return {
+      subtotalUsd: subtotal, discountUsd: 0, taxableUsd: subtotal, vatPercent, vatUsd: fromCents(vatCents),
+      totalUsd: total, totalKhr: totalKhrForCents(totalCents, calculationRate), depositUsd: 0, balanceDueUsd: total, discountPolicy: null,
+    };
+  };
+  let specialValueValid = true;
+  let targetDepositCents = 0;
+  if (special) {
+    if (!contractSnapshotForView) {
+      const contractTotals = invoiceTotals({ lines: sourceLines, vatApplicable, exchangeRate: calculationRate });
+      contractSnapshotForView = {
+        id: "DRAFT-CONTRACT",
+        clientId: customerId,
+        lines: sourceLines,
+        subtotalUsd: fromCents(contractBaseCents),
+        vatApplicable,
+        vatPercent: contractTotals.vatPercent,
+        vatUsd: fromCents(contractVatCents),
+        totalUsd: fromCents(contractBaseCents + contractVatCents),
+      };
+    }
+    if (invoiceKind === "FINAL") {
+      const vatCents = contractVatCents - previousVatCents;
+      displayLines = sourceLines.flatMap((line) => {
+        const cents = remainingById.get(line.billingItemId) ?? 0;
+        if (cents <= 0) return [];
+        const amount = fromCents(cents);
+        return [{ billingItemId: line.billingItemId, productId: null, projectName: line.projectName, description: `Final remainder: ${line.description}`, quantity: 1, unit: "remainder", unitPrice: amount, amount }];
+      });
+      totals = specialTotal(remainingBaseCents, vatCents, contractSnapshotForView.vatPercent);
+    } else {
+      const value = num(depositValue);
+      try {
+        if (!Number.isFinite(value) || value <= 0 || (invoiceKind === "DEPOSIT_PERCENT" && value >= 100)) {
+          specialValueValid = false;
+        } else {
+          targetDepositCents = invoiceKind === "DEPOSIT_FIXED" ? toCents(value) : percentageOfCents(remainingBaseCents, value);
+          specialValueValid = targetDepositCents > 0 && targetDepositCents < remainingBaseCents;
+        }
+      } catch {
+        specialValueValid = false;
+      }
+      if (specialValueValid) {
+        try {
+          const allocation = allocateCentsProportionally(targetDepositCents, sourceLines.map((line) => ({ id: line.billingItemId, cents: remainingById.get(line.billingItemId) ?? 0 })));
+          const vatCents = cumulativeVatSliceCents(contractVatCents, Math.max(contractBaseCents, 1), previousBaseCents, targetDepositCents, previousVatCents);
+          displayLines = sourceLines.flatMap((line) => {
+            const cents = allocation.get(line.billingItemId) ?? 0;
+            if (cents <= 0) return [];
+            const amount = fromCents(cents);
+            return [{ billingItemId: line.billingItemId, productId: null, projectName: line.projectName, description: `Advance portion: ${line.description}`, quantity: 1, unit: "advance", unitPrice: amount, amount }];
+          });
+          totals = specialTotal(targetDepositCents, vatCents, contractSnapshotForView.vatPercent);
+        } catch {
+          specialValueValid = false;
+        }
+      }
+    }
+  }
 
   const errors: string[] = [];
-  if (!editing && numberOverride?.trim() && (testCustomer || !new RegExp(`^CIJD${year}\\d{3,}$`).test(numberOverride.trim()))) {
+  if (!editing && numberOverride?.trim() && (testCustomer || !new RegExp(`^CIJDTI${year}\\d{3,}$`).test(numberOverride.trim()))) {
     errors.push(t("editor.number"));
   }
   if (!customerId) errors.push(t("editor.chooseCustomer"));
@@ -249,10 +490,25 @@ export function InvoiceEditor(props: EditorProps) {
   if (!(rateNumber > 0)) errors.push(t("prepare.errRate"));
   if (!rows.length) errors.push(t("editor.addLine"));
   if (rows.length > MAX_INVOICE_ITEMS) errors.push(t("editor.lineCount", { count: rows.length, max: MAX_INVOICE_ITEMS }));
+  const specialIds = rows.flatMap((row) => row.billingItemId ? [row.billingItemId] : []);
+  const specialRowsInvalid = specialIds.length !== rows.length || new Set(specialIds).size !== specialIds.length;
+  if (special && (specialRowsInvalid || specialIds.length === 0)) errors.push(t("editor.depositLinkedOnly"));
+  if (special && isDepositKind(invoiceKind) && !contractId && rows.some((row) => row.billingItemId && (snapshot.billingAllocations ?? []).some((allocation) => allocation.billingItemId === row.billingItemId && !allocation.voidedAt))) {
+    errors.push(t("editor.depositNewConflict"));
+  }
+  if (special && !selectedContract && (invoiceKind === "FINAL" || Boolean(contractId))) errors.push(t("editor.contractChoose"));
+  if (special && invoiceKind === "FINAL" && remainingBaseCents <= 0) errors.push(t("editor.contractChoose"));
+  if (special && isDepositKind(invoiceKind) && !specialValueValid) errors.push(t("editor.depositValueError"));
   const rowError = (row: Row): string | null => {
+    if (special) return row.billingItemId ? null : t("editor.depositLinkedOnly");
     if (!row.description.trim()) return t3("v2.description");
     if (!(num(row.quantity) > 0)) return t("editor.qty");
     if (!(num(row.unitPrice) >= 0)) return t("editor.unitPrice");
+    const contractInvoice = row.billingItemId && (snapshot.taxInvoices ?? []).find((invoice) =>
+      invoice.status === "ISSUED" && (invoice.invoiceKind ?? "FULL") !== "FULL" &&
+      invoice.contractSnapshot?.lines.some((line) => line.billingItemId === row.billingItemId),
+    );
+    if (contractInvoice) return t("editor.activeContractConflict", { number: contractInvoice.invoiceNumber });
     const amount = rowAmount(row);
     if (!Number.isFinite(amount) || amount < 0) return t("editor.amount");
     if (row.billingItemId) {
@@ -263,9 +519,10 @@ export function InvoiceEditor(props: EditorProps) {
     return null;
   };
   if (rows.some((row) => rowError(row))) errors.push(t("editor.lines"));
-  if (discount && (!(discount.value >= 0) || (discount.type === "PERCENT" && discount.value > 100) || (discount.type === "FIXED" && toCents(discount.value) > toCents(totals.discountUsd)))) errors.push(t("editor.discount"));
-  if (deposit.trim() && !(num(deposit) >= 0 && toCents(num(deposit)) <= toCents(totals.totalUsd))) errors.push(t("editor.deposit"));
+  if (!special && discount && (!(discount.value >= 0) || (discount.type === "PERCENT" && discount.value > 100) || (discount.type === "FIXED" && toCents(discount.value) > toCents(totals.discountUsd)))) errors.push(t("editor.discount"));
+  if (!special && deposit.trim() && !(num(deposit) >= 0 && toCents(num(deposit)) <= toCents(totals.totalUsd))) errors.push(t("editor.deposit"));
   const valid = errors.length === 0;
+  const removalLocked = special && (Boolean(contractId) || invoiceKind === "FINAL" || Boolean(editing));
 
   const addBlankRows = (count: number) => setRows((current) => [
     ...current,
@@ -315,35 +572,68 @@ export function InvoiceEditor(props: EditorProps) {
   const view_: InvoiceView = {
     projectId: projectIds[0] ?? "", projectIds, clientId: customerId, invoiceNumber: editing?.invoiceNumber ?? selectedNumber, invoiceDate,
     status: "ISSUED", customer, project: { name: "", note: "" },
-    lines: rows.map((row) => ({ billingItemId: row.billingItemId, productId: row.productId, projectName: previewProjectName(row.billingItemId), description: row.description, quantity: num(row.quantity) || 0, unit: row.unit || null, unitPrice: roundMoney(num(row.unitPrice) || 0), amount: rowAmount(row) || 0 })),
+    lines: displayLines,
     vatApplicable, vatPercent: totals.vatPercent, subtotalUsd: totals.subtotalUsd, discount: totals.discountUsd > 0 ? discount : null,
     discountUsd: totals.discountUsd, taxableUsd: totals.taxableUsd, vatUsd: totals.vatUsd, totalUsd: totals.totalUsd,
     exchangeRate: rateNumber || 0, exchangeRateSource: rate.source, exchangeRateEffectiveDate: rate.effectiveDate, totalKhr: totals.totalKhr,
-    depositUsd: totals.depositUsd, draft: !editing,
+    depositUsd: totals.depositUsd,
+    invoiceKind,
+    ...(contractId ? { contractId } : {}),
+    ...(contractSnapshotForView ? { contractSnapshot: contractSnapshotForView } : {}),
+    ...(isDepositKind(invoiceKind) && Number.isFinite(num(depositValue)) ? { depositValue: num(depositValue) } : {}),
+    ...(special ? { depositReferences: references } : {}),
+    draft: !editing,
   };
 
   const body = (items: Row[]) => ({
     customerId,
     invoiceDate,
+    invoiceKind,
+    ...(special ? { contractId: contractId || null } : {}),
+    ...(isDepositKind(invoiceKind) ? { depositValue: num(depositValue) } : {}),
     customer,
     items: items.map((row) => ({
       billingItemId: row.billingItemId, productId: row.productId, description: row.description.trim(),
       quantity: num(row.quantity), unit: row.unit.trim() || null, unitPrice: num(row.unitPrice), amount: rowAmount(row),
     })),
-    discount,
+    discount: special ? null : discount,
     vatApplicable,
     exchangeRate: rate.source === "MANUAL" ? { rate: rateNumber, source: "MANUAL" } : { rate: rateNumber, source: "NBC", effectiveDate: rate.effectiveDate },
-    depositUsd: deposit.trim() ? num(deposit) : 0,
+    depositUsd: special ? 0 : deposit.trim() ? num(deposit) : 0,
+    ...(!editing && requestKey.current ? { requestKey: requestKey.current } : {}),
     updateCustomerMaster: updateMaster,
     reason: reason.trim() || null,
     ...(editing ? { invoiceNumber: editing.invoiceNumber } : numberOverride === null ? {} : { invoiceNumber: numberOverride.trim() }),
   });
 
   const submit = async (items: Row[]) => {
+    const payload = body(items);
+    if (!editing) {
+      const signature = JSON.stringify({
+        customerId: payload.customerId,
+        invoiceDate: payload.invoiceDate,
+        customer: payload.customer,
+        items: payload.items,
+        discount: payload.discount,
+        vatApplicable: payload.vatApplicable,
+        exchangeRate: payload.exchangeRate,
+        depositUsd: payload.depositUsd,
+        invoiceKind: payload.invoiceKind,
+        depositValue: payload.depositValue ?? null,
+        contractId: payload.contractId ?? null,
+        note: null,
+        invoiceNumber: payload.invoiceNumber ?? null,
+      });
+      if (!requestKey.current || requestSignature.current !== signature) {
+        requestKey.current = globalThis.crypto.randomUUID();
+        requestSignature.current = signature;
+      }
+      payload.requestKey = requestKey.current;
+    }
     const saved = await runResult(() =>
       editing
-        ? api<TaxInvoiceRecord>(`/api/v5/tax-invoices/${editing.id}`, { method: "PATCH", body: body(items) })
-        : api<TaxInvoiceRecord>("/api/v5/tax-invoices", { method: "POST", body: body(items) }),
+        ? api<TaxInvoiceRecord>(`/api/v5/tax-invoices/${editing.id}`, { method: "PATCH", body: payload })
+        : api<TaxInvoiceRecord>("/api/v5/tax-invoices", { method: "POST", body: payload }),
     );
     setConfirming(false);
     if (!saved) return;
@@ -439,6 +729,7 @@ export function InvoiceEditor(props: EditorProps) {
                     ariaLabel={t("editor.customer")}
                     empty={t("editor.noCustomer")}
                     testId="v5-editor-customer"
+                    disabled={!!editing && special}
                   />
                   {foreign.length > 0 && <span className="mt-1 block text-[12px] text-danger" data-testid="v5-editor-customer-error">{t("editor.otherCustomer", { count: foreign.length })}</span>}
                 </label>
@@ -457,6 +748,37 @@ export function InvoiceEditor(props: EditorProps) {
             <fieldset className="min-w-0">
               <legend className="mb-2 text-[13px] font-semibold">{t("prepare.invoice")}</legend>
               <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.invoiceKind")}</span>
+                  {editing ? (
+                    <span className="flex h-11 items-center text-[14px] font-medium" data-testid="v5-invoice-kind">{t(`editor.kind.${invoiceKind}` as V5Key)}</span>
+                  ) : (
+                    <Select value={invoiceKind} onChange={(event) => chooseInvoiceKind(event.target.value as TaxInvoiceKind)} data-testid="v5-invoice-kind">
+                      <option value="FULL">{t("editor.kind.FULL")}</option>
+                      <option value="DEPOSIT_FIXED">{t("editor.kind.DEPOSIT_FIXED")}</option>
+                      <option value="DEPOSIT_PERCENT">{t("editor.kind.DEPOSIT_PERCENT")}</option>
+                      <option value="FINAL">{t("editor.kind.FINAL")}</option>
+                    </Select>
+                  )}
+                </label>
+                {special && (
+                  <label className="block sm:col-span-2">
+                    <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.contract")}</span>
+                    <Select value={contractId} disabled={!!editing} onChange={(event) => chooseContract(event.target.value)} data-testid="v5-contract-select">
+                      <option value="">{invoiceKind === "FINAL" ? t("editor.contractChoose") : t("editor.contractNew")}</option>
+                      {contractOptions.map((option) => (
+                        <option key={option.id} value={option.id}>{option.firstNumber} · {t("editor.contractRemaining")} {moneyExact(option.remainingUsd)}</option>
+                      ))}
+                    </Select>
+                    {selectedContract ? (
+                      <span className="mt-1 block text-[11.5px] text-faint">
+                        {t("editor.contractRemaining")}: {moneyExact(remainingBaseCents / 100)} · {t("editor.contractVatLocked")}
+                      </span>
+                    ) : invoiceKind === "FINAL" && contractOptions.length === 0 ? (
+                      <span className="mt-1 block text-[11.5px] text-faint">{t("editor.contractEmpty")}</span>
+                    ) : null}
+                  </label>
+                )}
                 <label className="block">
                   <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.number")}</span>
                   {editing ? (
@@ -503,8 +825,9 @@ export function InvoiceEditor(props: EditorProps) {
                   )}
                 </label>
                 <label className="flex items-center gap-2.5 sm:col-span-2">
-                  <Checkbox checked={vatApplicable} onChange={setVatApplicable} label={t("prepare.vat")} />
+                  <Checkbox checked={vatApplicable} onChange={setVatApplicable} label={t("prepare.vat")} disabled={!!selectedContract} />
                   <span className="text-[13.5px]">{t("prepare.vat")}</span>
+                  {selectedContract && <span className="text-[11.5px] text-faint">{t("editor.contractVatLocked")}</span>}
                 </label>
               </div>
             </fieldset>
@@ -527,12 +850,13 @@ export function InvoiceEditor(props: EditorProps) {
               {rows.map((row, index) => {
                 const item = row.billingItemId ? snapshot.billingItems.find((entry) => entry.id === row.billingItemId) : undefined;
                 const project = item ? snapshot.projects.find((entry) => entry.id === item.projectId) : undefined;
+                const previewLine = special ? displayLines.find((line) => line.billingItemId === row.billingItemId) : undefined;
                 const problem = rowError(row);
                 return (
                   <div key={row.key} className="grid grid-cols-[minmax(0,1fr)_2rem] gap-x-2 gap-y-2 border-b border-line py-3 sm:grid-cols-[minmax(0,1fr)_4.5rem_4.5rem_6.5rem_7rem_2rem] sm:items-start" data-testid="v5-editor-row">
                     <div className="min-w-0">
                       {row.billingItemId ? (
-                        <Input value={row.description} onChange={(event) => update(row.key, { description: event.target.value })} aria-label={t("editor.description")} data-testid={`v5-row-description-${index}`} />
+                        <Input value={special ? previewLine?.description ?? row.description : row.description} onChange={(event) => update(row.key, { description: event.target.value })} disabled={special} aria-label={t("editor.description")} data-testid={`v5-row-description-${index}`} />
                       ) : (
                         <Combobox
                           value={row.description}
@@ -542,6 +866,7 @@ export function InvoiceEditor(props: EditorProps) {
                           placeholder={t("editor.searchProduct")}
                           ariaLabel={t("editor.description")}
                           testId={`v5-row-description-${index}`}
+                          disabled={special}
                         />
                       )}
                       <span className="mt-1 block text-[12px] text-faint">
@@ -556,13 +881,13 @@ export function InvoiceEditor(props: EditorProps) {
                       )}
                       {problem && <span className="mt-0.5 block text-[12px] text-danger" data-testid={`v5-row-error-${index}`}>{problem}</span>}
                     </div>
-                    <button type="button" onClick={() => setRows((current) => current.filter((entry) => entry.key !== row.key))} aria-label={t("editor.removeLine")} className="h-11 text-[18px] text-faint hover:text-danger sm:order-last" data-testid={`v5-row-remove-${index}`}>×</button>
+                    <button type="button" disabled={removalLocked} onClick={() => setRows((current) => current.filter((entry) => entry.key !== row.key))} aria-label={t("editor.removeLine")} className="h-11 text-[18px] text-faint hover:text-danger disabled:cursor-not-allowed disabled:opacity-40 sm:order-last" data-testid={`v5-row-remove-${index}`}>×</button>
                     <div className="col-span-2 grid grid-cols-4 gap-2 sm:contents">
-                      <Input inputMode="decimal" value={row.quantity} onChange={(event) => update(row.key, { quantity: event.target.value })} aria-label={t("editor.qty")} className="tnum text-right" data-testid={`v5-row-qty-${index}`} />
-                      <Input value={row.unit} onChange={(event) => update(row.key, { unit: event.target.value })} aria-label={t("editor.unit")} data-testid={`v5-row-unit-${index}`} />
-                      <Input inputMode="decimal" value={row.unitPrice} onChange={(event) => update(row.key, { unitPrice: event.target.value })} aria-label={t("editor.unitPrice")} className="tnum text-right" disabled={!!row.billingItemId} data-testid={`v5-row-price-${index}`} />
+                      <Input inputMode="decimal" value={special ? String(previewLine?.quantity ?? 1) : row.quantity} onChange={(event) => update(row.key, { quantity: event.target.value })} aria-label={t("editor.qty")} className="tnum text-right" disabled={special} data-testid={`v5-row-qty-${index}`} />
+                      <Input value={special ? previewLine?.unit ?? "" : row.unit} onChange={(event) => update(row.key, { unit: event.target.value })} aria-label={t("editor.unit")} disabled={special} data-testid={`v5-row-unit-${index}`} />
+                      <Input inputMode="decimal" value={special ? String(previewLine?.unitPrice ?? 0) : row.unitPrice} onChange={(event) => update(row.key, { unitPrice: event.target.value })} aria-label={t("editor.unitPrice")} className="tnum text-right" disabled={special || !!row.billingItemId} data-testid={`v5-row-price-${index}`} />
                       {row.billingItemId ? (
-                        <Input inputMode="decimal" value={row.amount} onChange={(event) => update(row.key, { amount: event.target.value })} aria-label={t("editor.amount")} className="tnum text-right font-medium" data-testid={`v5-row-amount-${index}`} />
+                        <Input inputMode="decimal" value={special ? String(previewLine?.amount ?? 0) : row.amount} onChange={(event) => update(row.key, { amount: event.target.value })} aria-label={t("editor.amount")} className="tnum text-right font-medium" disabled={special} data-testid={`v5-row-amount-${index}`} />
                       ) : (
                         <span className="tnum flex h-11 items-center justify-end text-[15px] font-medium" data-testid={`v5-row-amount-${index}`}>
                           {Number.isFinite(rowAmount(row)) ? moneyExact(rowAmount(row)) : "—"}
@@ -573,7 +898,18 @@ export function InvoiceEditor(props: EditorProps) {
                 );
               })}
             </div>
-            <button
+            {isDepositKind(invoiceKind) && !contractId && !editing && (
+              <label className="mt-3 block max-w-xl">
+                <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.addLinkedLine")}</span>
+                <Select value={billingChoice} onChange={(event) => event.target.value && addLinkedBillingLine(event.target.value)} data-testid="v5-add-linked-line">
+                  <option value="">{t("editor.selectBillingLine")}</option>
+                  {depositBillingOptions.filter((option) => !rows.some((row) => row.billingItemId === option.id)).map((option) => (
+                    <option key={option.id} value={option.id}>{option.label}{option.hint ? ` · ${option.hint}` : ""}</option>
+                  ))}
+                </Select>
+              </label>
+            )}
+            {!special && <button
               type="button"
               onClick={() => addBlankRows(1)}
               disabled={rows.length >= MAX_INVOICE_ITEMS}
@@ -582,8 +918,8 @@ export function InvoiceEditor(props: EditorProps) {
             >
               <span aria-hidden className="text-[17px] leading-none">+</span>
               {t("editor.addLine")}
-            </button>
-            <button
+            </button>}
+            {!special && <button
               type="button"
               disabled={rows.length >= MAX_INVOICE_ITEMS}
               onClick={() => addBlankRows(5)}
@@ -592,29 +928,48 @@ export function InvoiceEditor(props: EditorProps) {
             >
               <span aria-hidden className="text-[17px] leading-none">+</span>
               {t("editor.addFiveLines")}
-            </button>
+            </button>}
+            {special && <p className="mt-2 text-[12px] text-faint">{t("editor.contractLinesLocked")}</p>}
             {rows.length >= 20 && <p className="mt-1 text-[12px] text-faint">{t("editor.smallPrint")}</p>}
           </section>
 
           <section className="grid gap-6 border-t border-line pt-5 sm:grid-cols-[minmax(0,1fr)_18rem]">
             <div className="grid content-start gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.discount")}</span>
-                <Select value={discountType} onChange={(event) => setDiscountType(event.target.value as typeof discountType)} data-testid="v5-discount-type">
-                  <option value="NONE">{t("editor.discountNone")}</option>
-                  <option value="FIXED">{t("editor.discountFixed")}</option>
-                  <option value="PERCENT">{t("editor.discountPercent")}</option>
-                </Select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-[12px] font-medium text-muted">&nbsp;</span>
-                <Input inputMode="decimal" value={discountValue} disabled={discountType === "NONE"} onChange={(event) => setDiscountValue(event.target.value)} className="tnum text-right" aria-label={t("editor.discount")} data-testid="v5-discount-value" />
-              </label>
-              <label className="block sm:col-span-2">
-                <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.deposit")}</span>
-                <Input inputMode="decimal" value={deposit} placeholder="0.00" onChange={(event) => setDeposit(event.target.value)} className="tnum text-right" data-testid="v5-deposit" />
-                <span className="mt-1 block text-[12px] text-faint">{t("editor.depositHint")}</span>
-              </label>
+              {special ? (
+                <>
+                  {isDepositKind(invoiceKind) && (
+                    <label className="block sm:col-span-2">
+                      <span className="mb-1 block text-[12px] font-medium text-muted">
+                        {t(invoiceKind === "DEPOSIT_FIXED" ? "editor.depositFixedValue" : "editor.depositPercentValue")}
+                      </span>
+                      <Input inputMode="decimal" value={depositValue} onChange={(event) => setDepositValue(event.target.value)} className="tnum text-right" data-testid="v5-deposit-value" />
+                      <span className="mt-1 block text-[12px] text-faint">{t("editor.depositValueHint")}</span>
+                    </label>
+                  )}
+                  <p className="text-[12.5px] text-muted sm:col-span-2">{t("editor.depositModeHint")}</p>
+                  <p className="rounded-lg bg-fill px-3 py-2 text-[12px] text-pending sm:col-span-2">{t("editor.depositTaxNote")}</p>
+                </>
+              ) : (
+                <>
+                  <label className="block">
+                    <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.discount")}</span>
+                    <Select value={discountType} onChange={(event) => setDiscountType(event.target.value as typeof discountType)} data-testid="v5-discount-type">
+                      <option value="NONE">{t("editor.discountNone")}</option>
+                      <option value="FIXED">{t("editor.discountFixed")}</option>
+                      <option value="PERCENT">{t("editor.discountPercent")}</option>
+                    </Select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[12px] font-medium text-muted">&nbsp;</span>
+                    <Input inputMode="decimal" value={discountValue} disabled={discountType === "NONE"} onChange={(event) => setDiscountValue(event.target.value)} className="tnum text-right" aria-label={t("editor.discount")} data-testid="v5-discount-value" />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.deposit")}</span>
+                    <Input inputMode="decimal" value={deposit} placeholder="0.00" onChange={(event) => setDeposit(event.target.value)} className="tnum text-right" data-testid="v5-deposit" />
+                    <span className="mt-1 block text-[12px] text-faint">{t("editor.depositHint")}</span>
+                  </label>
+                </>
+              )}
               {editing && (
                 <label className="block sm:col-span-2">
                   <span className="mb-1 block text-[12px] font-medium text-muted">{t("editor.reason")}</span>

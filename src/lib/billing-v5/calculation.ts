@@ -37,6 +37,15 @@ export function fromCents(cents: number): number {
   return cents / 100;
 }
 
+/** Convert a USD-cent total to KHR with the same four-decimal rate precision as invoice totals. */
+export function totalKhrForCents(totalCents: number, exchangeRate: number): number {
+  if (!Number.isSafeInteger(totalCents) || totalCents < 0 || !Number.isFinite(exchangeRate) || exchangeRate < 0) {
+    throw new RangeError("invalid USD total or exchange rate");
+  }
+  const rateScaled = Math.round((exchangeRate + Number.EPSILON) * 10_000);
+  return Number((BigInt(totalCents) * BigInt(rateScaled) + BigInt(500_000)) / BigInt(1_000_000));
+}
+
 /* ---------------------------------------------------------- pricing rules */
 
 /**
@@ -322,9 +331,7 @@ export function taxTotals(input: TaxInput): TaxTotals {
   const vatPercent = input.vatApplicable ? VAT_PERCENT : 0;
   const vatCents = Math.round((subtotalCents * vatPercent) / 100);
   const totalCents = subtotalCents + vatCents;
-  const rateScaled = Math.round((input.exchangeRate + Number.EPSILON) * 10_000);
-  // totalCents × rate / 100, computed exactly: rate is carried to 4 decimals.
-  const khr = Number((BigInt(totalCents) * BigInt(rateScaled) + BigInt(500_000)) / BigInt(1_000_000));
+  const khr = totalKhrForCents(totalCents, input.exchangeRate);
   return {
     subtotalUsd: fromCents(subtotalCents),
     vatPercent,
@@ -466,8 +473,7 @@ export function invoiceTotals(input: InvoiceTotalsInput): InvoiceTotals {
     vatCents = Math.round((taxableCents * vatPercent) / 100);
     totalCents = taxableCents + vatCents;
   }
-  const rateScaled = Math.round((Math.max(input.exchangeRate, 0) + Number.EPSILON) * 10_000);
-  const khr = Number((BigInt(totalCents) * BigInt(rateScaled) + BigInt(500_000)) / BigInt(1_000_000));
+  const khr = totalKhrForCents(totalCents, Math.max(input.exchangeRate, 0));
   const depositCents = Math.min(Math.max(toCents(input.deposit ?? 0), 0), totalCents);
   return {
     subtotalUsd: fromCents(subtotalCents),

@@ -28,6 +28,7 @@ body {
 .v5-invoice .invoice-title strong, .v5-invoice .invoice-title span { display: block; }
 .v5-invoice .invoice-title strong { font-family: "Khmer OS Muol Light", "Khmer Sangam MN", "Moul", sans-serif; font-size: 16pt; font-weight: 400; }
 .v5-invoice .invoice-title span { margin-top: 1mm; font-family: Arial, sans-serif; font-size: 13pt; font-weight: 700; }
+.v5-invoice .invoice-title-kind strong { font-size: 13pt; }
 .v5-invoice .invoice-parties { display: grid; grid-template-columns: 66% 34%; min-height: 36mm; }
 .v5-invoice .customer-block, .v5-invoice .invoice-meta { position: relative; font-size: 8pt; line-height: 1.36; }
 .v5-invoice .customer-block p, .v5-invoice .invoice-meta p { margin: 0; }
@@ -49,6 +50,22 @@ body {
 .v5-invoice .accounting { display: flex; align-items: baseline; justify-content: space-between; gap: 1mm; }
 .v5-invoice .accounting i { font-style: normal; font-weight: 400; }
 .v5-invoice .accounting b { font-weight: 400; }
+.v5-invoice .invoice-contract-summary { margin: 0 0 1.5mm; padding: 1.5mm 2mm; border: .45pt solid #555; font-size: 7pt; line-height: 1.2; }
+.v5-invoice .invoice-contract-summary h2,
+.v5-invoice .invoice-contract-summary h3 { margin: 0 0 1mm; font-size: 7.2pt; font-weight: 700; }
+.v5-invoice .invoice-contract-summary h2 .khmer,
+.v5-invoice .invoice-contract-summary h3 .khmer { margin-left: 1mm; font-weight: 400; }
+.v5-invoice .invoice-contract-summary dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .4mm 3mm; margin: 0 0 1mm; }
+.v5-invoice .invoice-contract-summary dl > div { display: flex; justify-content: space-between; gap: 1mm; }
+.v5-invoice .invoice-contract-summary dt { color: #333; }
+.v5-invoice .invoice-contract-summary dd { min-width: 22mm; margin: 0; text-align: right; }
+.v5-invoice .invoice-contract-current { font-weight: 700; }
+.v5-invoice .invoice-contract-references table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.v5-invoice .invoice-contract-references th,
+.v5-invoice .invoice-contract-references td { padding: .55mm .8mm; border: .35pt solid #888; text-align: right; vertical-align: top; }
+.v5-invoice .invoice-contract-references th:first-child,
+.v5-invoice .invoice-contract-references td:first-child { width: 42%; text-align: left; }
+.v5-invoice .invoice-contract-references small { display: block; margin-top: .4mm; color: #333; font-size: 6.2pt; line-height: 1.15; }
 .v5-invoice .invoice-lines tfoot tr { height: 11.13mm; }
 .v5-invoice .invoice-lines tfoot th { position: relative; padding-right: 39mm; text-align: right; }
 .v5-invoice .invoice-lines tfoot th span, .v5-invoice .invoice-lines tfoot th small { display: block; font-size: 8pt; }

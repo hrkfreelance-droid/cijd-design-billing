@@ -69,6 +69,10 @@ export function invoiceInputFrom(body: Record<string, unknown>, actor: string): 
       discount && (discount.type === "FIXED" || discount.type === "PERCENT")
         ? { type: discount.type, value: number(discount.value) }
         : null,
+    invoiceKind: text(body.invoiceKind),
+    depositValue: body.depositValue === undefined || body.depositValue === null || body.depositValue === "" ? undefined : number(body.depositValue),
+    contractId: text(body.contractId) ?? null,
+    requestKey: text(body.requestKey) ?? null,
     vatApplicable: body.vatApplicable !== false,
     exchangeRate: rate
       ? { rate: number(rate.rate), source: rate.source === "MANUAL" ? "MANUAL" : "NBC", effectiveDate: text(rate.effectiveDate) ?? null }

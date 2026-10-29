@@ -469,10 +469,12 @@ export function Checkbox({
   checked,
   onChange,
   label,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
   label?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -480,8 +482,9 @@ export function Checkbox({
       role="checkbox"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`flex h-[21px] w-[21px] shrink-0 items-center justify-center rounded-[7px] border transition-colors duration-150 ${
+      className={`flex h-[21px] w-[21px] shrink-0 items-center justify-center rounded-[7px] border transition-colors duration-150 ${disabled ? "cursor-not-allowed opacity-50" : ""} ${
         checked
           ? "border-accent bg-accent text-on-accent"
           : "border-line-strong bg-panel text-transparent hover:border-accent"

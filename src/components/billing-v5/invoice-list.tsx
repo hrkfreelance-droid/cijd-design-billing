@@ -56,7 +56,7 @@ export function InvoiceList({
     if (year !== "ALL" && !row.invoice.invoiceDate.startsWith(year)) return false;
     if (status !== "ALL" && row.status !== status) return false;
     if (!needle) return true;
-    return [row.invoice.invoiceNumber, row.customer, row.invoice.customer.companyNameEn, row.invoice.project.name, row.invoice.invoiceDate, row.invoice.totalUsd.toFixed(2)]
+    return [row.invoice.invoiceNumber, row.invoice.invoiceKind ?? "FULL", row.customer, row.invoice.customer.companyNameEn, row.invoice.project.name, row.invoice.invoiceDate, row.invoice.totalUsd.toFixed(2)]
       .some((value) => value.toLowerCase().includes(needle));
   });
 
@@ -99,7 +99,7 @@ export function InvoiceList({
                         </span>
                         <span className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-[13px] leading-5">
                           <span className="min-w-0 truncate text-muted">
-                            {invoice.invoiceNumber} · {invoice.invoiceDate}
+                            {invoice.invoiceNumber} · {t(`list.kind.${invoice.invoiceKind ?? "FULL"}` as V5Key)} · {invoice.invoiceDate}
                           </span>
                           <span className={rowStatus === "PARTIALLY_PAID" ? "text-pending" : "text-muted"}>
                             {t(`status.${rowStatus}` as V5Key)}
@@ -164,7 +164,10 @@ export function InvoiceList({
                   className="group grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 py-3 md:grid-cols-[8.5rem_6rem_minmax(0,1fr)_6.5rem_6.5rem_6.5rem_7rem] md:items-baseline"
                   data-testid="v5-issued-row"
                 >
-                  <span className="tnum text-[14px] font-medium group-hover:underline group-hover:underline-offset-4">{invoice.invoiceNumber}</span>
+                  <span className="tnum text-[14px] font-medium group-hover:underline group-hover:underline-offset-4">
+                    {invoice.invoiceNumber}
+                    <span className="ml-1.5 text-[10px] font-semibold uppercase text-faint">{t(`list.kind.${invoice.invoiceKind ?? "FULL"}` as V5Key)}</span>
+                  </span>
                   <span className={`tnum text-right text-[14px] font-semibold md:hidden ${cancelled ? "text-faint line-through" : ""}`}>{moneyExact(invoice.totalUsd)}</span>
                   <span className="tnum hidden text-[13px] text-muted md:block">{invoice.invoiceDate}</span>
                   <span className="min-w-0 truncate text-[13px] text-muted">
