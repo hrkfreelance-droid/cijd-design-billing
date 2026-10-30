@@ -62,6 +62,7 @@ export function buildV5Seed(): Database {
     projectPayments: [],
     clientTaxProfiles: [],
     taxInvoices: [],
+    noInvoiceIssues: [],
     customers: [],
     products: [],
     billingAllocations: [],

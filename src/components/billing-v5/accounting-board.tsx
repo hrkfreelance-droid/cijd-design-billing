@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { Modal } from "@/components/billing-v2/modal";
+import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
 import { Price, ProjectDetail } from "@/components/billing-v2/project-detail";
 import { CheckIcon } from "@/components/icons";
 import { api, useI18n, useToast } from "@/components/providers";
@@ -57,6 +58,7 @@ export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
             <h2 className="text-[16px] font-semibold tracking-[-0.012em]">{t("accounting.openInvoices")}</h2>
           </div>
           <OpenInvoiceProjects snapshot={snapshot} />
+          <NoInvoiceRecords snapshot={snapshot} />
         </section>
       </div>
     </div>
@@ -214,6 +216,9 @@ interface ProjectGroup {
 function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: BillingState[] }) {
   const t = useV5T();
   const { toast } = useToast();
+  const { run, busy } = useAction();
+  const [confirmNoInvoice, setConfirmNoInvoice] = useState(false);
+  const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ customerId: string | null; projectIds: Set<string> }>({ customerId: null, projectIds: new Set() });
   const [openProject, setOpenProject] = useState<string | null>(null);
   const [creating, setCreating] = useState<{ customerId: string; billingItemIds: string[] } | null>(null);
@@ -251,6 +256,30 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
 
   const chosenLines = eligible.filter((state) => selected.projectIds.has(state.item.projectId));
   const chosenTotal = roundMoney(chosenLines.reduce((sum, state) => sum + state.remainingUsd, 0));
+  const deleting = deleteProjectId ? snapshot.projects.find((project) => project.id === deleteProjectId) : undefined;
+
+  const markNoInvoice = async () => {
+    if (!selected.customerId || !chosenLines.length) return;
+    const ok = await run(() => api("/api/v5/no-invoice", {
+      method: "POST",
+      body: { clientId: selected.customerId, billingItemIds: chosenLines.map((state) => state.item.id) },
+    }));
+    setConfirmNoInvoice(false);
+    if (ok) {
+      setSelected({ customerId: null, projectIds: new Set() });
+      toast(t("noInvoice.issued"));
+    }
+  };
+  const deleteProject = async () => {
+    if (!deleteProjectId) return;
+    const ok = await run(() => api("/api/v5/projects/" + deleteProjectId + "/safe-delete", { method: "DELETE" }));
+    setDeleteProjectId(null);
+    if (ok) {
+      setOpenProject(null);
+      setSelected({ customerId: null, projectIds: new Set() });
+      toast(t("project.deleted"));
+    }
+  };
   const open = openProject ? groups.flatMap((g) => g.projects.map((p) => ({ group: g, project: p }))).find((entry) => entry.project.projectId === openProject) : undefined;
 
   return (
@@ -274,6 +303,7 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
                   checked={selected.projectIds.has(entry.projectId)}
                   onToggle={() => toggle(group.client.id, entry.projectId)}
                   onOpen={() => setOpenProject(entry.projectId)}
+                  onDelete={() => setDeleteProjectId(entry.projectId)}
                 />
               ))}
             </ul>
@@ -284,7 +314,7 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
       {selected.projectIds.size > 0 && (
         <div className="animate-rise fixed inset-x-0 bottom-0 z-40" data-testid="v5-selection-bar">
           <div className="safe-bottom-bar header-surface border-t border-line backdrop-blur-xl">
-            <div className="mx-auto flex max-w-[960px] items-center gap-4 px-5 pt-3 sm:px-8">
+            <div className="mx-auto flex max-w-[960px] flex-wrap items-center gap-3 px-5 pt-3 sm:px-8">
               <button
                 type="button"
                 onClick={() => setSelected({ customerId: null, projectIds: new Set() })}
@@ -300,7 +330,14 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
                 <span className="tnum block text-[18px] font-semibold leading-tight tracking-[-0.02em]" data-testid="v5-selected-total">{moneyExact(chosenTotal)}</span>
               </span>
               <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setConfirmNoInvoice(true)}
+                data-testid="v5-mark-no-invoice"
+              >{t("noInvoice.issue")}</Button>
+              <Button
                 variant="primary"
+                disabled={busy}
                 onClick={() => setCreating({ customerId: selected.customerId!, billingItemIds: chosenLines.map((s) => s.item.id) })}
                 data-testid="v5-create-invoice"
               >
@@ -319,12 +356,39 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
           clientName={open.group.client.name}
           lines={open.project.lines}
           onClose={() => setOpenProject(null)}
+          onDelete={() => { setOpenProject(null); setDeleteProjectId(open.project.projectId); }}
+          onNoInvoice={() => {
+            setOpenProject(null);
+            setSelected({ customerId: open.group.client.id, projectIds: new Set([open.project.projectId]) });
+            setConfirmNoInvoice(true);
+          }}
           onCreate={() => {
             setOpenProject(null);
             setCreating({ customerId: open.group.client.id, billingItemIds: open.project.lines.map((s) => s.item.id) });
           }}
         />
       )}
+      <ConfirmDialog
+        open={confirmNoInvoice}
+        onClose={() => setConfirmNoInvoice(false)}
+        onConfirm={() => void markNoInvoice()}
+        busy={busy}
+        title={t("noInvoice.confirmTitle")}
+        message={t("noInvoice.confirmBody", { total: moneyExact(chosenTotal) })}
+        confirmLabel={t("noInvoice.issue")}
+        testId="v5-confirm-no-invoice"
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleteProjectId(null)}
+        onConfirm={() => void deleteProject()}
+        busy={busy}
+        tone="destructive"
+        title={t("project.deleteTitle")}
+        message={t("project.deleteBody", { name: deleting?.name ?? "" })}
+        confirmLabel={t("project.delete")}
+        testId="v5-confirm-project-delete"
+      />
       {creating && (
         <InvoiceEditor
           mode="create"
@@ -338,7 +402,7 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
   );
 }
 
-function ProjectRow({ snapshot, entry, checked, onToggle, onOpen }: { snapshot: Snapshot; entry: ProjectGroup; checked: boolean; onToggle: () => void; onOpen: () => void }) {
+function ProjectRow({ snapshot, entry, checked, onToggle, onOpen, onDelete }: { snapshot: Snapshot; entry: ProjectGroup; checked: boolean; onToggle: () => void; onOpen: () => void; onDelete: () => void }) {
   const t = useV5T();
   const { t: t3 } = useI18n();
   const project = snapshot.projects.find((p) => p.id === entry.projectId)!;
@@ -349,7 +413,8 @@ function ProjectRow({ snapshot, entry, checked, onToggle, onOpen }: { snapshot: 
           <CheckIcon className="h-3.5 w-3.5" />
         </span>
       </button>
-      <button type="button" onClick={onOpen} aria-label={t("accounting.open", { name: project.name })} className="group block min-w-0 py-3.5 text-left" data-testid="v5-open-project">
+      <div className="min-w-0 pb-2">
+      <button type="button" onClick={onOpen} aria-label={t("accounting.open", { name: project.name })} className="group block w-full min-w-0 py-3.5 text-left" data-testid="v5-open-project">
         <span className="flex items-baseline justify-between gap-4">
           <span className="min-w-0 text-[15px] font-medium leading-snug tracking-[-0.01em] group-hover:underline group-hover:underline-offset-4">{project.name}</span>
           <span className="tnum shrink-0 text-[15px] font-semibold" data-testid="v5-row-total">{moneyExact(entry.remaining)}</span>
@@ -378,6 +443,10 @@ function ProjectRow({ snapshot, entry, checked, onToggle, onOpen }: { snapshot: 
           })}
         </span>
       </button>
+      <div className="flex justify-end">
+        <button type="button" className="rounded-lg px-2 py-1 text-[12px] font-medium text-danger hover:bg-fill focus-visible:outline-2 focus-visible:outline-accent" onClick={onDelete} data-testid="v5-delete-project">{t("project.delete")}</button>
+      </div>
+      </div>
     </li>
   );
 }
@@ -390,6 +459,8 @@ function ProjectSheet({
   lines,
   onClose,
   onCreate,
+  onNoInvoice,
+  onDelete,
 }: {
   snapshot: Snapshot;
   projectId: string;
@@ -397,6 +468,8 @@ function ProjectSheet({
   lines: BillingState[];
   onClose: () => void;
   onCreate: () => void;
+  onNoInvoice: () => void;
+  onDelete: () => void;
 }) {
   const t = useV5T();
   const { t: t3 } = useI18n();
@@ -418,8 +491,9 @@ function ProjectSheet({
       closeLabel={t3("common.close")}
       testId="v5-accounting-modal"
       footer={
-        <div className="flex items-center gap-3">
-          <span className="min-w-0 flex-1 text-[12.5px] text-muted">{t("prepare.finalNote")}</span>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <button type="button" className="mr-auto rounded-lg px-2 py-2 text-[13px] text-danger hover:bg-fill" onClick={onDelete} data-testid="v5-sheet-delete-project">{t("project.delete")}</button>
+          <Button variant="secondary" onClick={onNoInvoice} data-testid="v5-sheet-no-invoice">{t("noInvoice.issue")}</Button>
           <Button variant="primary" onClick={onCreate} data-testid="v5-prepare">{t("select.create")}</Button>
         </div>
       }
@@ -557,6 +631,60 @@ function DepositsPanel({ projectId, snapshot, run, total }: { projectId: string;
           {t("payments.add")}
         </Button>
       </div>
+    </section>
+  );
+}
+
+/** No invoice is an internal status only: no tax number, document or receipt. */
+function NoInvoiceRecords({ snapshot }: { snapshot: Snapshot }) {
+  const t = useV5T();
+  const { toast } = useToast();
+  const { run, busy } = useAction();
+  const [reversing, setReversing] = useState<string | null>(null);
+  const records = (snapshot.noInvoiceIssues ?? []).filter((record) => record.status === "ISSUED")
+    .sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+  if (!records.length) return null;
+  const reverse = async () => {
+    if (!reversing) return;
+    const ok = await run(() => api("/api/v5/no-invoice/" + reversing + "/cancel", { method: "POST" }));
+    setReversing(null);
+    if (ok) toast(t("noInvoice.reversed"));
+  };
+  return (
+    <section className="mt-9" data-testid="v5-no-invoice-records">
+      <h3 className="border-b border-line-strong pb-2 text-[15px] font-semibold">{t("noInvoice.section")}</h3>
+      <ul>
+        {records.map((record) => {
+          const client = snapshot.clients.find((entry) => entry.id === record.clientId);
+          const projectNames = record.projectIds.map((id) => snapshot.projects.find((p) => p.id === id)?.name).filter(Boolean).join(" / ");
+          return (
+            <li key={record.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-line py-3" data-testid="v5-no-invoice-row">
+              <div className="min-w-0">
+                <div className="truncate text-[14px] font-medium">{projectNames || client?.name || "No invoice"}</div>
+                <div className="mt-1 text-[12px] text-muted">
+                  {client?.name ?? ""} · {phnomPenhDate(new Date(record.issuedAt))} · {t("noInvoice.status")}
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <strong className="tnum text-[14px]">{moneyExact(record.amountUsd)}</strong>
+                <button type="button" disabled={busy} onClick={() => setReversing(record.id)}
+                  className="rounded-lg border border-line-strong px-3 py-1.5 text-[12px] font-medium hover:bg-fill disabled:opacity-40"
+                  data-testid="v5-reverse-no-invoice">{t("noInvoice.undo")}</button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <ConfirmDialog
+        open={!!reversing}
+        onClose={() => setReversing(null)}
+        onConfirm={() => void reverse()}
+        busy={busy}
+        title={t("noInvoice.undoTitle")}
+        message={t("noInvoice.undoBody")}
+        confirmLabel={t("noInvoice.undo")}
+        testId="v5-confirm-reverse-no-invoice"
+      />
     </section>
   );
 }

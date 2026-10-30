@@ -180,7 +180,7 @@ export function ProjectModal({
   };
 
   const removeProject = async () => {
-    const ok = await run(() => api(`/api/billing-v2/projects/${project.id}`, { method: "DELETE" }), {
+    const ok = await run(() => api(accountingFlow ? `/api/v5/projects/${project.id}/safe-delete` : `/api/billing-v2/projects/${project.id}`, { method: "DELETE" }), {
       key: "v2.deleteProject.done",
     });
     setConfirm(null);
@@ -205,6 +205,7 @@ export function ProjectModal({
   const viewFooter = (
     <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:gap-4" data-testid="v2-readiness-action">
       <div className="min-w-0 text-[12.5px] text-muted sm:flex-1">
+        {accountingFlow && <button type="button" onClick={() => setConfirm("delete")} disabled={working} className="mr-4 rounded-lg px-2 py-1 text-[13px] font-medium text-danger hover:bg-fill disabled:opacity-40" data-testid="v5-design-delete-project">{v5t("project.delete")}</button>}
         {ready ? (
           <button
             type="button"
@@ -416,9 +417,9 @@ export function ProjectModal({
         onConfirm={() => void removeProject()}
         busy={busy}
         tone="destructive"
-        title={t("v2.deleteProject")}
-        message={t("v2.deleteProject.confirm", { name: project.name })}
-        confirmLabel={t("v2.deleteProject")}
+        title={accountingFlow ? v5t("project.deleteTitle") : t("v2.deleteProject")}
+        message={accountingFlow ? v5t("project.deleteBody", { name: project.name }) : t("v2.deleteProject.confirm", { name: project.name })}
+        confirmLabel={accountingFlow ? v5t("project.delete") : t("v2.deleteProject")}
         testId="v2-confirm-delete"
       />
     </Modal>

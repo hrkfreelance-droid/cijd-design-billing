@@ -53,6 +53,7 @@ import {
   type ProductInput,
 } from "@/lib/billing-v5/invoicing";
 import { officialRateForDate } from "@/lib/billing-v5/ontology";
+import { issueNoInvoice, cancelNoInvoice, deleteUninvoicedV5Project } from "@/lib/billing-v5/no-invoice";
 import {
   ensureCurrentExchangeRate,
   ExchangeRateUnavailableError,
@@ -253,6 +254,7 @@ export class Store implements Repository {
             projectPayments: db.projectPayments ?? [],
             clientTaxProfiles: db.clientTaxProfiles ?? [],
             taxInvoices: db.taxInvoices,
+            noInvoiceIssues: db.noInvoiceIssues ?? [],
             customers: db.customers ?? [],
             products: db.products ?? [],
             billingAllocations: db.billingAllocations ?? [],
@@ -1364,6 +1366,21 @@ export class Store implements Repository {
       log(db, actor, "project.payment.void", "project", payment.projectId, `${payment.kind} ${payment.amount}`);
       return payment;
     });
+  }
+
+  /** Soft-delete a never-invoiced V5 project; preserves all historical billing data. */
+  deleteUninvoicedV5Project(id: string, actor: string) {
+    return this.transaction((db) => deleteUninvoicedV5Project(db, id, actor));
+  }
+
+  /** Internal close without any Tax Invoice, VAT or invoice number. */
+  issueNoInvoice(input: { clientId: string; billingItemIds: string[]; actor: string }) {
+    return this.transaction((db) => issueNoInvoice(db, input));
+  }
+
+  /** Restore the linked billing lines while retaining the audit record. */
+  cancelNoInvoice(id: string, actor: string) {
+    return this.transaction((db) => cancelNoInvoice(db, id, actor));
   }
 
   /* ------------------------------------------------- invoice management */

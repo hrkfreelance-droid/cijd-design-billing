@@ -95,7 +95,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await page.goto("/office-v5");
   await prefs(page, "en", "light");
   await page.reload();
-  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Billing", "Accounting", "Archive"]);
+  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Design", "Accounting", "Customers", "Archive"]);
 
   /* ------------------------------------------- imported V3 data (read only) */
   const fingerprint = async () => {

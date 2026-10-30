@@ -50,6 +50,7 @@ const COLLECTIONS = [
   "projectPayments",
   "clientTaxProfiles",
   "taxInvoices",
+  "noInvoiceIssues",
   "customers",
   "products",
   "billingAllocations",

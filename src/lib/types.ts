@@ -244,6 +244,18 @@ export interface AuditLog {
   detail?: string;
 }
 
+export interface NoInvoiceIssue {
+  id: string;
+  clientId: string;
+  projectIds: string[];
+  amountUsd: number;
+  issuedAt: string;
+  issuedBy: string;
+  status: "ISSUED" | "CANCELLED";
+  cancelledAt?: string;
+  cancelledBy?: string;
+}
+
 export interface Database {
   clients: Client[];
   projects: Project[];
@@ -262,6 +274,7 @@ export interface Database {
   projectPayments?: ProjectPayment[];
   clientTaxProfiles?: ClientTaxProfile[];
   taxInvoices?: TaxInvoiceRecord[];
+  noInvoiceIssues?: NoInvoiceIssue[];
   /** V5 invoice management. */
   customers?: Customer[];
   products?: Product[];
@@ -543,6 +556,7 @@ export interface Snapshot {
   projectPayments?: ProjectPayment[];
   clientTaxProfiles?: ClientTaxProfile[];
   taxInvoices?: TaxInvoiceRecord[];
+  noInvoiceIssues?: NoInvoiceIssue[];
   customers?: Customer[];
   products?: Product[];
   billingAllocations?: BillingAllocation[];
