@@ -107,7 +107,7 @@ function contractDepositReferences(snapshot: Snapshot, contractId: string, exclu
 }
 
 export type EditorProps =
-  | { mode: "create"; snapshot: Snapshot; customerId: string | null; billingItemIds: string[]; onClose: () => void }
+  | { mode: "create"; snapshot: Snapshot; customerId: string | null; billingItemIds: string[]; initialKind?: TaxInvoiceKind; initialContractId?: string; onClose: () => void }
   | { mode: "edit"; snapshot: Snapshot; invoice: TaxInvoiceRecord; onClose: () => void };
 
 export function InvoiceEditor(props: EditorProps) {
@@ -118,8 +118,8 @@ export function InvoiceEditor(props: EditorProps) {
   const { runResult, busy } = useAction();
   const { snapshot } = props;
   const editing = props.mode === "edit" ? props.invoice : null;
-  const [invoiceKind, setInvoiceKind] = useState<TaxInvoiceKind>(editing?.invoiceKind ?? "FULL");
-  const [contractId, setContractId] = useState(editing?.contractId ?? "");
+  const [invoiceKind, setInvoiceKind] = useState<TaxInvoiceKind>(editing?.invoiceKind ?? (props.mode === "create" ? props.initialKind : undefined) ?? "FULL");
+  const [contractId, setContractId] = useState(editing?.contractId ?? (props.mode === "create" ? props.initialContractId ?? "" : ""));
   const [depositValue, setDepositValue] = useState(editing?.depositValue == null ? "" : String(editing.depositValue));
   const requestKey = useRef<string | null>(null);
   const requestSignature = useRef<string | null>(null);
@@ -153,6 +153,13 @@ export function InvoiceEditor(props: EditorProps) {
         key: nextKey(), billingItemId: line.billingItemId, productId: line.productId ?? null, description: line.description,
         quantity: String(line.quantity), unit: line.unit ?? "", unitPrice: String(line.unitPrice), amount: String(line.amount),
       }));
+    }
+    if (props.mode === "create" && props.initialContractId) {
+      const contract = (snapshot.taxInvoices ?? []).find((invoice) =>
+        invoice.status === "ISSUED" && invoice.contractId === props.initialContractId &&
+        invoice.clientId === props.customerId && invoice.contractSnapshot,
+      )?.contractSnapshot;
+      if (contract) return contractRows(snapshot, contract);
     }
     const ids = props.mode === "create" ? props.billingItemIds : [];
     // Started from the customer: one empty line to type or pick a product into.

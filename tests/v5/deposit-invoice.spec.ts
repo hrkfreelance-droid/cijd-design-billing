@@ -16,12 +16,12 @@ async function readyProject(page: Page, clientId: string) {
   }
 }
 
-async function selectProject(page: Page) {
+async function selectProject(page: Page, type: "full" | "deposit" = "full") {
   await page.goto("/office-v5/accounting?view=to-invoice");
   const projectRow = page.getByTestId("v5-accounting-row").filter({ hasText: PROJECT });
   await expect(projectRow).toBeVisible();
   await projectRow.getByTestId("v5-select-project").click();
-  await page.getByTestId("v5-create-invoice").click();
+  await page.getByTestId(type === "deposit" ? "v5-create-deposit-invoice" : "v5-create-invoice").click();
   return page.getByTestId("v5-invoice-editor");
 }
 
@@ -39,8 +39,8 @@ test("fixed deposit tax invoice and final remainder reconcile in the V5 UI", asy
   const client = (await created.json()).data as { id: string };
   await readyProject(page, client.id);
 
-  let editor = await selectProject(page);
-  await editor.getByTestId("v5-invoice-kind").selectOption("DEPOSIT_FIXED");
+  let editor = await selectProject(page, "deposit");
+  await expect(editor.getByTestId("v5-invoice-kind")).toHaveValue("DEPOSIT_FIXED");
   await expect(editor.getByTestId("v5-deposit-value")).toBeVisible();
   await editor.getByTestId("v5-deposit-value").fill("100");
   const rate = editor.getByTestId("v5-rate-input");
@@ -74,9 +74,10 @@ test("fixed deposit tax invoice and final remainder reconcile in the V5 UI", asy
   await page.reload();
   await expect(page.getByTestId("v5-outstanding")).toContainText("$10.00");
 
-  editor = await selectProject(page);
-  await editor.getByTestId("v5-invoice-kind").selectOption("FINAL");
-  await editor.getByTestId("v5-contract-select").selectOption(deposit.contractId!);
+  await page.getByTestId("v5-issue-final").click();
+  editor = page.getByTestId("v5-invoice-editor");
+  await expect(editor.getByTestId("v5-invoice-kind")).toHaveValue("FINAL");
+  await expect(editor.getByTestId("v5-contract-select")).toHaveValue(deposit.contractId!);
   await expect(editor.getByTestId("v5-total-usd")).toHaveText("$110.00");
   await page.getByRole("button", { name: "Preview" }).click();
   await expect(editor.getByText("FINAL TAX INVOICE")).toBeVisible();
@@ -86,6 +87,8 @@ test("fixed deposit tax invoice and final remainder reconcile in the V5 UI", asy
   await page.getByRole("button", { name: "Issue Tax Invoice" }).click();
   await page.getByTestId("v5-confirm-issue-confirm").click();
 
+  // We issued from the first invoice page, so its existing URL already matches the route pattern.
+  await expect.poll(() => page.url().split("/").at(-1)).not.toBe(depositId);
   await expect(page).toHaveURL(/\/office-v5\/tax-invoices\/[\w-]+$/);
   const finalId = page.url().split("/").at(-1)!;
   const finalState = (await (await page.request.get("/api/state")).json()).data as {
@@ -94,6 +97,7 @@ test("fixed deposit tax invoice and final remainder reconcile in the V5 UI", asy
   };
   const final = finalState.taxInvoices.find((invoice) => invoice.id === finalId)!;
   expect(final).toMatchObject({ invoiceKind: "FINAL", subtotalUsd: 100, vatUsd: 10, totalUsd: 110 });
+  expect(final.invoiceNumber).not.toBe(deposit.invoiceNumber);
   expect(final.depositReferences?.map((reference) => reference.invoiceNumber)).toEqual([deposit.invoiceNumber]);
   expect(finalState.invoicePayments.filter((entry) => !entry.voidedAt && entry.kind === "PAYMENT" && entry.invoiceId === finalId)).toHaveLength(0);
   expect(finalState.invoicePayments.some((entry) => !entry.voidedAt && entry.invoiceId === depositId && entry.amount === 100)).toBe(true);

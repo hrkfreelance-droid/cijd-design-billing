@@ -17,7 +17,7 @@ import { useV5T, type V5Key } from "@/lib/billing-v5/i18n";
 import { billingState, eligibleBilling, invoiceCollection, type BillingState } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
-import type { Snapshot } from "@/lib/types";
+import type { Snapshot, TaxInvoiceKind } from "@/lib/types";
 import { InvoiceEditor } from "./invoice-editor";
 
 /**
@@ -221,7 +221,7 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [selected, setSelected] = useState<{ customerId: string | null; projectIds: Set<string> }>({ customerId: null, projectIds: new Set() });
   const [openProject, setOpenProject] = useState<string | null>(null);
-  const [creating, setCreating] = useState<{ customerId: string; billingItemIds: string[] } | null>(null);
+  const [creating, setCreating] = useState<{ customerId: string; billingItemIds: string[]; initialKind?: TaxInvoiceKind } | null>(null);
 
   const groups = useMemo(() => {
     const byClient = new Map<string, Map<string, ProjectGroup>>();
@@ -336,6 +336,12 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
                 data-testid="v5-mark-no-invoice"
               >{t("noInvoice.issue")}</Button>
               <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setCreating({ customerId: selected.customerId!, billingItemIds: chosenLines.map((s) => s.item.id), initialKind: "DEPOSIT_FIXED" })}
+                data-testid="v5-create-deposit-invoice"
+              >{t("select.deposit")}</Button>
+              <Button
                 variant="primary"
                 disabled={busy}
                 onClick={() => setCreating({ customerId: selected.customerId!, billingItemIds: chosenLines.map((s) => s.item.id) })}
@@ -395,6 +401,7 @@ function ToInvoice({ snapshot, eligible }: { snapshot: Snapshot; eligible: Billi
           snapshot={snapshot}
           customerId={creating.customerId}
           billingItemIds={creating.billingItemIds}
+          initialKind={creating.initialKind}
           onClose={() => setCreating(null)}
         />
       )}

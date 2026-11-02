@@ -87,6 +87,25 @@ test("fixed pre-VAT deposit $100 of $200 invoices half the contract and final cl
   );
 });
 
+test("FINAL gets its own next invoice number and the NBC rate of its later invoice date", async () => {
+  const t = await env();
+  const { line } = await t.billing("TEST later-date remainder", 200);
+  const deposit = await t.issue([{ billingItemId: line.id }], {
+    invoiceKind: "DEPOSIT_PERCENT", depositValue: 50,
+  });
+  await t.edit((db) => db.exchangeRates.push({
+    id: "test-rate-next-day", currencyPair: "USD/KHR", rate: 4200,
+    source: "NBC", effectiveDate: "2026-09-30", fetchedAt: "2026-09-30T10:00:00Z",
+  }));
+  const final = await t.issue([{ billingItemId: line.id }], {
+    invoiceKind: "FINAL", contractId: deposit.contractId, invoiceDate: "2026-09-30",
+  });
+  assert.notEqual(final.invoiceNumber, deposit.invoiceNumber);
+  assert.deepEqual([deposit.invoiceDate, deposit.exchangeRate], ["2026-09-29", 4100]);
+  assert.deepEqual([final.invoiceDate, final.exchangeRate], ["2026-09-30", 4200]);
+  assert.equal(final.totalKhr, Math.round(final.totalUsd * 4200));
+});
+
 test("50 percent deposit and cent rounding distribute line amounts exactly and leave VAT remainder to FINAL", async () => {
   const t = await env();
   const first = await t.billing("TEST odd five cents", 0.05);

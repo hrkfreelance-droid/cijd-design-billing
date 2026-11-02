@@ -32,6 +32,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState("");
   const [editing, setEditing] = useState(false);
+  const [creatingFinal, setCreatingFinal] = useState(false);
 
   if (!snapshot) return <p className="px-5 pt-24 text-center text-[14px] text-muted">…</p>;
   const invoice = (snapshot.taxInvoices ?? []).find((entry) => entry.id === id);
@@ -44,6 +45,15 @@ export function TaxInvoicePage({ id }: { id: string }) {
     ? (snapshot.taxInvoices ?? []).filter((entry) => entry.contractId === invoice.contractId && entry.status === "ISSUED")
     : [];
   const depositLocked = (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") && activeContractInvoices.some((entry) => entry.invoiceKind === "FINAL");
+  const activeContractIds = new Set(activeContractInvoices.map((entry) => entry.id));
+  const hasContractRemainder = invoice?.contractSnapshot?.lines.some((line) => {
+    const allocated = (snapshot.billingAllocations ?? [])
+      .filter((entry) => entry.billingItemId === line.billingItemId && !entry.voidedAt && activeContractIds.has(entry.invoiceId))
+      .reduce((sum, entry) => sum + toCents(entry.amount), 0);
+    return toCents(line.amount) > allocated;
+  }) ?? false;
+  const canIssueFinal = invoice?.status === "ISSUED" && Boolean(invoice.contractId) &&
+    (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") && !depositLocked && hasContractRemainder;
   const laterDeposit = (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") && activeContractInvoices.some(
     (entry) => (entry.invoiceKind === "DEPOSIT_FIXED" || entry.invoiceKind === "DEPOSIT_PERCENT") && entry.id !== invoice?.id && (
       entry.issuedAt.localeCompare(invoice?.issuedAt ?? "") > 0 ||
@@ -75,7 +85,12 @@ export function TaxInvoicePage({ id }: { id: string }) {
             </span>
           )}
           {invoice && (
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {canIssueFinal && (
+                <Button variant="secondary" size="sm" onClick={() => setCreatingFinal(true)} data-testid="v5-issue-final">
+                  {t("invoice.issueFinal")}
+                </Button>
+              )}
               {invoice.status === "ISSUED" && !depositLocked && !laterDeposit && (
                 <>
                   <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>
@@ -119,6 +134,14 @@ export function TaxInvoicePage({ id }: { id: string }) {
       )}
 
       {editing && invoice && <InvoiceEditor mode="edit" snapshot={snapshot} invoice={invoice} onClose={() => setEditing(false)} />}
+      {creatingFinal && invoice?.contractId && invoice.contractSnapshot && (
+        <InvoiceEditor
+          mode="create" snapshot={snapshot} customerId={invoice.clientId}
+          billingItemIds={invoice.contractSnapshot.lines.map((line) => line.billingItemId)}
+          initialKind="FINAL" initialContractId={invoice.contractId}
+          onClose={() => setCreatingFinal(false)}
+        />
+      )}
       <ConfirmDialog
         open={cancelling}
         onClose={() => setCancelling(false)}
