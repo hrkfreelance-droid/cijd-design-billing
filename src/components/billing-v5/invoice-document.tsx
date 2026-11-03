@@ -2,6 +2,7 @@ import Image from "next/image";
 
 import type { TaxInvoiceRecord } from "@/lib/types";
 import { balanceDueUsd } from "@/lib/billing-v5/calculation";
+import { invoiceDisplayTitle } from "@/lib/billing-v5/invoice-display-title";
 
 /**
  * The CIJD Tax Invoice (template: V4's InvoiceDocument, workbook sheet
@@ -52,6 +53,7 @@ const PROJECT_LINE_ROWS = 0.5;
 export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
   const invoiceKind = invoice.invoiceKind ?? "FULL";
   const depositKind = invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT";
+  const title = invoiceDisplayTitle(invoice);
   // Ten ruled rows as on the workbook. Each extra totals row (discount,
   // deposit, balance due) takes the place of one empty ruled row, so the page
   // keeps its height; an invoice with more lines than fit flows onto a further
@@ -91,23 +93,9 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
           </div>
         </header>
 
-        <div className={`invoice-title khmer${invoiceKind === "FULL" ? "" : " invoice-title-kind"}`}>
-          {depositKind ? (
-            <>
-              <strong>វិក្កយបត្រអាករ សម្រាប់ប្រាក់បង់ជាមុន</strong>
-              <span>DEPOSIT TAX INVOICE</span>
-            </>
-          ) : invoiceKind === "FINAL" ? (
-            <>
-              <strong>វិក្កយបត្រអាករចុងក្រោយ</strong>
-              <span>FINAL TAX INVOICE</span>
-            </>
-          ) : (
-            <>
-              <strong>វិក្កយបត្រអាករ</strong>
-              <span>TAX INVOICE</span>
-            </>
-          )}
+        <div className={`invoice-title khmer${title.standard ? "" : " invoice-title-kind"}`}>
+          <strong>{title.km}</strong>
+          <span>{title.en}</span>
         </div>
 
         <section className="invoice-parties">
@@ -150,7 +138,7 @@ export function InvoiceDocument({ invoice }: { invoice: InvoiceView }) {
             </dl>
             {!!invoice.depositReferences?.length && (
               <div className="invoice-contract-references">
-                <h3>Earlier deposit tax invoices — reference only <span className="khmer">យោងវិក្កយបត្រប្រាក់បង់ជាមុនមុននេះ</span></h3>
+                <h3>{title.standard ? "Earlier Tax Invoices (advance payments) — reference only" : "Earlier deposit tax invoices — reference only"} <span className="khmer">យោងវិក្កយបត្រប្រាក់បង់ជាមុនមុននេះ</span></h3>
                 <table>
                   <thead><tr><th>Invoice No.</th><th>Allocated before VAT</th><th>VAT</th><th>Invoice total</th></tr></thead>
                   <tbody>

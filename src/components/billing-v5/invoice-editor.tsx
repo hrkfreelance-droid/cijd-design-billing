@@ -585,6 +585,7 @@ export function InvoiceEditor(props: EditorProps) {
     exchangeRate: rateNumber || 0, exchangeRateSource: rate.source, exchangeRateEffectiveDate: rate.effectiveDate, totalKhr: totals.totalKhr,
     depositUsd: totals.depositUsd,
     invoiceKind,
+    printedTitle: editing?.printedTitle,
     ...(contractId ? { contractId } : {}),
     ...(contractSnapshotForView ? { contractSnapshot: contractSnapshotForView } : {}),
     ...(isDepositKind(invoiceKind) && Number.isFinite(num(depositValue)) ? { depositValue: num(depositValue) } : {}),

@@ -514,6 +514,8 @@ export interface TaxInvoiceRecord {
   depositUsd?: number;
   issuedAt: string;
   issuedBy: string;
+  /** Frozen at issue: new invoices use the standard bilingual TAX INVOICE title. Historical invoices omit this. */
+  printedTitle?: "TAX_INVOICE";
   /** 1 at issue; each edit adds one. Absent on older invoices (= 1). */
   revision?: number;
   updatedAt?: string;

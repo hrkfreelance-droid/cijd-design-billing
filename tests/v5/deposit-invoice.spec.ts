@@ -53,7 +53,7 @@ test("fixed deposit tax invoice and final remainder reconcile in the V5 UI", asy
   }
   await expect(editor.getByTestId("v5-total-usd")).toHaveText("$110.00");
   await page.getByRole("button", { name: "Preview" }).click();
-  await expect(editor.getByText("DEPOSIT TAX INVOICE")).toBeVisible();
+  await expect(editor.getByText("TAX INVOICE", { exact: true })).toBeVisible();
   await expect(editor.getByText("Advance portion: Contract design")).toBeVisible();
   await expect(editor.getByTestId("tax-invoice-total-usd")).toContainText("110.00");
   await page.getByRole("button", { name: "Issue Tax Invoice" }).click();
@@ -66,7 +66,8 @@ test("fixed deposit tax invoice and final remainder reconcile in the V5 UI", asy
     billingItems: { id: string; projectId: string }[];
   };
   const deposit = depositState.taxInvoices.find((invoice) => invoice.id === depositId)!;
-  expect(deposit).toMatchObject({ invoiceKind: "DEPOSIT_FIXED", subtotalUsd: 100, vatUsd: 10, totalUsd: 110 });
+  expect(deposit).toMatchObject({ invoiceKind: "DEPOSIT_FIXED", printedTitle: "TAX_INVOICE", subtotalUsd: 100, vatUsd: 10, totalUsd: 110 });
+  await expect(page.locator(".invoice-title span")).toHaveText("TAX INVOICE");
   expect(deposit.contractId).toBeTruthy();
   await expect(page.getByTestId("v5-invoice-kind")).toContainText("DEPOSIT");
   const payment = await page.request.post(`/api/v5/tax-invoices/${depositId}/payments`, { data: { amount: 100, paidOn: "2026-10-29", note: "TEST deposit payment" } });
@@ -80,7 +81,7 @@ test("fixed deposit tax invoice and final remainder reconcile in the V5 UI", asy
   await expect(editor.getByTestId("v5-contract-select")).toHaveValue(deposit.contractId!);
   await expect(editor.getByTestId("v5-total-usd")).toHaveText("$110.00");
   await page.getByRole("button", { name: "Preview" }).click();
-  await expect(editor.getByText("FINAL TAX INVOICE")).toBeVisible();
+  await expect(editor.getByText("TAX INVOICE", { exact: true })).toBeVisible();
   await expect(editor.getByTestId("tax-invoice-deposit-reference")).toContainText(deposit.invoiceNumber);
   await expect(editor.getByTestId("tax-invoice-subtotal")).toContainText("100.00");
   await expect(editor.getByTestId("tax-invoice-vat")).toContainText("10.00");
@@ -96,7 +97,8 @@ test("fixed deposit tax invoice and final remainder reconcile in the V5 UI", asy
     invoicePayments: { invoiceId: string; kind: string; amount: number; voidedAt?: string | null }[];
   };
   const final = finalState.taxInvoices.find((invoice) => invoice.id === finalId)!;
-  expect(final).toMatchObject({ invoiceKind: "FINAL", subtotalUsd: 100, vatUsd: 10, totalUsd: 110 });
+  expect(final).toMatchObject({ invoiceKind: "FINAL", printedTitle: "TAX_INVOICE", subtotalUsd: 100, vatUsd: 10, totalUsd: 110 });
+  await expect(page.locator(".invoice-title span")).toHaveText("TAX INVOICE");
   expect(final.invoiceNumber).not.toBe(deposit.invoiceNumber);
   expect(final.depositReferences?.map((reference) => reference.invoiceNumber)).toEqual([deposit.invoiceNumber]);
   expect(finalState.invoicePayments.filter((entry) => !entry.voidedAt && entry.kind === "PAYMENT" && entry.invoiceId === finalId)).toHaveLength(0);

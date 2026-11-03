@@ -977,6 +977,7 @@ export function issueInvoice(db: Database, input: InvoiceInput): TaxInvoiceRecor
     ...(requestKey ? { requestKey, requestFingerprint: fingerprint } : {}),
     issuedAt: at,
     issuedBy: input.actor,
+    printedTitle: "TAX_INVOICE",
     revision: 1,
     updatedAt: at,
     updatedBy: input.actor,
