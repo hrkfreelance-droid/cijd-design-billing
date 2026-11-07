@@ -8,7 +8,7 @@ import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
 import { Price, ProjectDetail } from "@/components/billing-v2/project-detail";
 import { CheckIcon } from "@/components/icons";
 import { api, useI18n, useToast } from "@/components/providers";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 import { useAction } from "@/components/use-action";
 import { toBoardProject } from "@/lib/billing-v2/board";
 import { serviceForItem, serviceLabel } from "@/lib/billing-v2/services";
@@ -17,6 +17,7 @@ import { useV5T, type V5Key } from "@/lib/billing-v5/i18n";
 import { billingState, eligibleBilling, invoiceCollection, type BillingState } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
 import { moneyExact } from "@/lib/format";
+import { compareInvoiceNumbersDesc } from "@/lib/billing-v5/invoice-number-sort";
 import type { Snapshot, TaxInvoiceKind } from "@/lib/types";
 import { InvoiceEditor } from "./invoice-editor";
 
@@ -80,12 +81,14 @@ function Figure({ label, children, strong = false, testId }: { label: string; ch
 
 function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
   const t = useV5T();
+  const [sortMode, setSortMode] = useState<"number" | "customer">("number");
 
   const groups = useMemo(() => {
     const byClient = new Map<string, {
       clientName: string;
       rows: {
         invoice: NonNullable<Snapshot["taxInvoices"]>[number];
+        clientName: string;
         projectName: string;
         paid: number;
         outstanding: number;
@@ -112,6 +115,7 @@ function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
       const group = byClient.get(invoice.clientId) ?? { clientName, rows: [] };
       group.rows.push({
         invoice,
+        clientName,
         projectName,
         paid: money.paidUsd,
         outstanding: money.outstandingUsd,
@@ -124,8 +128,8 @@ function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
       .map((group) => ({
         ...group,
         rows: group.rows.sort((a, b) =>
-          b.invoice.invoiceDate.localeCompare(a.invoice.invoiceDate) ||
-          b.invoice.invoiceNumber.localeCompare(a.invoice.invoiceNumber),
+          compareInvoiceNumbersDesc(a.invoice.invoiceNumber, b.invoice.invoiceNumber) ||
+          b.invoice.invoiceDate.localeCompare(a.invoice.invoiceDate),
         ),
       }))
       .sort((a, b) => a.clientName.localeCompare(b.clientName));
@@ -135,19 +139,41 @@ function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
     return <p className="border-t border-line py-6 text-[13.5px] text-muted">{t("accounting.issuedEmpty")}</p>;
   }
 
+  const visibleGroups = sortMode === "customer"
+    ? groups
+    : [{
+      clientName: "",
+      rows: groups.flatMap((group) => group.rows).sort((a, b) =>
+        compareInvoiceNumbersDesc(a.invoice.invoiceNumber, b.invoice.invoiceNumber) ||
+        b.invoice.invoiceDate.localeCompare(a.invoice.invoiceDate) ||
+        a.clientName.localeCompare(b.clientName),
+      ),
+    }];
+
   return (
     <div data-testid="v5-open-invoice-projects">
-      {groups.map((group) => (
-        <div key={group.clientName} className="pt-3" data-testid="v5-issued-client-group">
-          <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center border-b border-line-strong">
-            <span aria-hidden />
-            <h3 className="min-w-0 truncate py-2.5 text-[16px] font-semibold tracking-[-0.012em]">{group.clientName}</h3>
-            <span className="tnum shrink-0 pl-4 text-[15px] font-semibold">
-              {moneyExact(group.rows.reduce((sum, row) => sum + row.outstanding, 0))}
-            </span>
-          </div>
-          <ul>
-            {group.rows.map(({ invoice, projectName, paid, outstanding, status }) => (
+      <div className="flex flex-wrap items-center justify-end gap-2.5 py-3">
+        <label htmlFor="v5-issued-sort" className="text-[12px] text-muted">{t("accounting.sortLabel")}</label>
+        <Select id="v5-issued-sort" data-testid="v5-issued-sort" variant="filter"
+          className="max-w-[15rem]" value={sortMode}
+          onChange={(event) => setSortMode(event.target.value as "number" | "customer")}>
+          <option value="number">{t("accounting.sort.number")}</option>
+          <option value="customer">{t("accounting.sort.customer")}</option>
+        </Select>
+      </div>
+      {visibleGroups.map((group) => (
+        <div key={group.clientName || "all-invoices"} className="pt-3" data-testid="v5-issued-client-group">
+          {sortMode === "customer" && (
+            <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center border-b border-line-strong">
+              <span aria-hidden />
+              <h3 className="min-w-0 truncate py-2.5 text-[16px] font-semibold tracking-[-0.012em]">{group.clientName}</h3>
+              <span className="tnum shrink-0 pl-4 text-[15px] font-semibold">
+                {moneyExact(group.rows.reduce((sum, row) => sum + row.outstanding, 0))}
+              </span>
+            </div>
+          )}
+          <ul className={sortMode === "number" ? "border-t border-line-strong" : ""}>
+            {group.rows.map(({ invoice, clientName, projectName, paid, outstanding, status }) => (
               <li
                 key={invoice.id}
                 className="grid grid-cols-[2.75rem_minmax(0,1fr)] border-b border-line"
@@ -169,6 +195,7 @@ function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
                   </span>
                   <span className="mt-0.5 block text-[12.5px] text-muted">
                     <span className="tnum">{invoice.invoiceNumber}</span>
+                    {sortMode === "number" && <>{" · "}{clientName}</>}
                     {" · "}
                     <span className="tnum">{invoice.invoiceDate}</span>
                     {" · "}
