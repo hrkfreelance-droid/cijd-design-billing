@@ -55,6 +55,12 @@ import {
 import { officialRateForDate } from "@/lib/billing-v5/ontology";
 import { issueNoInvoice, cancelNoInvoice, deleteUninvoicedV5Project } from "@/lib/billing-v5/no-invoice";
 import {
+  planTelegramTopic,
+  TELEGRAM_INTAKE_ACTOR,
+  type TelegramTopicInput,
+  type TelegramTopicResult,
+} from "@/lib/billing-v5/telegram-topic-intake";
+import {
   ensureCurrentExchangeRate,
   ExchangeRateUnavailableError,
   fetchAndStoreLatestOfficialRate,
@@ -1371,6 +1377,19 @@ export class Store implements Repository {
   /** Soft-delete a never-invoiced V5 project; preserves all historical billing data. */
   deleteUninvoicedV5Project(id: string, actor: string) {
     return this.transaction((db) => deleteUninvoicedV5Project(db, id, actor));
+  }
+
+  /** PIMO: add one In Progress project for a new Telegram topic (never edits). */
+  registerTelegramTopic(input: TelegramTopicInput): Promise<TelegramTopicResult> {
+    return this.transaction((db) => {
+      const result = planTelegramTopic(db, input, { newId, now });
+      if (result.status === "created") {
+        db.projects.push(result.project);
+        log(db, TELEGRAM_INTAKE_ACTOR, "project.create", "project", result.project.id,
+          `telegram-topic ${input.chatId}:${input.topicId}`);
+      }
+      return result;
+    });
   }
 
   /** Internal close without any Tax Invoice, VAT or invoice number. */
