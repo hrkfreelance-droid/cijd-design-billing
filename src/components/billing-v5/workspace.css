@@ -252,6 +252,15 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 .bw-project-badges, .bw-project-kinds { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
 .bw-badge { display: inline-block; max-width: 100%; padding: 3px 7px; border-radius: 6px; color: var(--bw-muted); background: var(--c-fill); font-size: .75rem; font-weight: 650; }
 .bw-badge[data-status="ready"] { color: var(--bw-action); background: var(--bw-selected); }
+/* Opus 仕上げ 11/19：未入金・一部入金は枠線で区別（赤は期限超過だけに使う） */
+.bw-badge:is([data-status="outstanding"], [data-status="partial"], [data-status="unpaid"]) { color: var(--bw-fg); background: transparent; box-shadow: inset 0 0 0 1px var(--bw-border); }
+/* 一覧の種類は1行に収め、3つ目以降は +N にまとめる（行の高さをそろえる） */
+.bw-project-row > :is(.bw-project-kinds, .bw-project-badges) { flex-wrap: nowrap; overflow: hidden; }
+@media (max-width: 720px) {
+  /* スマホ幅では状態のバッジを切らずに折り返す（文字が欠けないように） */
+  .bw-project-row > .bw-project-badges { flex-wrap: wrap; overflow: visible; }
+}
+.bw-project-row .bw-badge { white-space: nowrap; }
 .bw-project-split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 6fr); align-items: start; gap: 14px; margin-top: 12px; }
 .bw-project-split .bw-project-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr) minmax(0, 8rem);

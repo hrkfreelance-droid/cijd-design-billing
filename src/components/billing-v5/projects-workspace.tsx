@@ -41,8 +41,9 @@ export function ProjectRows({ rows, query = "", selected, selection }: {
           </label>}
           <Link className="bw-project-row" href={projectHref(view.project.id, query)} aria-current={view.project.id === selected ? "page" : undefined} data-testid="billing-project-row" data-layout-group>
             <span className="bw-project-name"><strong>{view.project.name}</strong><small>{view.client || "—"}</small></span>
-            <span className="bw-project-kinds">
-              {view.kinds.map((kind) => <span key={kind} className="bw-badge">{t(kind)}</span>)}
+            <span className="bw-project-kinds" title={view.kinds.map((kind) => t(kind)).join(" · ")}>
+              {view.kinds.slice(0, 2).map((kind) => <span key={kind} className="bw-badge">{t(kind)}</span>)}
+              {view.kinds.length > 2 && <span className="bw-badge" data-more>+{view.kinds.length - 2}</span>}
             </span>
             <ProjectStatusBadges view={view} />
             <time className="bw-project-date" dateTime={view.project.date}>{view.project.date}</time>
