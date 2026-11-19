@@ -8,7 +8,7 @@ import { api, useI18n, useToast } from "@/components/providers";
 import { Button, Checkbox, Input } from "@/components/ui";
 import { useAction } from "@/components/use-action";
 import { selectableClients } from "@/lib/billing-v2/board";
-import { useV5T } from "@/lib/billing-v5/i18n";
+import { useV5T, type V5Key } from "@/lib/billing-v5/i18n";
 import { customerFor } from "@/lib/billing-v5/ontology";
 import { normalizeSearch } from "@/lib/billing-v5/project-view";
 import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
@@ -16,7 +16,7 @@ import { BILLING, WorkspaceState } from "./workspace-parts";
 import { moneyExact } from "@/lib/format";
 import type { Customer, Product, Snapshot } from "@/lib/types";
 import { CustomerDocuments } from "./customer-documents";
-import { inspectPatentPdf, type PatentDraft } from "@/lib/billing-v5/patent-import-client";
+import { inspectPatentPdf, PatentReadError, type PatentDraft } from "@/lib/billing-v5/patent-import-client";
 import { normalizedTin } from "@/lib/billing-v5/patent-import";
 
 /* ------------------------------------------------------------- customers */
@@ -34,7 +34,7 @@ export function CustomerMaster({ snapshot, activityLinks, legacyClients = [], in
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(initialEdit ?? null);
   const [patent, setPatent] = useState<PatentDraft | null>(null);
-  const [patentError, setPatentError] = useState<string | null>(null);
+  const [patentError, setPatentError] = useState<V5Key | null>(null);
   const [readingPatent, setReadingPatent] = useState(false);
   const patentInput = useRef<HTMLInputElement>(null);
   const clients = useMemo(() => {
@@ -58,7 +58,7 @@ export function CustomerMaster({ snapshot, activityLinks, legacyClients = [], in
       setEditing(duplicate?.client.id ?? "new");
     } catch (error) {
       setPatent(null);
-      setPatentError(error instanceof Error ? error.message : "Unable to read the PDF.");
+      setPatentError(error instanceof PatentReadError ? `patent.error.${error.reason}` : "patent.error.read");
     } finally {
       setReadingPatent(false);
     }
@@ -72,7 +72,7 @@ export function CustomerMaster({ snapshot, activityLinks, legacyClients = [], in
         <Button variant="secondary" onClick={() => patentInput.current?.click()} disabled={readingPatent} data-testid="v5-patent-import">{readingPatent ? t("patent.reading") : t("patent.import")}</Button>
         <input ref={patentInput} type="file" accept=".pdf,application/pdf" hidden data-testid="v5-patent-file" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importPatent(file); }} />
       </div>
-      {patentError && <p className="pb-3 text-[13px] text-danger" role="alert" data-testid="v5-patent-error">{patentError}</p>}
+      {patentError && <p className="pb-3 text-[13px] text-danger" role="alert" data-testid="v5-patent-error">{t(patentError)}</p>}
       {shown.length === 0 && historical.length === 0 ? (
         <WorkspaceState>{t("customer.empty")}</WorkspaceState>
       ) : (
@@ -112,7 +112,7 @@ function CustomerSheet({ snapshot, id, patent, onClose }: { snapshot: Snapshot; 
   const { runResult, busy } = useAction();
   const [storedCustomerId, setStoredCustomerId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState(false);
   const client = id ? snapshot.clients.find((c) => c.id === id) : undefined;
   const base = id ? customerFor(snapshot, id) : null;
   const [form, setForm] = useState({
@@ -137,19 +137,19 @@ function CustomerSheet({ snapshot, id, patent, onClose }: { snapshot: Snapshot; 
   const attachPatent = async (targetId: string) => {
     if (!patent) return;
     setUploading(true);
-    setUploadError(null);
+    setUploadError(false);
     try {
       const body = new FormData();
       body.set("file", patent.file);
       body.set("documentType", "PATENT_TAX");
       const response = await fetch(`/api/v5/customers/${targetId}/documents`, { method: "POST", body });
-      const result = (await response.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
-      if (!response.ok || !result?.ok) throw new Error(result?.message ?? "Patent PDF upload failed.");
+      const result = (await response.json().catch(() => null)) as { ok?: boolean } | null;
+      if (!response.ok || !result?.ok) throw new Error("Patent PDF upload failed.");
       toast(t("patent.attached"));
       onClose();
-    } catch (error) {
+    } catch {
       // Customer creation may already have succeeded. Do not create another.
-      setUploadError(error instanceof Error ? error.message : "Patent PDF upload failed. Customer has been saved.");
+      setUploadError(true);
     } finally {
       setUploading(false);
     }
@@ -207,7 +207,7 @@ function CustomerSheet({ snapshot, id, patent, onClose }: { snapshot: Snapshot; 
           <p className="mt-1 text-muted">{id ? t("patent.matched") : t("patent.newNote")}</p>
         </div>
       )}
-      {uploadError && <p className="mb-4 text-[12.5px] text-danger" role="alert" data-testid="v5-patent-upload-error">{t("patent.uploadFailed")} {uploadError}</p>}
+      {uploadError && <p className="mb-4 text-[12.5px] text-danger" role="alert" data-testid="v5-patent-upload-error">{t("patent.uploadFailed")}</p>}
       <div className="grid gap-3 sm:grid-cols-2">
         {field("name", t("customer.name"))}
         <div className="block min-w-0">

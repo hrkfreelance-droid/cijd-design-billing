@@ -37,7 +37,7 @@ function Navigation({ mobile = false }: { mobile?: boolean }) {
   const t = useWorkspaceT();
   const items = mobile ? links.slice(0, 4) : links;
   return (
-    <nav className={mobile ? "bw-bottom" : "bw-side"} aria-label="Billing" data-layout-group>
+    <nav className={mobile ? "bw-bottom" : "bw-side"} aria-label={t("billingNavigation")} data-layout-group>
       {items.map(({ href, icon: Icon, label, active }) => (
         <Link href={href} key={href} aria-current={active ? "page" : undefined} data-layout-group>
           <Icon /><span>{label}</span>

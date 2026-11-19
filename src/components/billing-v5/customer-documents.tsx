@@ -12,8 +12,8 @@ const ACCEPT = ".pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,.tif,.tiff,.bmp,appl
 
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { cache: "no-store", ...init });
-  const payload = (await response.json().catch(() => null)) as { ok?: boolean; data?: T; message?: string } | null;
-  if (!response.ok || !payload?.ok) throw new Error(payload?.message ?? "Request failed");
+  const payload = (await response.json().catch(() => null)) as { ok?: boolean; data?: T } | null;
+  if (!response.ok || !payload?.ok) throw new Error("Document request failed");
   return payload.data as T;
 }
 
@@ -28,11 +28,11 @@ export function CustomerDocuments({ customerId }: { customerId: string }) {
   const t = useV5T();
   const { toast } = useToast();
   const [documents, setDocuments] = useState<CustomerDocument[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [type, setType] = useState<DocumentType>("PATENT_TAX");
   const [memo, setMemo] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(false);
   const uploadInput = useRef<HTMLInputElement>(null);
   const replaceInput = useRef<HTMLInputElement>(null);
   const [replacing, setReplacing] = useState<CustomerDocument | null>(null);
@@ -45,9 +45,9 @@ export function CustomerDocuments({ customerId }: { customerId: string }) {
       .then((list) => {
         if (!live) return;
         setDocuments(list);
-        setLoadError(null);
+        setLoadError(false);
       })
-      .catch((reason) => live && setLoadError(reason instanceof Error ? reason.message : String(reason)));
+      .catch(() => { if (live) setLoadError(true); });
     return () => {
       live = false;
     };
@@ -60,14 +60,14 @@ export function CustomerDocuments({ customerId }: { customerId: string }) {
     if (memo.trim()) form.set("memo", memo.trim());
     if (replacesId) form.set("replacesId", replacesId);
     setBusy(true);
-    setError(null);
+    setError(false);
     try {
       await send<CustomerDocument>(`/api/v5/customers/${customerId}/documents`, { method: "POST", body: form });
       setMemo("");
       toast(t(replacesId ? "docs.replaced" : "docs.uploaded"));
       setVersion((value) => value + 1);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+    } catch {
+      setError(true);
     } finally {
       setBusy(false);
     }
@@ -115,10 +115,10 @@ export function CustomerDocuments({ customerId }: { customerId: string }) {
           if (file && target) void upload(file, target.documentType, target.id);
         }}
       />
-      {error && <p className="mt-2 text-[12.5px] text-danger" data-testid="v5-doc-error">{error}</p>}
+      {error && <p className="mt-2 text-[12.5px] text-danger" data-testid="v5-doc-error">{t("docs.uploadFailed")}</p>}
 
       {loadError ? (
-        <p className="mt-3 text-[12.5px] text-danger" data-testid="v5-doc-load-error">{loadError}</p>
+        <p className="mt-3 text-[12.5px] text-danger" data-testid="v5-doc-load-error">{t("docs.loadFailed")}</p>
       ) : documents === null ? (
         <p className="mt-3 text-[12.5px] text-muted">…</p>
       ) : current.length === 0 ? (

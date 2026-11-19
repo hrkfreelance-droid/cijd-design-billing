@@ -16,14 +16,14 @@ import { useWorkspaceT, type WorkspaceKey } from "@/lib/billing-v5/workspace-i18
 import { moneyExact } from "@/lib/format";
 import { InvoiceEditor } from "./invoice-editor";
 import { useProjectViews } from "./workspace-shell";
-import { Amount, BILLING, InvoiceLink, projectHref, WorkspaceState } from "./workspace-parts";
+import { Amount, BILLING, InvoiceLink, projectHref, ProjectStatusBadges, WorkspaceState } from "./workspace-parts";
 
 export function RecordRows({ invoices }: { invoices: ProjectInvoice[] }) {
   const t = useWorkspaceT();
   if (!invoices.length) return <WorkspaceState />;
   return <ul className="bw-records">{invoices.map((entry) => (
     <li key={entry.id} id={`invoice-${entry.id}`} data-layout-group>
-      <div><InvoiceLink entry={entry} /><small>{[entry.date, entry.cancelled ? t("voided") : entry.paid ? t("collected") : t("unpaid")].filter(Boolean).join(" · ") || "—"}</small></div>
+      <div><InvoiceLink entry={entry} /><small>{[entry.date, entry.cancelled ? t("voided") : entry.paid ? t("collected") : entry.outstanding < entry.usd ? t("partial") : t("outstanding")].filter(Boolean).join(" · ") || "—"}</small></div>
       <Amount usd={entry.usd} khr={entry.khr} />
     </li>
   ))}</ul>;
@@ -74,6 +74,8 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
   if (!snapshot) return null;
 
   const { project, items, pending, invoices, payments } = view;
+  const addedDate = project.note?.trim().match(/^Current active project added (\d{4}-\d{2}-\d{2})$/)?.[1];
+  const note = addedDate ? t("currentProjectAdded").replace("{date}", addedDate) : project.note;
   const canEdit = Boolean(!view.readOnly && pending && user && canAny(user.role, ["production:write", "billing:price:write"]));
   const preparation = pending?.billingReadiness !== "ACCOUNTING" && canEdit;
   const ready = pending?.blocker === null;
@@ -122,12 +124,12 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
           <Amount usd={view.amount} khr={view.estimatedKhr} estimated />
         </div>
         <div className="bw-detail-meta">
-          <span className="bw-badge" data-status={view.status}>{t(view.status)}</span>
+          <ProjectStatusBadges view={view} />
           {view.kinds.map((kind) => <span key={kind} className="bw-badge">{t(kind)}</span>)}
           {view.archivedImport && <span className="bw-badge">{t("imported")}</span>}
           {project.date && <span className="bw-badge">{project.date}</span>}
         </div>
-        {project.note && <p className="bw-note">{project.note}</p>}
+        {note && <p className="bw-note">{note}</p>}
       </header>
 
       <DetailSection title={t("lines")}>

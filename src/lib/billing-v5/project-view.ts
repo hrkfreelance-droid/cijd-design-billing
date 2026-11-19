@@ -1,12 +1,13 @@
 import { pendingProjects, storedFinalUnitPrice, type BoardProject } from "../billing-v2/board";
 import { isCostPriced, serviceForItem } from "../billing-v2/services";
-import { isHistoricalRecord } from "../derive";
+import { isHistoricalRecord, isProductionComplete } from "../derive";
 import type { BillingItem, Invoice, Project, Snapshot, TaxInvoiceRecord } from "../types";
 import { roundMoney } from "./calculation";
 import { customerFor, eligibleBilling, invoiceCollection, LEDGER_PAYMENT_PREFIX } from "./ontology";
 
 export const projectStatuses = ["progress", "ready", "unpaid", "completed", "all"] as const;
-export type ProjectStatus = Exclude<(typeof projectStatuses)[number], "all">;
+export type ProjectStatus = "progress" | "ready" | "completed";
+export type ProjectCollection = "outstanding" | "partial" | "collected";
 export type WorkKind = "design" | "print" | "other";
 
 export interface ProjectInvoice {
@@ -41,6 +42,8 @@ export interface ProjectView {
   invoices: ProjectInvoice[];
   payments: ProjectPaymentView[];
   status: ProjectStatus;
+  workComplete: boolean;
+  collection: ProjectCollection | null;
   amount: number | null;
   estimatedKhr: number | null;
   archivedImport: boolean;
@@ -207,11 +210,17 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
     const operational = pending.get(project.id);
     const canIssue = issueIds.has(project.id);
     const archivedImport = imported || items.length > 0 && items.every(isHistoricalRecord);
-    const liveUnpaid = invoices.some((invoice) => invoice.tax && !invoice.cancelled && invoice.outstanding > 0);
+    const workComplete = archivedImport || items.length > 0 && items.every(
+      (item) => isHistoricalRecord(item) || isProductionComplete(item),
+    );
     const status: ProjectStatus = archivedImport ? "completed"
-      : liveUnpaid ? "unpaid"
       : canIssue || operational?.blocker === null ? "ready"
-      : operational ? "progress" : "completed";
+      : operational || !workComplete ? "progress" : "completed";
+    const activeInvoices = invoices.filter((invoice) => !invoice.cancelled);
+    const hasOutstanding = activeInvoices.some((invoice) => invoice.outstanding > 0);
+    const hasPayment = activeInvoices.some((invoice) => invoice.outstanding < invoice.usd);
+    const collection: ProjectCollection | null = hasOutstanding ? (hasPayment ? "partial" : "outstanding")
+      : activeInvoices.some((invoice) => invoice.paid) ? "collected" : null;
     const amount = items.some((item) => item.amount != null)
       ? roundMoney(items.reduce((sum, item) => sum + (item.amount ?? 0), 0)) : null;
     const customer = client?.name ?? "";
@@ -219,7 +228,7 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
     return {
       project, client: customer, kinds, items: lines, invoices,
       payments: payments.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")),
-      status, amount, archivedImport, readOnly: archivedImport || !operational,
+      status, workComplete, collection, amount, archivedImport, readOnly: archivedImport || !operational,
       estimatedKhr: amount !== null && snapshot.exchangeRate && !archivedImport
         ? Math.round(amount * snapshot.exchangeRate.rate) : null,
       pending: archivedImport ? undefined : operational, canIssue,
@@ -255,7 +264,7 @@ export function similarProjects(view: ProjectView, projects: ProjectView[]): Pro
   const itemNames = new Set(view.items.map(({ item }) => normalizeSearch(item.description)).filter(Boolean));
   return projects.flatMap((entry) => {
     if (entry.project.id === view.project.id || entry.amount == null ||
-        !["completed", "unpaid"].includes(entry.status)) return [];
+        (entry.status !== "completed" && entry.collection !== "outstanding" && entry.collection !== "partial")) return [];
     const name = normalizeSearch(entry.project.name);
     const score = (name === projectName ? 4 : name.includes(projectName) || projectName.includes(name) ? 2 : 0)
       + (entry.items.some(({ item }) => itemNames.has(normalizeSearch(item.description))) ? 3 : 0)

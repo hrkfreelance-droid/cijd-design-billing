@@ -385,6 +385,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await page.getByTestId("v5-invoice-payment-amount").fill("448.60");
   await page.getByTestId("v5-invoice-payment-add").click();
   await expect(page.getByTestId("v5-invoice-status")).toHaveText("Collected");
+  await expect(page.getByTestId("v5-invoice-back")).toHaveAttribute("href", "/office-v5/tax-invoices?collection=paid");
   await expect(page.getByTestId("v5-outstanding")).toContainText("$0.00");
   await shot(page, "08-invoice-collected-en-light");
 

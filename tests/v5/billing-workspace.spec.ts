@@ -6,6 +6,7 @@ import type { Snapshot, TaxInvoiceRecord } from "../../src/lib/types";
 import { planV3Import } from "../../src/lib/billing-v5/v3-import";
 import { archiveId, archiveItem, archiveName, workspaceFixture } from "../fixtures/v5-workspace-history";
 
+const importNote = "Current active project added 2026-08-31";
 const fixtureProjects = missingHistory(planV3Import(workspaceFixture()), new Set(), new Set()).rows;
 
 const exampleInvoice: TaxInvoiceRecord = {
@@ -30,7 +31,12 @@ async function addHistory(page: Page, includeLayoutInvoice = false) {
     const response = await route.fetch();
     const payload = await response.json() as { data: Snapshot };
     if (process.env.V5_EXPECT_HISTORY !== "1") payload.data.legacyProjects = fixtureProjects;
-    if (includeLayoutInvoice) payload.data.taxInvoices = [...(payload.data.taxInvoices ?? []), exampleInvoice];
+    if (includeLayoutInvoice) {
+      payload.data.legacyProjects = payload.data.legacyProjects?.map((entry) => entry.project.id === archiveId
+        ? { ...entry, project: { ...entry.project, note: importNote } }
+        : entry);
+      payload.data.taxInvoices = [...(payload.data.taxInvoices ?? []), exampleInvoice];
+    }
     await route.fulfill({ response, json: payload });
   });
 }
@@ -69,6 +75,11 @@ test("design archive, global search, project details and price comparison share 
   await expect(customer.getByRole("heading", { name: "Example Studio" })).toBeVisible();
   await expect(customer.getByRole("heading", { name: "Payments" })).toBeVisible();
   await expect(customer.getByRole("heading", { name: "Price history" })).toBeVisible();
+  const redirect = await page.request.get("/office-v5/archive", { maxRedirects: 0 });
+  expect(redirect.status()).toBe(307);
+  expect(new URL(redirect.headers().location, redirect.url()).href).toBe(new URL("/office-v5/projects?status=completed", redirect.url()).href);
+  const destination = await page.request.get("/office-v5/projects?status=completed", { maxRedirects: 0 });
+  expect(destination.status()).toBe(200);
   await page.goto("/office-v5/archive");
   await expect(page).toHaveURL(/\/office-v5\/projects\?status=completed/);
   await page.getByLabel("Sort by").selectOption("highest");
@@ -82,6 +93,17 @@ test("design archive, global search, project details and price comparison share 
   await expect(page.getByText("No projects found")).toBeVisible();
   await page.getByRole("link", { name: "Clear filters" }).click();
   await expect(rows).toHaveCount(2);
+});
+
+test("the balance-due filter also includes completed projects", async ({ page }) => {
+  await addHistory(page, true);
+  await page.goto("/office-v5/projects?status=completed");
+  const row = page.getByTestId("billing-project-row").filter({ hasText: archiveName });
+  await expect(row.locator(".bw-project-badges .bw-badge")).toHaveText(["Work complete", "Partially paid"]);
+  await page.getByRole("link", { name: "Balance due", exact: true }).click();
+  await expect(page).toHaveURL(/status=unpaid/);
+  await expect(row.locator(".bw-project-badges .bw-badge")).toHaveText(["Work complete", "Partially paid"]);
+  await expect(page.getByTestId("billing-project-row").filter({ hasText: "Archive Brochure earlier edition" })).toHaveCount(0);
 });
 
 async function layoutIssues(page: Page) {
@@ -109,7 +131,7 @@ async function layoutIssues(page: Page) {
         }
       }
     }
-    for (const el of document.querySelectorAll<HTMLElement>(".bw-main :is(a, button, strong, small, dd, h1, h2, label), .bw-header button")) {
+    for (const el of document.querySelectorAll<HTMLElement>(".bw-main :is(a, button, strong, small, dd, h1, h2, label, .bw-note, .bw-filter-help, .bw-badge), .bw-header button")) {
       if (!visible(el) || el.closest(".truncate, .sr-only") || getComputedStyle(el).display === "inline") continue;
       if (el.scrollWidth > el.clientWidth + tolerance && el.clientWidth > 0) issues.push(`${describe(el)} text or control overflow`);
     }
@@ -136,10 +158,16 @@ test("Billing layout has no overlaps at 1440 and 375 in JA, EN and KH, light and
     ["/office-v5/accounting", "v5-accounting", "accounting"],
     ["/office-v5/customers", "v5-customers-page", "customers"],
     ["/office-v5/customers/c1", "billing-customer-detail", "customer"],
+    [`/office-v5/tax-invoices/${exampleInvoice.id}`, "v5-invoice-heading", "invoice detail"],
   ];
+  const translated = {
+    en: ["Work complete", "Partially paid", importNote, "Print / Save PDF"],
+    ja: ["作業完了", "一部入金", "進行中の案件として 2026-08-31 に追加", "印刷 / PDF 保存"],
+    kh: ["ការងារបានបញ្ចប់", "បានទូទាត់មួយផ្នែក", "បានបន្ថែមជាគម្រោងកំពុងដំណើរការនៅថ្ងៃទី 2026-08-31", "បោះពុម្ព ឬរក្សាទុកជា PDF"],
+  };
   for (const width of [1440, 375]) {
     await page.setViewportSize({ width, height: 870 });
-    for (const locale of ["en", "ja", "kh"]) {
+    for (const locale of ["en", "ja", "kh"] as const) {
       for (const theme of ["light", "dark"]) {
         await page.evaluate(([language, mode]) => {
           localStorage.setItem("cijd.locale", language);
@@ -151,7 +179,17 @@ test("Billing layout has no overlaps at 1440 and 375 in JA, EN and KH, light and
           await expect(page.locator("html")).toHaveAttribute("lang", locale === "kh" ? "km" : locale);
           if (theme === "dark") await expect(page.locator("html")).toHaveClass(/dark/);
           else await expect(page.locator("html")).not.toHaveClass(/dark/);
+          const [work, payment, note, print] = translated[locale];
+          if (name === "projects" || name === "detail") {
+            const row = name === "projects"
+              ? page.getByTestId("billing-project-row").filter({ hasText: archiveName })
+              : page.getByTestId("billing-project-detail");
+            await expect(row.locator(".bw-project-badges [data-status=completed]")).toHaveText(work);
+            await expect(row.locator(".bw-project-badges [data-status=partial]")).toHaveText(payment);
+          }
           if (name === "projects") await page.locator(".bw-filter-extra summary").click();
+          if (name === "detail") await expect(page.locator(".bw-note")).toHaveText(note);
+          if (name === "invoice detail") await expect(page.getByTestId("v5-print")).toHaveText(print);
           await page.evaluate(() => document.fonts.ready);
           expect(await layoutIssues(page), `${name} / ${width} / ${locale} / ${theme}`).toEqual([]);
           const dir = process.env.V5_WORKSPACE_SHOTS;

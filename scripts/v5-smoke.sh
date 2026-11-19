@@ -25,10 +25,22 @@ check() { # name expected-status url [must-contain]
   echo "PASS $name: HTTP $status $url"
 }
 
+check_redirect() {
+  local name=$1 url=$2 destination=$3 actual
+  actual=$(curl -sS -m 30 -o /dev/null -w '%{http_code} %{redirect_url}' "$url") || actual=000
+  if [ "$actual" != "307 $destination" ]; then
+    echo "FAIL $name: $actual (want 307 $destination)"
+    fail=1
+    return
+  fi
+  echo "PASS $name: HTTP 307 $url"
+  check "$name destination" 200 "$destination"
+}
+
 echo "== V5 $V5"
 check "V5 Billing"      200 "$V5/office-v5" 'v5-accounting'
 check "V5 Accounting"   200 "$V5/office-v5/accounting"
-check "V5 Archive"      200 "$V5/office-v5/archive"
+check_redirect "V5 Archive" "$V5/office-v5/archive" "$V5/office-v5/projects?status=completed"
 check "V5 data"         200 "$V5/api/state" '"taxInvoices"'
 check "V5 session"      200 "$V5/api/session" '"access":"active"'
 check "V5 has no V3"    302 "$V5/office-v3"

@@ -16,7 +16,7 @@ import { useV5T } from "@/lib/billing-v5/i18n";
 import { moneyExact } from "@/lib/format";
 import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
 import { useProjectViews } from "./workspace-shell";
-import { Amount, BILLING, projectHref, WorkspaceHeading, WorkspaceState } from "./workspace-parts";
+import { Amount, BILLING, projectHref, ProjectStatusBadges, WorkspaceHeading, WorkspaceState } from "./workspace-parts";
 import { ProjectDetailView } from "./project-view-detail";
 
 const listPath = BILLING + "/projects";
@@ -42,7 +42,7 @@ export function ProjectRows({ rows, query = "", selected, selection }: {
           <Link className="bw-project-row" href={projectHref(view.project.id, query)} aria-current={view.project.id === selected ? "page" : undefined} data-testid="billing-project-row" data-layout-group>
             <span className="bw-project-name"><strong>{view.project.name}</strong><small>{view.client || "—"}</small></span>
             <span className="bw-project-meta">
-              <span className="bw-badge" data-status={view.status}>{t(view.status)}</span>
+              <ProjectStatusBadges view={view} />
               <small>{[view.project.date, ...view.kinds.map(t)].filter(Boolean).join(" · ")}</small>
             </span>
             <Amount usd={view.amount} khr={view.estimatedKhr} estimated />
@@ -97,7 +97,11 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
   }
 
   const filtered = projects.filter((view) =>
-    (status === "all" || view.status === status || status === "ready" && view.canIssue) &&
+    (status === "all"
+      || status === "completed" && view.workComplete
+      || status === "unpaid" && (view.collection === "outstanding" || view.collection === "partial")
+      || status === "ready" && (view.status === "ready" || view.canIssue)
+      || status === "progress" && view.status === "progress") &&
     (kind === "all" || view.kinds.includes(kind as WorkKind)) &&
     (!clientId || view.project.clientId === clientId) &&
     (!from || view.project.date >= from) && (!to || view.project.date <= to) &&
@@ -164,12 +168,13 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
           </>
         } />
         <div className="bw-filter-panel">
-          <nav className="bw-tabs" aria-label={t("status")} data-layout-group>
+          <nav className="bw-tabs" aria-label={t("status")} aria-describedby="bw-completed-help" data-layout-group>
             {projectStatuses.map((key) => {
               const next = queryWith({ status: key === "all" ? "" : key });
-              return <Link key={key} href={next ? `${listPath}?${next}` : listPath} aria-current={status === key ? "page" : undefined}>{t(key)}</Link>;
+              return <Link key={key} href={next ? `${listPath}?${next}` : listPath} aria-current={status === key ? "page" : undefined}>{t(key === "unpaid" ? "balanceDue" : key)}</Link>;
             })}
           </nav>
+          <p className="bw-filter-help" id="bw-completed-help">{t("completedHelp")}</p>
           <div className="bw-filters" data-layout-group>
             <label className="bw-wide"><span>{t("searchProjects")}</span><input className="bw-input" type="search" value={query} onChange={(event) => setFilter("q", event.target.value)} data-testid="billing-project-search" /></label>
             <label><span>{t("kind")}</span><select className="bw-input" value={kind} onChange={(event) => setFilter("kind", event.target.value)}>{kindOptions.map((key) => <option key={key} value={key}>{t(key)}</option>)}</select></label>

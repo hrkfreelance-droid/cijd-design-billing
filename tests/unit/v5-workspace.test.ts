@@ -39,3 +39,20 @@ test("archives in V5 and missing V3 projects share the same read-only view and p
   assert.deepEqual(similarProjects(old, views).map(({ project }) => project.id), ["p-older-billed"]);
   assert.deepEqual(priceHistory(views).filter(({ name }) => normalizeSearch(name) === normalizeSearch(archiveItem)).map(({ price }) => price), [1, 1.5]);
 });
+
+test("an invoice does not mark unfinished production complete", () => {
+  const { collections } = planV3Import(workspaceFixture());
+  const project = collections.projects.find(({ id }) => id === "p-progress")!;
+  const item = collections.billingItems.find(({ projectId }) => projectId === project.id)!;
+  const invoice = { ...collections.invoices[0], status: "ISSUED" as const };
+  const snapshot: Snapshot = {
+    ...buildV5Seed(), ...collections, mode: "local", scope: { billing: true, production: true, payment: true },
+    exchangeRate: null, exchangeRateLastCheckedAt: null,
+    projects: [project], billingItems: [{ ...item, billingStatus: "INVOICED", invoiceId: invoice.id }],
+    invoices: [invoice],
+  };
+  const [view] = buildProjectViews(snapshot);
+  assert.equal(view.workComplete, false);
+  assert.equal(view.status, "progress");
+  assert.equal(view.collection, "outstanding");
+});

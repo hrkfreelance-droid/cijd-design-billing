@@ -6,7 +6,7 @@ import { Button } from "@/components/ui";
 import { useData, useI18n } from "@/components/providers";
 import { moneyExact } from "@/lib/format";
 import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
-import type { ProjectInvoice } from "@/lib/billing-v5/project-view";
+import type { ProjectInvoice, ProjectView } from "@/lib/billing-v5/project-view";
 
 export const BILLING = "/office-v5";
 
@@ -35,6 +35,15 @@ export function Amount({ usd, khr, estimated }: { usd: number | null; khr?: numb
   return <span className="bw-money">
     <span>{usd == null ? "—" : moneyExact(usd)}</span>
     {khr != null && <small>{estimated && `${t("estimate")} `}{new Intl.NumberFormat("en-US").format(khr)} ៛</small>}
+  </span>;
+}
+
+export function ProjectStatusBadges({ view }: { view: ProjectView }) {
+  const t = useWorkspaceT();
+  const workStatus = view.workComplete ? "completed" : view.status;
+  return <span className="bw-project-badges" data-layout-group>
+    <span className="bw-badge" data-status={workStatus}>{t(workStatus)}</span>
+    {view.collection && <span className="bw-badge" data-status={view.collection}>{t(view.collection)}</span>}
   </span>;
 }
 

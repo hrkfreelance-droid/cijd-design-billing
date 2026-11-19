@@ -161,6 +161,7 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 .bw-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
 .bw-tabs a { display: flex; align-items: center; min-height: 44px; padding: 5px 11px; border-radius: 7px; color: var(--bw-muted); font-weight: 600; }
 .bw-tabs a:is(:hover, [aria-current], [aria-selected="true"]) { color: var(--bw-action); background: var(--bw-selected); }
+.bw-filter-help { margin: 0 0 12px; color: var(--bw-muted); font-size: .8125rem; overflow-wrap: anywhere; }
 .bw-filters { display: grid; grid-template-columns: minmax(0, 1.65fr) repeat(3, minmax(0, 1fr)); gap: 9px; align-items: end; }
 .bw-filters > *, .bw-simple-filter > * { min-width: 0; }
 .bw-filters label > span, .bw-simple-filter label > span { display: block; margin-bottom: 4px; color: var(--bw-muted); font-size: 12px; font-weight: 650; }
@@ -198,10 +199,11 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 }
 .bw-project-row :is(.bw-project-name, .bw-project-meta) { display: block; min-width: 0; overflow-wrap: anywhere; }
 .bw-project-row:is(:hover, [aria-current]) { background: var(--bw-selected); border-radius: 10px; }
+.bw-project-badges { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .bw-badge { display: inline-block; max-width: 100%; padding: 3px 7px; border-radius: 6px; color: var(--bw-muted); background: var(--bw-bg); font-size: .75rem; font-weight: 650; }
 .bw-badge[data-status="ready"] { color: var(--bw-action); background: var(--bw-selected); }
-.bw-badge[data-status="completed"] { color: var(--c-paid); }
-.bw-badge[data-status="unpaid"] { color: var(--c-pending); }
+.bw-badge:is([data-status="completed"], [data-status="collected"]) { color: var(--c-paid); }
+.bw-badge:is([data-status="outstanding"], [data-status="partial"]) { color: var(--c-pending); }
 .bw-row-arrow { width: 16px; height: 16px; color: var(--bw-muted); }
 .bw-project-split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 6fr); align-items: start; gap: 14px; margin-top: 12px; }
 .bw-project-split .bw-project-row { grid-template-columns: minmax(0, 1fr) minmax(0, .55fr); }
@@ -212,7 +214,7 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 .bw-detail-title { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 28%); align-items: start; gap: 12px; }
 .bw-detail-title .bw-money { font-size: 1.12rem; }
 .bw-detail-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
-.bw-note { margin-top: 10px; color: var(--bw-muted); white-space: pre-wrap; }
+.bw-note { margin-top: 10px; color: var(--bw-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .bw-detail-section > h2 { margin-bottom: 8px; }
 .bw-detail-section .bw-state, .bw-card > .bw-state { border: 0; background: var(--bw-bg); }
 .bw-lines > li { padding: 9px 0; }

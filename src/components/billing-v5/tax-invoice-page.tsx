@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
@@ -25,7 +24,6 @@ import { InvoiceEditor } from "./invoice-editor";
  */
 export function TaxInvoicePage({ id }: { id: string }) {
   const t = useV5T();
-  const router = useRouter();
   const { snapshot } = useData();
   const { toast } = useToast();
   const { run, busy } = useAction();
@@ -39,7 +37,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
   const clientName = invoice ? (snapshot.clients.find((client) => client.id === invoice.clientId)?.name ?? "") : "";
   const money = invoice ? invoiceCollection(snapshot, invoice) : null;
   const statusKey = invoice?.status === "CANCELLED" ? "status.CANCELLED" : `status.${money?.status ?? "UNPAID"}`;
-  const archived = invoice?.status === "ISSUED" && money?.status === "PAID";
+  const collected = invoice?.status === "ISSUED" && money?.status === "PAID";
   const invoiceKind = invoice?.invoiceKind ?? "FULL";
   const activeContractInvoices = invoice?.contractId
     ? (snapshot.taxInvoices ?? []).filter((entry) => entry.contractId === invoice.contractId && entry.status === "ISSUED")
@@ -69,13 +67,13 @@ export function TaxInvoicePage({ id }: { id: string }) {
 
   return (
     <div className="pb-16">
-      <div className="v5-no-print header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
-        <div className="mx-auto flex min-h-[52px] max-w-[960px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2 sm:px-8">
-          <Link href={archived ? "/office-v5/archive" : "/office-v5/tax-invoices"} className="text-[13.5px] font-medium text-accent hover:underline" data-testid="v5-invoice-back">
-            ← {archived ? t("invoice.backArchive") : t("invoice.back")}
+      <div className="v5-no-print header-surface border-b border-line">
+        <div className="mx-auto flex min-h-[52px] max-w-[960px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2 sm:px-8" data-layout-group>
+          <Link href={collected ? "/office-v5/tax-invoices?collection=paid" : "/office-v5/tax-invoices"} className="text-[13.5px] font-medium text-accent hover:underline" data-testid="v5-invoice-back">
+            ← {collected ? t("invoice.backPaid") : t("invoice.back")}
           </Link>
           {invoice && (
-            <span className="min-w-0 flex-1 truncate text-[13px] text-muted">
+            <span className="min-w-0 flex-1 basis-48 break-words text-[13px] text-muted">
               <span className="tnum font-semibold text-text" data-testid="v5-invoice-heading">{invoice.invoiceNumber}</span>
               {" · "}
               <span className={invoice.status === "CANCELLED" ? "text-danger" : ""} data-testid="v5-invoice-status">{t(statusKey as V5Key)}</span>
@@ -85,7 +83,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
             </span>
           )}
           {invoice && (
-            <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2" data-layout-group>
               {canIssueFinal && (
                 <Button variant="secondary" size="sm" onClick={() => setCreatingFinal(true)} data-testid="v5-issue-final">
                   {t("invoice.issueFinal")}
@@ -95,7 +93,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
                 <>
                   <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>
                   <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>
-                  {archived && <Button variant="secondary" size="sm" onClick={() => router.push("/office-v5/archive")} data-testid="v5-invoice-archive">{t("invoice.archive")}</Button>}
+
                 </>
               )}
               <Button variant="primary" onClick={() => window.print()} data-testid="v5-print">{t("invoice.print")}</Button>
