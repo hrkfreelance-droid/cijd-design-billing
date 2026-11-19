@@ -71,7 +71,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
     <div className="pb-16">
       <div className="v5-no-print header-surface sticky top-0 z-40 border-b border-line backdrop-blur-xl">
         <div className="mx-auto flex min-h-[52px] max-w-[960px] flex-wrap items-center gap-x-4 gap-y-2 px-5 py-2 sm:px-8">
-          <Link href={archived ? "/office-v5/archive" : "/office-v5/accounting?view=invoices"} className="text-[13.5px] font-medium text-accent hover:underline" data-testid="v5-invoice-back">
+          <Link href={archived ? "/office-v5/archive" : "/office-v5/tax-invoices"} className="text-[13.5px] font-medium text-accent hover:underline" data-testid="v5-invoice-back">
             ← {archived ? t("invoice.backArchive") : t("invoice.back")}
           </Link>
           {invoice && (
@@ -165,9 +165,9 @@ export function TaxInvoicePage({ id }: { id: string }) {
   );
 }
 
-function Panel({ title, testId, children, aside }: { title: string; testId: string; children: ReactNode; aside?: ReactNode }) {
+function Panel({ title, testId, children, aside, id }: { title: string; testId: string; children: ReactNode; aside?: ReactNode; id?: string }) {
   return (
-    <section data-testid={testId}>
+    <section id={id} data-testid={testId}>
       <div className="flex items-baseline justify-between gap-4 border-b border-line-strong pb-2">
         <h2 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">{title}</h2>
         {aside}
@@ -219,6 +219,7 @@ function Payments({
 
   return (
     <Panel
+      id="invoice-payments"
       title={t("detail.payments")}
       testId="v5-invoice-payments"
       aside={

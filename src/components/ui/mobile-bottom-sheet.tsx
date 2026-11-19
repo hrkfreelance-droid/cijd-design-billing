@@ -41,6 +41,7 @@ type MobileBottomSheetProps = {
   children: React.ReactNode;
   footer?: React.ReactNode;
   contentClassName?: string;
+  testId?: string;
   /** Keep the same bottom-sheet interaction on desktop. */
   forceDesktop?: boolean;
 };
@@ -61,6 +62,7 @@ export function MobileBottomSheet({
   children,
   footer,
   contentClassName,
+  testId,
   forceDesktop = false,
 }: MobileBottomSheetProps) {
   const isMobile = useIsMobileViewport();
@@ -96,7 +98,7 @@ export function MobileBottomSheet({
         <Drawer.Portal>
           <Drawer.Backdrop className={`${styles.backdrop} ${desktopClass}`.trim()} />
           <Drawer.Viewport className={`${styles.viewport} ${desktopClass}`.trim()}>
-            <Drawer.Popup className={`${styles.popup} ${desktopClass} border border-line/80 bg-panel shadow-2xl`.trim()}>
+            <Drawer.Popup data-testid={testId} className={`${styles.popup} ${desktopClass} border border-line/80 bg-panel shadow-2xl`.trim()}>
               <div className={`${styles.header} bg-panel`}>
                 <div className={styles.dragArea} aria-hidden="true">
                   <div className={styles.handle} />

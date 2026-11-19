@@ -58,6 +58,7 @@ export class GuardedRepository {
       snapshot.invoices = [];
       snapshot.invoiceItems = [];
     }
+    if (!payment) delete snapshot.payments;
     // Keep the public scope shape backward-compatible; the dedicated printing
     // slice is enforced by the filtered rows above and by the route permission.
     snapshot.scope = { production, billing, payment };

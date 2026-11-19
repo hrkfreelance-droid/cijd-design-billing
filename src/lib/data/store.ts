@@ -257,6 +257,7 @@ export class Store implements Repository {
       scope: { production: true, billing: true, payment: true },
       ...(db.taxInvoices !== undefined
         ? {
+            payments: db.payments.map((payment) => ({ ...payment, slip: undefined })),
             projectPayments: db.projectPayments ?? [],
             clientTaxProfiles: db.clientTaxProfiles ?? [],
             taxInvoices: db.taxInvoices,

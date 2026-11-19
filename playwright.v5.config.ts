@@ -12,8 +12,9 @@ export default defineConfig({
   timeout: 180_000,
   expect: { timeout: 15_000 },
   use: {
-    baseURL: process.env.V5_BASE_URL ?? "http://127.0.0.1:8787",
+    baseURL: process.env.V5_BASE_URL ?? `http://127.0.0.1:${process.env.V5_PORT ?? "8787"}`,
     locale: "en-US",
+    actionTimeout: 25_000,
     viewport: { width: 1360, height: 900 },
   },
   projects: [

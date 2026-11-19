@@ -22,7 +22,7 @@ import { invoiceTotals } from "../../src/lib/billing-v5/calculation";
  * records are only read, and are checked unchanged at the end.
  */
 
-const SHOTS = process.env.V5_SHOTS_DIR ?? "test-results/v5-shots";
+const SHOTS = process.env.V5_SHOTS_DIR;
 const RUN = Date.now().toString(36).slice(-5);
 const DEPLOYED = !!process.env.V5_BASE_URL;
 const CLIENT = `TEST E2E Customer ${RUN}`;
@@ -61,8 +61,9 @@ async function prefs(page: Page, locale: "en" | "ja" | "kh", theme: "light" | "d
 }
 
 async function shot(page: Page, name: string) {
+  if (!SHOTS) return;
   mkdirSync(SHOTS, { recursive: true });
-  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+  await page.screenshot({ path: `${SHOTS}/${name}.jpg`, type: "jpeg", quality: 78 });
 }
 
 type State = {
@@ -95,7 +96,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await page.goto("/office-v5");
   await prefs(page, "en", "light");
   await page.reload();
-  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Design", "Accounting", "Customers", "Archive"]);
+  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Home", "Projects", "Invoices", "Accounting", "Customers", "Price history"]);
 
   /* ------------------------------------------- imported V3 data (read only) */
   const fingerprint = async () => {
@@ -111,6 +112,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   if (process.env.V5_EXPECT_IMPORTED === "1") expect((await state(page)).projects.filter((p) => !p.name.startsWith("TEST")).length).toBeGreaterThan(0);
 
   /* ---------------------------------------------------------- designer */
+  await page.getByRole("link", { name: "Projects", exact: true }).click();
   await page.getByTestId("v2-new-project").click();
   const clientSelect = page.getByTestId("v2-new-project-client");
   if (!(await page.getByTestId("v2-new-client-name").isVisible())) {
@@ -119,9 +121,9 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await page.getByTestId("v2-new-client-name").fill(CLIENT);
   await page.getByTestId("v2-new-project-name").fill(PROJECT);
   await page.getByTestId("v2-create-project").click();
-  await page.getByRole("button", { name: `Open ${PROJECT}` }).click();
+  await expect(page.getByTestId("billing-project-detail")).toContainText(PROJECT);
   const dialog = page.getByRole("dialog", { name: PROJECT });
-  await dialog.getByTestId("v2-modal-edit").click();
+  await page.getByTestId("billing-project-detail").getByTestId("v2-modal-edit").click();
   await dialog.getByTestId("v2-project-note").fill(MEMO);
   await dialog.getByTestId("v2-item-service-0").selectOption("DESIGN");
   await dialog.getByTestId("v2-item-description-0").fill("Logo design");
@@ -135,10 +137,11 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(dialog.getByTestId("v2-item-final-1")).toHaveValue("156.00");
   await expect(dialog.getByTestId("v2-modal-total")).toHaveText("$766.00");
   await dialog.getByTestId("v2-modal-save").click();
-  await expect(dialog.getByTestId("v2-view-mode")).toBeVisible();
-  await dialog.getByTestId("v2-mark-ready").click();
-  await expect(dialog.getByTestId("v2-detail-mark-billed")).toBeVisible();
-  await dialog.getByTestId("v2-detail-mark-billed").click();
+  await expect(dialog).toHaveCount(0);
+  const projectDetail = page.getByTestId("billing-project-detail");
+  await projectDetail.getByTestId("v2-mark-ready").click();
+  await expect(projectDetail.getByTestId("v2-detail-mark-billed")).toBeVisible();
+  await projectDetail.getByTestId("v2-detail-mark-billed").click();
   await page.getByTestId("v2-confirm-bill-confirm").click();
   await expect(dialog).toHaveCount(0);
 
@@ -164,7 +167,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await customerSheet.getByTestId("v5-customer-telephone").fill("012 345 678");
   await customerSheet.getByTestId("v5-customer-vatin").fill("K001-123456789");
   await customerSheet.getByTestId("v5-customer-email").fill("test@example.com");
-  await customerSheet.getByTestId("v5-customer-save").click();
+  await page.getByRole("dialog").getByTestId("v5-customer-save").click();
   await expect(customerSheet).toHaveCount(0);
   await shot(page, "01-customers-en-light");
 
@@ -195,7 +198,9 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(editor.getByTestId("v5-name-en")).toHaveValue(`${CLIENT} Co., Ltd.`); // from the Customer Master
   await expect(editor.getByTestId("v5-vatin")).toHaveValue("K001-123456789");
   await expect(editor.getByTestId("v5-editor-row")).toHaveCount(3);
-  await expect(editor.getByTestId("v5-invoice-number")).toHaveText("Assigned when issued");
+  const nextInvoiceNumber = editor.getByTestId("v5-invoice-number");
+  await expect(nextInvoiceNumber).toBeDisabled();
+  await expect(nextInvoiceNumber).toHaveValue(/^TEST-CIJDTI\d{7}$/);
   // Bill $300 of the website now; more than is left is refused on screen.
   const websiteIndex = await editor.locator('[data-testid^="v5-row-description-"]').evaluateAll((inputs) => inputs.findIndex((input) => (input as HTMLInputElement).value === "Website"));
   await editor.getByTestId(`v5-row-amount-${websiteIndex}`).fill("1000.01");
@@ -204,7 +209,9 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await editor.getByTestId(`v5-row-amount-${websiteIndex}`).fill("300");
   // A product line and a free line.
   await editor.getByTestId("v5-add-line").click();
-  await editor.getByTestId("v5-row-description-3").fill(PRODUCT);
+  const productCode = (await state(page)).products.find((product) => product.description === PRODUCT)!.productCode;
+  await editor.getByTestId("v5-row-description-3").fill(productCode);
+  await editor.getByTestId("v5-row-description-3-option").filter({ hasText: PRODUCT }).click();
   await expect(editor.getByTestId("v5-row-price-3")).toHaveValue("120.00");
   await editor.getByTestId("v5-add-line").click();
   await editor.getByTestId("v5-row-description-4").fill(FREE);
@@ -311,7 +318,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await page.emulateMedia({ media: "print" });
   await expect(page.getByTestId("v5-print")).toBeHidden();
   await expect(page.getByTestId("v5-invoice-payments")).toBeHidden();
-  await page.screenshot({ path: `${SHOTS}/07-print-media.png`, fullPage: true });
+  await shot(page, "07-print-media");
   // The two-line project cells never push the signatures off the one A4 page.
   const fit = await page.evaluate(() => {
     const sheet = document.querySelector(".invoice-sheet")!.getBoundingClientRect();
@@ -320,11 +327,11 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   });
   expect(fit).toEqual({ inside: true, long: false });
   const pdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
-  writeFileSync(`${SHOTS}/tax-invoice.pdf`, pdf);
+  if (SHOTS) writeFileSync(`${SHOTS}/tax-invoice.pdf`, pdf);
   expect((pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(1);
   await page.emulateMedia({ media: "screen" });
 
-  // A long invoice keeps every line at full size and flows onto a second page.
+  // The current print layout keeps all lines and fits the whole invoice on one A4 sheet.
   const longInvoice = await page.request.post("/api/v5/tax-invoices", {
     data: {
       customerId: client.id, invoiceDate: (await state(page)).taxInvoices.find((i) => i.invoiceNumber === number)!.invoiceDate,
@@ -338,8 +345,8 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(page.getByTestId("tax-invoice-line")).toHaveCount(12);
   await page.emulateMedia({ media: "print" });
   const longPdf = await page.pdf({ format: "A4", printBackground: true, preferCSSPageSize: true });
-  writeFileSync(`${SHOTS}/tax-invoice-long.pdf`, longPdf);
-  expect((longPdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(2);
+  if (SHOTS) writeFileSync(`${SHOTS}/tax-invoice-long.pdf`, longPdf);
+  expect((longPdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length).toBe(1);
   await page.emulateMedia({ media: "screen" });
   await page.goto(invoiceUrl);
 
@@ -522,7 +529,7 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
   await sheet.getByTestId("v5-customer-telephone").fill(PHONE);
   await sheet.getByTestId("v5-customer-vatin").fill(VATIN);
   await expect(sheet.getByTestId("v5-doc-empty")).toHaveCount(0); // documents come after the first save
-  await sheet.getByTestId("v5-customer-save").click();
+  await page.getByRole("dialog").getByTestId("v5-customer-save").click();
   await expect(sheet).toHaveCount(0);
   const customer = (await state(page)).customers.find((c) => c.companyNameEn === EN)!;
   expect(customer.customerCode).toMatch(/^C\d{4}$/);

@@ -77,8 +77,9 @@ export function Modal({
         footer={footer}
         contentClassName="px-5 pt-4 sm:px-6"
         forceDesktop={forceBottomSheet}
+        testId={forceBottomSheet ? testId : undefined}
       >
-        <div data-testid={testId}>{children}</div>
+        <div data-testid={forceBottomSheet ? undefined : testId}>{children}</div>
       </MobileBottomSheet>
     );
   }

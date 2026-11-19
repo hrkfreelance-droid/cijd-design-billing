@@ -1,3 +1,5 @@
+import type { LegacyProject } from "./billing-v5/project-history";
+
 /**
  * Domain model for CIJD DESIGN Billing.
  *
@@ -480,6 +482,8 @@ export interface TaxInvoiceRecord {
   ledgerInvoiceId: string;
   invoiceNumber: string;
   invoiceDate: string;
+  /** Optional recorded due date. Older invoices do not have a payment term. */
+  dueDate?: string | null;
   status: "ISSUED" | "CANCELLED";
   customer: Omit<ClientTaxProfile, "clientId" | "updatedAt" | "updatedBy">;
   project: { name: string; note: string };
@@ -554,6 +558,9 @@ export interface Snapshot {
   mode: "local" | "supabase";
   /** Which slice of the data this snapshot contains, given the viewer's role. */
   scope: { production: boolean; billing: boolean; payment: boolean; printing?: boolean };
+  /** Read-only history and legacy ledger payments for V5 Billing. */
+  legacyProjects?: LegacyProject[];
+  payments?: Payment[];
   /** V5 accounting data; absent outside V5. */
   projectPayments?: ProjectPayment[];
   clientTaxProfiles?: ClientTaxProfile[];

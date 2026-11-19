@@ -25,7 +25,7 @@ import { InvoiceEditor } from "./invoice-editor";
  * Accounting is one screen: work handed off by Design, then the invoice list.
  * Status is shown on each row/invoice instead of splitting the workflow into tabs.
  */
-export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
+export function AccountingBoard({ snapshot, embedded = false }: { snapshot: Snapshot; embedded?: boolean }) {
   const t = useV5T();
   const eligible = useMemo(() => {
     const accountingIds = new Set(snapshot.projects.filter((project) => project.billingReadiness === "ACCOUNTING").map((project) => project.id));
@@ -41,7 +41,7 @@ export function AccountingBoard({ snapshot }: { snapshot: Snapshot }) {
   return (
     <div className="pb-36" data-testid="v5-accounting">
       <header className="px-5 pb-2 pt-6 sm:px-8 sm:pt-8">
-        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">{t("accounting.title")}</h1>
+        {!embedded && <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">{t("accounting.title")}</h1>}
         <p className="mt-1 text-[13.5px] text-muted">{t("accounting.subtitle")}</p>
         <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-12">
           <Figure label={t("accounting.toInvoice")} strong testId="v5-to-invoice-total">{moneyExact(toInvoiceTotal)}</Figure>
@@ -685,7 +685,7 @@ function NoInvoiceRecords({ snapshot }: { snapshot: Snapshot }) {
     if (ok) toast(t("noInvoice.reversed"));
   };
   return (
-    <section className="mt-9" data-testid="v5-no-invoice-records">
+    <section className="mt-9" id="no-invoice-records" data-testid="v5-no-invoice-records">
       <h3 className="border-b border-line-strong pb-2 text-[15px] font-semibold">{t("noInvoice.section")}</h3>
       <ul>
         {records.map((record) => {

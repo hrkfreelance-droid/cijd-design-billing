@@ -2,6 +2,7 @@ import { RuleError } from "@/lib/data/repository";
 import { Store } from "@/lib/data/store";
 import type { Database } from "@/lib/types";
 import { d1Persistence, type D1DatabaseLike } from "./d1-persistence";
+import type { LegacyProject } from "./project-history";
 import type { R2BucketLike } from "./documents";
 
 /**
@@ -101,4 +102,16 @@ export function v5Secret(name: string): string | undefined {
   const env = (globalThis as Record<string, unknown>)[ENV_KEY] as Record<string, unknown> | undefined;
   const value = env?.[name] ?? process.env[name];
   return typeof value === "string" && value ? value : undefined;
+}
+
+export async function readLegacyProjects(): Promise<LegacyProject[]> {
+  const { results } = await v5Database()
+    .prepare(`SELECT history.snapshot FROM v5_project_history AS history
+      WHERE NOT EXISTS (
+        SELECT 1 FROM v5_state AS state, json_each(state.data) AS project
+        WHERE (state.collection = 'projects' OR state.collection GLOB 'projects#[0-9]*')
+          AND json_extract(project.value, '$.id') = history.project_id
+      )`)
+    .all<{ snapshot: string }>();
+  return results.map(({ snapshot }) => JSON.parse(snapshot) as LegacyProject);
 }

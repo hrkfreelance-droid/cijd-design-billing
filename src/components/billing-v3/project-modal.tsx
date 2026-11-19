@@ -46,6 +46,7 @@ export function ProjectModal({
   serviceTypes = [],
   depositLocked = false,
   accountingFlow = false,
+  initialEdit = false,
   onClose,
 }: {
   project: BoardProject;
@@ -56,6 +57,7 @@ export function ProjectModal({
   depositLocked?: boolean;
   /** V5 hands finished Design work to Accounting instead of archiving it. */
   accountingFlow?: boolean;
+  initialEdit?: boolean;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -63,13 +65,13 @@ export function ProjectModal({
   const { refresh } = useData();
   const { toast } = useToast();
   const { run, busy, describe } = useAction();
-  const [mode, setMode] = useState<"view" | "edit">("view");
+  const [mode, setMode] = useState<"view" | "edit">(initialEdit ? "edit" : "view");
   const [name, setName] = useState(project.name);
   const [clientId, setClientId] = useState(project.clientId);
   const [note, setNote] = useState(project.note);
-  const [drafts, setDrafts] = useState<ItemDraft[]>([]);
-  const [deposit, setDeposit] = useState("");
-  const [wasReady, setWasReady] = useState(false);
+  const [drafts, setDrafts] = useState<ItemDraft[]>(() => initialEdit ? (project.items.length ? project.items.map(draftFromItem) : [blankDraft()]) : []);
+  const [deposit, setDeposit] = useState(initialEdit && project.balance.deposit > 0 ? project.balance.deposit.toFixed(2) : "");
+  const [wasReady, setWasReady] = useState(initialEdit && project.blocker === null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Confirm>(null);
@@ -89,6 +91,7 @@ export function ProjectModal({
   };
 
   const cancelEditing = () => {
+    if (initialEdit) return onClose();
     setSaveError(null);
     setMode("view");
   };
@@ -151,7 +154,8 @@ export function ProjectModal({
           ),
       });
       await refresh();
-      setMode("view");
+      if (initialEdit) onClose();
+      else setMode("view");
       toast(t("v2.saved"));
     } catch (error) {
       console.error("[billing-v2] save failed", error);
@@ -317,7 +321,7 @@ export function ProjectModal({
               />
             </label>
             <label className="block">
-              <span className="mb-1 block text-[12px] font-medium text-muted">Customer</span>
+              <span className="mb-1 block text-[12px] font-medium text-muted">{accountingFlow ? t("v2.client") : "Customer"}</span>
               <Select value={clientId} onChange={(event) => setClientId(event.target.value)} disabled={saving || depositLocked} data-testid="v2-project-client">
                 {clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
               </Select>

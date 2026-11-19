@@ -14,6 +14,7 @@ const DIST_DIR = ".next-test";
  */
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: ["**/v5/**", "**/unit/**"], // V5 and Node unit tests have separate runners.
   fullyParallel: false,
   workers: 1,
   reporter: [["list"]],
@@ -27,7 +28,11 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}) },
+      use: {
+        ...devices["Desktop Chrome"],
+        ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}),
+        ...(process.env.PW_EXECUTABLE ? { launchOptions: { executablePath: process.env.PW_EXECUTABLE } } : {}),
+      },
     },
   ],
   webServer: {
