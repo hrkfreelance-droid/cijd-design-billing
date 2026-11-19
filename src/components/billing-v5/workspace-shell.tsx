@@ -7,7 +7,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type R
 import { ArchiveIcon, BillIcon, ChevronDown, ClockIcon, ListIcon, MoonIcon, SearchIcon, SunIcon } from "@/components/icons";
 import { useData, useI18n, useSession, useTheme } from "@/components/providers";
 import { canAny, homeFor } from "@/lib/auth/roles";
-import { buildProjectViews, matchesSearch, normalizeSearch, projectMatches, type ProjectView } from "@/lib/billing-v5/project-view";
+import { buildProjectViews, pricingCustomerCandidates, matchesSearch, normalizeSearch, projectMatches, type ProjectView } from "@/lib/billing-v5/project-view";
 import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
 import { BILLING, projectHref, WorkspaceState } from "./workspace-parts";
 
@@ -22,6 +22,9 @@ const sections = [
 
 const ProjectContext = createContext<ProjectView[]>([]);
 export const useProjectViews = () => useContext(ProjectContext);
+
+const PricingCustomerContext = createContext<ReturnType<typeof pricingCustomerCandidates>>([]);
+export const usePricingCustomerCandidates = () => useContext(PricingCustomerContext);
 
 function useBillingNavigation() {
   const path = usePathname();
@@ -85,7 +88,7 @@ function GlobalSearch({ projects }: { projects: ProjectView[] }) {
   }, []);
 
   const needle = query.trim();
-  const results = needle ? projects.filter((project) => projectMatches(project, needle))
+  const results = needle ? projects.filter((project) => !project.draft && projectMatches(project, needle))
     .sort((a, b) => b.project.date.localeCompare(a.project.date)) : [];
   const invoices = needle ? (snapshot?.taxInvoices ?? []).filter((invoice) => matchesSearch(
     normalizeSearch([invoice.invoiceNumber, invoice.project.name, invoice.customer.companyNameEn, invoice.customer.companyNameKm].join(" ")), needle,
@@ -172,27 +175,31 @@ export function BillingWorkspace({ children }: { children: ReactNode }) {
   const allowed = !!user && canAny(user.role, ["billing:read", "billing:price:write", "payment:read"]);
   const projects = useMemo(() => snapshot ? buildProjectViews(snapshot) : [], [snapshot]);
 
+  const pricingCandidates = useMemo(() => snapshot ? pricingCustomerCandidates(snapshot.clients, projects) : [], [snapshot, projects]);
+
   useEffect(() => {
     if (ready && !user) router.replace("/signin");
     if (ready && user && !allowed) router.replace(homeFor(user.role));
   }, [ready, user, allowed, router]);
 
   const content = ready && allowed && snapshot ? children : <WorkspaceState mode={error ? "error" : "loading"} />;
-  if (path.startsWith(`${BILLING}/tax-invoices/`)) return <main className="min-h-dvh bg-bg">{content}</main>;
+  if (path.startsWith(`${BILLING}/tax-invoices/`)) return <main className="bw-standalone min-h-dvh bg-bg">{content}</main>;
 
   return (
     <ProjectContext.Provider value={projects}>
-      <div className="bw-shell">
-        <Header projects={projects} />
-        <div className="bw-frame">
-          <Navigation />
-          <main className="bw-main" id="billing-content">
-            {error && snapshot && <WorkspaceState mode="error" />}
-            {content}
-          </main>
+      <PricingCustomerContext.Provider value={pricingCandidates}>
+        <div className="bw-shell">
+          <Header projects={projects} />
+          <div className="bw-frame">
+            <Navigation />
+            <main className="bw-main" id="billing-content">
+              {error && snapshot && <WorkspaceState mode="error" />}
+              {content}
+            </main>
+          </div>
+          <Navigation mobile />
         </div>
-        <Navigation mobile />
-      </div>
+      </PricingCustomerContext.Provider>
     </ProjectContext.Provider>
   );
 }

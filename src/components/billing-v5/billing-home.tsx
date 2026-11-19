@@ -35,7 +35,7 @@ export function BillingHome() {
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")).slice(0, 5);
   const metrics: { label: WorkspaceKey; count: number; href: string; amount?: number; hint?: WorkspaceKey; tone: string }[] = [
     { label: "ready", count: projects.filter((entry) => entry.canIssue || entry.status === "ready").length, href: "/projects?status=ready", tone: "ready" },
-    { label: "progress", count: projects.filter((entry) => entry.status === "progress").length, href: "/projects?status=progress", tone: "progress" },
+    { label: "progress", count: projects.filter((entry) => !entry.draft && entry.status === "progress").length, href: "/projects?status=progress", tone: "progress" },
     { label: "unpaid", count: unpaid.length, amount: unpaid.reduce((sum, entry) => sum + entry.outstanding, 0), href: "/tax-invoices?collection=open", tone: "unpaid" },
     { label: "overdue", count: overdue.length, href: "/tax-invoices?collection=overdue", hint: unpaid.length && unpaid.every((entry) => !entry.due) ? "noDue" : undefined, tone: "overdue" },
   ];
@@ -46,7 +46,7 @@ export function BillingHome() {
       <h2 className="bw-section-title">{t("today")}</h2>
       <div className="bw-metrics" data-layout-group>
         {metrics.map(({ label, count, href, amount, hint, tone }) => (
-          <Link className="bw-card bw-metric" data-tone={tone} key={label} href={BILLING + href}>
+          <Link className="bw-card bw-metric" data-tone={tone === "overdue" && count === 0 ? undefined : tone} key={label} href={BILLING + href}>
             <span>{t(label)} <ChevronRight /></span>
             <strong>{count}</strong>
             {amount != null && <Amount usd={amount} />}

@@ -40,7 +40,7 @@ export function Amount({ usd, khr, estimated }: { usd: number | null; khr?: numb
 
 export function ProjectStatusBadges({ view }: { view: ProjectView }) {
   const t = useWorkspaceT();
-  const workStatus = view.workComplete ? "completed" : view.status;
+  const workStatus = view.draft ? "draft" : view.workComplete ? "completed" : view.status;
   return <span className="bw-project-badges" data-layout-group>
     <span className="bw-badge" data-status={workStatus}>{t(workStatus)}</span>
     {view.collection && <span className="bw-badge" data-status={view.collection}>{t(view.collection)}</span>}

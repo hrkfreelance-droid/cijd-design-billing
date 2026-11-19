@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
-import { matchesSearch, normalizeSearch, priceHistory, type PriceEntry } from "@/lib/billing-v5/project-view";
+import { matchesSearch, normalizeSearch, priceHistory, pricingCustomerIds, type PriceEntry } from "@/lib/billing-v5/project-view";
 import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
-import { useProjectViews } from "./workspace-shell";
+import { usePricingCustomerCandidates, useProjectViews } from "./workspace-shell";
 import { Amount, BILLING, projectHref, WorkspaceHeading, WorkspaceState } from "./workspace-parts";
 
 export function PriceRows({ rows }: { rows: PriceEntry[] }) {
@@ -33,9 +33,10 @@ export function PriceHistory() {
 
 function PriceResults({ initial, client, projects, t }: { initial: string; client: string; projects: ReturnType<typeof useProjectViews>; t: ReturnType<typeof useWorkspaceT> }) {
   const [query, setQuery] = useState(initial);
+  const customerIds = pricingCustomerIds(client, usePricingCustomerCandidates());
   const history = useMemo(() => priceHistory(projects), [projects]);
   const entries = history.filter((entry) =>
-    (!client || entry.view.project.clientId === client)
+    (!client || customerIds.has(entry.view.project.clientId))
     && matchesSearch(normalizeSearch(`${entry.name} ${entry.view.project.name}`), query),
   );
   const exact = normalizeSearch(query);

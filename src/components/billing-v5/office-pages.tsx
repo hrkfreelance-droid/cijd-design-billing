@@ -8,7 +8,7 @@ import { Button } from "@/components/ui";
 import { canAny } from "@/lib/auth/roles";
 import { useV5T } from "@/lib/billing-v5/i18n";
 import { invoiceCollection } from "@/lib/billing-v5/ontology";
-import { priceHistory, taxInvoiceView, type ProjectPaymentView } from "@/lib/billing-v5/project-view";
+import { priceHistory, pricingCustomerIds, taxInvoiceView, type ProjectPaymentView } from "@/lib/billing-v5/project-view";
 import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
 import type { Snapshot } from "@/lib/types";
 import { AccountingBoard } from "./accounting-board";
@@ -18,7 +18,7 @@ import { CustomerMaster, ProductMaster } from "./masters";
 import { PriceRows } from "./price-history";
 import { DetailSection, PaymentRows, RecordRows } from "./project-view-detail";
 import { ProjectRows } from "./projects-workspace";
-import { useProjectViews } from "./workspace-shell";
+import { usePricingCustomerCandidates, useProjectViews } from "./workspace-shell";
 import { BILLING, WorkspaceHeading, WorkspaceState } from "./workspace-parts";
 
 function InvoiceArea({ snapshot, collection }: { snapshot: Snapshot; collection?: string | null }) {
@@ -77,6 +77,7 @@ export function CustomersPage() {
   const t = useWorkspaceT();
   const { snapshot } = useData();
   const projects = useProjectViews();
+  const candidates = usePricingCustomerCandidates();
   const params = useSearchParams();
   const router = useRouter();
   if (!snapshot) return null;
@@ -85,6 +86,13 @@ export function CustomersPage() {
     .map((view) => [view.project.clientId, view.client]))];
   return <div className="bw-page" data-testid="v5-customers-page">
     <WorkspaceHeading title={t("customers")} />
+    {candidates.length > 0 && <details className="bw-card bw-customer-candidates">
+      <summary>{t("mergeCandidates")}</summary>
+      <p>{t("mergeCandidateHelp")}</p>
+      <ul>{candidates.map((group) => <li key={group[0].id}>
+        {group.map((client) => <Link key={client.id} className="bw-text-link" href={`${BILLING}/customers/${encodeURIComponent(client.id)}`}>{client.name}</Link>)}
+      </li>)}</ul>
+    </details>}
     <CustomerMaster key={params.get("edit")} snapshot={snapshot} activityLinks legacyClients={historicalClients}
       initialEdit={snapshot.clients.find((client) => client.id === params.get("edit"))?.id}
       onCloseEditor={params.has("edit") ? () => router.replace(`${BILLING}/customers`) : undefined}
@@ -96,6 +104,7 @@ export function CustomerActivity({ id }: { id: string }) {
   const t = useWorkspaceT();
   const { snapshot } = useData();
   const projects = useProjectViews();
+  const candidates = usePricingCustomerCandidates();
   if (!snapshot) return null;
   const own = projects.filter((entry) => entry.project.clientId === id)
     .sort((a, b) => b.project.date.localeCompare(a.project.date));
@@ -116,7 +125,8 @@ export function CustomerActivity({ id }: { id: string }) {
   }
   const uniquePayments = [...new Map(payments.map((entry) => [entry.id, entry])).values()]
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
-  const history = priceHistory(own);
+  const pricingIds = pricingCustomerIds(id, candidates);
+  const history = priceHistory(projects.filter((entry) => pricingIds.has(entry.project.clientId)));
 
   return <div className="bw-page bw-customer-detail" data-testid="billing-customer-detail">
     <WorkspaceHeading title={name} actions={
@@ -126,7 +136,7 @@ export function CustomerActivity({ id }: { id: string }) {
       </>
     } />
     <DetailSection title={t("projects")}>
-      <ProjectRows rows={own} query={new URLSearchParams({ client: id }).toString()} />
+      <ProjectRows rows={own.filter((entry) => !entry.draft)} query={new URLSearchParams({ client: id }).toString()} />
     </DetailSection>
     <DetailSection title={t("invoices")}><RecordRows invoices={invoices} /></DetailSection>
     {snapshot.scope.payment && <DetailSection title={t("payments")}><PaymentRows payments={uniquePayments} invoices={invoices} /></DetailSection>}

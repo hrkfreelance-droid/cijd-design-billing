@@ -1,11 +1,11 @@
 import { pendingProjects, storedFinalUnitPrice, type BoardProject } from "../billing-v2/board";
 import { isCostPriced, serviceForItem } from "../billing-v2/services";
 import { isHistoricalRecord, isProductionComplete } from "../derive";
-import type { BillingItem, Invoice, Project, Snapshot, TaxInvoiceRecord } from "../types";
+import type { BillingItem, Client, Invoice, Project, Snapshot, TaxInvoiceRecord } from "../types";
 import { roundMoney } from "./calculation";
 import { customerFor, eligibleBilling, invoiceCollection, LEDGER_PAYMENT_PREFIX } from "./ontology";
 
-export const projectStatuses = ["progress", "ready", "unpaid", "completed", "all"] as const;
+export const projectStatuses = ["progress", "ready", "unpaid", "completed", "all", "draft"] as const;
 export type ProjectStatus = "progress" | "ready" | "completed";
 export type ProjectCollection = "outstanding" | "partial" | "collected";
 export type WorkKind = "design" | "print" | "other";
@@ -43,6 +43,7 @@ export interface ProjectView {
   payments: ProjectPaymentView[];
   status: ProjectStatus;
   workComplete: boolean;
+  draft: boolean;
   collection: ProjectCollection | null;
   amount: number | null;
   estimatedKhr: number | null;
@@ -104,6 +105,7 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
   const itemProjects = new Map<string, string>();
   const invoiceProjects = new Map<string, Set<string>>();
   const taxLedgerIds = new Set<string>();
+  const noInvoiceProjectIds = new Set((snapshot.noInvoiceIssues ?? []).flatMap((issue) => issue.projectIds));
 
   for (const item of snapshot.billingItems.filter((entry) => !entry.deletedAt)) {
     addToIndex(itemsByProject, item.projectId, item);
@@ -210,6 +212,8 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
     const operational = pending.get(project.id);
     const canIssue = issueIds.has(project.id);
     const archivedImport = imported || items.length > 0 && items.every(isHistoricalRecord);
+    const draft = !archivedImport && !items.length && !invoices.length && !project.depositAmount
+      && !projectPayments.get(project.id)?.length && !noInvoiceProjectIds.has(project.id);
     const workComplete = archivedImport || items.length > 0 && items.every(
       (item) => isHistoricalRecord(item) || isProductionComplete(item),
     );
@@ -228,7 +232,7 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
     return {
       project, client: customer, kinds, items: lines, invoices,
       payments: payments.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "")),
-      status, workComplete, collection, amount, archivedImport, readOnly: archivedImport || !operational,
+      status, workComplete, draft, collection, amount, archivedImport, readOnly: archivedImport || !operational,
       estimatedKhr: amount !== null && snapshot.exchangeRate && !archivedImport
         ? Math.round(amount * snapshot.exchangeRate.rate) : null,
       pending: archivedImport ? undefined : operational, canIssue,
@@ -259,16 +263,40 @@ export function priceHistory(projects: ProjectView[]): PriceEntry[] {
   })).sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
 }
 
-export function similarProjects(view: ProjectView, projects: ProjectView[]): ProjectView[] {
+// Only explicitly identified name variants participate in price comparisons.
+const pricingNameGroups = [
+  ["Ringer Hut", "Ringerhut(Cambodia) CO.,Ltd"],
+];
+
+function aliasName(name: string) {
+  return normalizeSearch(name).replace(/[^\p{L}\p{M}\p{N}]/gu, "");
+}
+
+export function pricingCustomerCandidates(clients: Pick<Client, "id" | "name">[], projects: ProjectView[]) {
+  const customers = new Map(projects.filter((view) => view.client)
+    .map((view) => [view.project.clientId, { id: view.project.clientId, name: view.client }]));
+  for (const client of clients) customers.set(client.id, client);
+  return pricingNameGroups.flatMap((names) => {
+    const variants = new Set(names.map(aliasName));
+    const group = [...customers.values()].filter(({ name }) => variants.has(aliasName(name)));
+    return group.length > 1 ? [group] : [];
+  });
+}
+
+export function pricingCustomerIds(id: string, groups: ReturnType<typeof pricingCustomerCandidates>) {
+  return new Set(groups.find((group) => group.some((client) => client.id === id))?.map((client) => client.id) ?? [id]);
+}
+
+export function similarProjects(view: ProjectView, projects: ProjectView[], customerIds: ReadonlySet<string> = new Set([view.project.clientId])): ProjectView[] {
   const projectName = normalizeSearch(view.project.name);
   const itemNames = new Set(view.items.map(({ item }) => normalizeSearch(item.description)).filter(Boolean));
   return projects.flatMap((entry) => {
-    if (entry.project.id === view.project.id || entry.amount == null ||
+    if (entry.project.id === view.project.id || entry.amount == null || entry.amount === 0 ||
         (entry.status !== "completed" && entry.collection !== "outstanding" && entry.collection !== "partial")) return [];
     const name = normalizeSearch(entry.project.name);
     const score = (name === projectName ? 4 : name.includes(projectName) || projectName.includes(name) ? 2 : 0)
       + (entry.items.some(({ item }) => itemNames.has(normalizeSearch(item.description))) ? 3 : 0)
-      + (entry.project.clientId === view.project.clientId ? 1 : 0);
+      + (customerIds.has(entry.project.clientId) ? 1 : 0);
     return score ? [{ entry, score }] : [];
   }).sort((a, b) => b.score - a.score || b.entry.project.date.localeCompare(a.entry.project.date))
     .slice(0, 8).map(({ entry }) => entry);

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { ChevronRight } from "@/components/icons";
 import { Button } from "@/components/ui";
 import { api, useData, useI18n, useSession } from "@/components/providers";
 import { useAction } from "@/components/use-action";
@@ -30,23 +29,26 @@ export function ProjectRows({ rows, query = "", selected, selection }: {
   selection?: { ids: Set<string>; eligible: Set<string>; toggle: (id: string) => void };
 }) {
   const t = useWorkspaceT();
+  const khr = new Intl.NumberFormat("en-US");
   if (!rows.length) return <WorkspaceState>{t("emptyProjects")}</WorkspaceState>;
   return (
-    <ul className="bw-project-rows">
+    <ul className={`bw-project-rows${selection?.eligible.size ? " bw-project-rows-selectable" : ""}`}>
       {rows.map((view) => (
-        <li key={view.project.id} className={selection?.eligible.has(view.project.id) ? "bw-selectable-row" : undefined}>
+        <li key={view.project.id}>
           {selection?.eligible.has(view.project.id) && <label className="bw-checkbox">
             <input type="checkbox" checked={selection.ids.has(view.project.id)} onChange={() => selection.toggle(view.project.id)} />
             <span className="sr-only">{view.project.name}</span>
           </label>}
           <Link className="bw-project-row" href={projectHref(view.project.id, query)} aria-current={view.project.id === selected ? "page" : undefined} data-testid="billing-project-row" data-layout-group>
             <span className="bw-project-name"><strong>{view.project.name}</strong><small>{view.client || "—"}</small></span>
-            <span className="bw-project-meta">
-              <ProjectStatusBadges view={view} />
-              <small>{[view.project.date, ...view.kinds.map(t)].filter(Boolean).join(" · ")}</small>
+            <span className="bw-project-kinds">
+              {view.kinds.map((kind) => <span key={kind} className="bw-badge">{t(kind)}</span>)}
             </span>
-            <Amount usd={view.amount} khr={view.estimatedKhr} estimated />
-            <ChevronRight className="bw-row-arrow" />
+            <ProjectStatusBadges view={view} />
+            <time className="bw-project-date" dateTime={view.project.date}>{view.project.date}</time>
+            <span className="bw-project-amount" title={view.estimatedKhr == null ? undefined : `${t("estimate")} ${khr.format(view.estimatedKhr)} ៛`}>
+              <Amount usd={view.amount} />
+            </span>
           </Link>
         </li>
       ))}
@@ -77,6 +79,8 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
   const to = params.get("to") ?? "";
   const min = params.get("min") ?? "";
   const max = params.get("max") ?? "";
+  const advancedActive = Boolean(from || to || min || max);
+  const [advancedOpen, setAdvancedOpen] = useState(advancedActive);
   const hasFilters = Boolean(query || clientId || kind !== "all" || from || to || min || max || sort !== "newest");
   const clients = [...new Map(projects.filter((view) => view.client).map((view) => [view.project.clientId, view.client]))]
     .sort((a, b) => a[1].localeCompare(b[1]));
@@ -97,7 +101,8 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
   }
 
   const filtered = projects.filter((view) =>
-    (status === "all"
+    (status === "draft" ? view.draft : !view.draft) &&
+    (status === "draft" || status === "all"
       || status === "completed" && view.workComplete
       || status === "unpaid" && (view.collection === "outstanding" || view.collection === "partial")
       || status === "ready" && (view.status === "ready" || view.canIssue)
@@ -150,7 +155,6 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
 
   const serialized = params.toString();
   const closeHref = serialized ? `${listPath}?${serialized}` : listPath;
-  const archiveParams = queryWith({ status: "completed" });
   const clearParams = queryWith({ q: "", kind: "", client: "", from: "", to: "", min: "", max: "", sort: "" });
   const title = kind === "all" ? t("projects") : t(kind);
 
@@ -159,40 +163,40 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
       <div className={id ? "bw-project-list-header bw-hide-with-detail" : "bw-project-list-header"}>
         <WorkspaceHeading title={title} actions={
           <>
-            {status === "completed"
-              ? <Link className="bw-control" href={`${BILLING}/tax-invoices?collection=paid`}>{t("invoices")}</Link>
-              : <Link className="bw-control" href={`${listPath}?${archiveParams}`}>{t("archive")}</Link>}
+            <Link className="bw-control" href={`${BILLING}/tax-invoices`}>{t("invoices")}</Link>
             {user && can(user.role, "production:write") && (
               <Button variant="primary" onClick={() => setCreating(true)} data-testid="v2-new-project">+ {common("v2.newProject")}</Button>
             )}
           </>
         } />
         <div className="bw-filter-panel">
-          <nav className="bw-tabs" aria-label={t("status")} aria-describedby="bw-completed-help" data-layout-group>
+          <nav className="bw-tabs" aria-label={t("status")} aria-describedby={status === "completed" ? "bw-completed-help" : undefined} data-layout-group>
             {projectStatuses.map((key) => {
               const next = queryWith({ status: key === "all" ? "" : key });
               return <Link key={key} href={next ? `${listPath}?${next}` : listPath} aria-current={status === key ? "page" : undefined}>{t(key === "unpaid" ? "balanceDue" : key)}</Link>;
             })}
           </nav>
-          <p className="bw-filter-help" id="bw-completed-help">{t("completedHelp")}</p>
-          <div className="bw-filters" data-layout-group>
-            <label className="bw-wide"><span>{t("searchProjects")}</span><input className="bw-input" type="search" value={query} onChange={(event) => setFilter("q", event.target.value)} data-testid="billing-project-search" /></label>
-            <label><span>{t("kind")}</span><select className="bw-input" value={kind} onChange={(event) => setFilter("kind", event.target.value)}>{kindOptions.map((key) => <option key={key} value={key}>{t(key)}</option>)}</select></label>
-            <label><span>{t("customer")}</span><select className="bw-input" value={clientId} onChange={(event) => setFilter("client", event.target.value)}>
-              <option value="">{t("all")}</option>
+          <div className="bw-filters bw-project-filters" data-layout-group>
+            <input className="bw-input bw-wide" type="search" aria-label={t("searchProjects")} placeholder={t("searchProjects")} value={query} onChange={(event) => setFilter("q", event.target.value)} data-testid="billing-project-search" />
+            <select className="bw-input" aria-label={t("kind")} value={kind} onChange={(event) => setFilter("kind", event.target.value)}>
+              {kindOptions.map((key) => <option key={key} value={key}>{t(key === "all" ? "allKinds" : key)}</option>)}
+            </select>
+            <select className="bw-input" aria-label={t("customer")} value={clientId} onChange={(event) => setFilter("client", event.target.value)}>
+              <option value="">{t("allCustomers")}</option>
               {clients.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
-            </select></label>
-            <label><span>{t("sort")}</span><select className="bw-input" value={sort} onChange={(event) => setFilter("sort", event.target.value)}>{sorts.map((key) => <option key={key} value={key}>{t(key)}</option>)}</select></label>
+            </select>
+            <select className="bw-input" aria-label={t("sort")} value={sort} onChange={(event) => setFilter("sort", event.target.value)}>
+              {sorts.map((key) => <option key={key} value={key}>{t(key)}</option>)}
+            </select>
+            <button type="button" className="bw-control bw-filter-toggle" aria-expanded={advancedOpen} aria-controls="bw-advanced-filters" data-active={advancedActive || undefined} onClick={() => setAdvancedOpen((open) => !open)}>{t("filters")}</button>
           </div>
-          <details className="bw-filter-extra" open={Boolean(from || to || min || max) || undefined}>
-            <summary>{t("filters")}</summary>
-            <div className="bw-filters bw-dates" data-layout-group>
-              <label><span>{t("from")}</span><input className="bw-input" type="date" value={from} onChange={(event) => setFilter("from", event.target.value)} /></label>
-              <label><span>{t("to")}</span><input className="bw-input" type="date" value={to} onChange={(event) => setFilter("to", event.target.value)} /></label>
-              <label><span>{t("min")}</span><input className="bw-input" type="number" min="0" step="0.01" value={min} onChange={(event) => setFilter("min", event.target.value)} /></label>
-              <label><span>{t("max")}</span><input className="bw-input" type="number" min="0" step="0.01" value={max} onChange={(event) => setFilter("max", event.target.value)} /></label>
-            </div>
-          </details>
+          <div className="bw-filters bw-dates" id="bw-advanced-filters" hidden={!advancedOpen} data-layout-group>
+            <label><span>{t("from")}</span><input className="bw-input" type="date" value={from} onChange={(event) => setFilter("from", event.target.value)} /></label>
+            <label><span>{t("to")}</span><input className="bw-input" type="date" value={to} onChange={(event) => setFilter("to", event.target.value)} /></label>
+            <label><span>{t("min")}</span><input className="bw-input" type="number" min="0" step="0.01" value={min} onChange={(event) => setFilter("min", event.target.value)} /></label>
+            <label><span>{t("max")}</span><input className="bw-input" type="number" min="0" step="0.01" value={max} onChange={(event) => setFilter("max", event.target.value)} /></label>
+          </div>
+          {status === "completed" && <p className="bw-filter-help" id="bw-completed-help">{t("completedHelp")}</p>}
         </div>
       </div>
       <div className={id ? "bw-project-split" : undefined}>

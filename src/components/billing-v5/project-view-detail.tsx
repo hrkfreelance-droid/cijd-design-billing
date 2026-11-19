@@ -11,11 +11,11 @@ import { can, canAny } from "@/lib/auth/roles";
 import { isBilled, selectableClients } from "@/lib/billing-v2/board";
 import { useV5T } from "@/lib/billing-v5/i18n";
 import { eligibleBilling } from "@/lib/billing-v5/ontology";
-import { similarProjects, type ProjectInvoice, type ProjectPaymentView, type ProjectView } from "@/lib/billing-v5/project-view";
+import { pricingCustomerIds, similarProjects, type ProjectInvoice, type ProjectPaymentView, type ProjectView } from "@/lib/billing-v5/project-view";
 import { useWorkspaceT, type WorkspaceKey } from "@/lib/billing-v5/workspace-i18n";
 import { moneyExact } from "@/lib/format";
 import { InvoiceEditor } from "./invoice-editor";
-import { useProjectViews } from "./workspace-shell";
+import { usePricingCustomerCandidates, useProjectViews } from "./workspace-shell";
 import { Amount, BILLING, InvoiceLink, projectHref, ProjectStatusBadges, WorkspaceState } from "./workspace-parts";
 
 export function RecordRows({ invoices }: { invoices: ProjectInvoice[] }) {
@@ -68,6 +68,7 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
   const { user } = useSession();
   const { busy, run } = useAction();
   const projects = useProjectViews();
+  const candidates = usePricingCustomerCandidates();
   const [editing, setEditing] = useState(false);
   const [issuing, setIssuing] = useState(false);
   const [handoff, setHandoff] = useState(false);
@@ -82,8 +83,10 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
   const invoiceToPay = invoices.find((entry) => entry.tax && !entry.cancelled && entry.outstanding > 0);
   const canIssue = Boolean(view.canIssue && user && canAny(user.role, ["invoice:write", "payment:write"]));
   const canPay = Boolean(!view.archivedImport && invoiceToPay && user && can(user.role, "payment:write"));
-  const related = similarProjects(view, projects);
+  const related = similarProjects(view, projects, pricingCustomerIds(project.clientId, candidates));
   const hasCost = items.some(({ item }) => item.printCost != null);
+  const deliveries = items.filter(({ item }) => item.deliveredAt || item.deliveredBy)
+    .map(({ item }) => ({ date: item.deliveredAt ?? null, actor: item.deliveredBy ?? null }));
   const issueRecords = (snapshot.noInvoiceIssues ?? []).filter((entry) => entry.projectIds.includes(project.id) && entry.status === "ISSUED");
 
   function changeReadiness(readiness: "READY" | "IN_PROGRESS" | "ACCOUNTING") {
@@ -93,11 +96,15 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
     );
   }
 
-  function timelineEntries(label: WorkspaceKey, events: { date: string | null; actor: string | null }[]) {
-    const values = [...new Map(events.map((entry) => [`${entry.date ?? ""}|${entry.actor ?? ""}`, entry])).values()];
-    return <li>
+  const columns: WorkspaceKey[] = hasCost ? ["quantity", "price", "subtotal", "cost", "margin"] : ["quantity", "price", "subtotal"];
+  const formatAmount = (amount: number | null) => amount == null ? "—" : moneyExact(amount);
+
+  function timelineEntries(label: WorkspaceKey, events: { date: string | null; actor: string | null }[], recorded = events.length > 0) {
+    const values = new Set(events.map(({ date, actor }) => [date?.slice(0, 10), actor].filter(Boolean).join(" · ")).filter(Boolean));
+    return <li data-recorded={recorded}>
       <strong>{t(label)}</strong>
-      {values.length ? values.map(({ date, actor }) => <small key={`${date}|${actor}`}>{[date?.slice(0, 10), actor].filter(Boolean).join(" · ") || "—"}</small>) : <small>—</small>}
+      <span className="sr-only">{t(recorded ? "stageDone" : "stagePending")}</span>
+      <div>{[...values].map((value) => <small key={value}>{value}</small>)}</div>
     </li>;
   }
 
@@ -133,28 +140,36 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
       </header>
 
       <DetailSection title={t("lines")}>
-        {!items.length ? <WorkspaceState /> : <ul className="bw-lines">
-          {items.map(({ item, kind, unit, price }) => (
-            <li key={item.id} data-testid="billing-detail-line">
-              <div className="bw-line-title" data-layout-group>
-                <div><strong>{item.description}</strong><small>{t(kind)}</small></div>
-                <Link className="bw-control" href={`${BILLING}/price-history?${new URLSearchParams({ q: item.description })}`}>{t("prices")}</Link>
-              </div>
-              <dl className="bw-line-numbers" data-layout-group>
-                <div><dt>{t("quantity")}</dt><dd>{item.quantity.toLocaleString()} {unit ?? ""}</dd></div>
-                <div><dt>{t("price")}</dt><dd>{price == null ? "—" : moneyExact(price)}</dd></div>
-                <div><dt>{t("subtotal")}</dt><dd>{item.amount == null ? "—" : moneyExact(item.amount)}</dd></div>
-                {hasCost && <div><dt>{t("cost")}</dt><dd>{item.printCost == null ? "—" : moneyExact(item.printCost)}</dd></div>}
-                {hasCost && <div><dt>{t("margin")}</dt><dd>{item.printCost == null || item.amount == null ? "—" : moneyExact(item.amount - item.printCost)}</dd></div>}
-              </dl>
-            </li>
-          ))}
-        </ul>}
+        {!items.length ? <WorkspaceState /> : <table role="table" className="bw-lines" aria-label={t("lines")} data-cost={hasCost}>
+          <thead role="rowgroup" className="sr-only"><tr role="row">
+            <th role="columnheader" scope="col">{t("item")}</th>
+            {columns.map((column) => <th role="columnheader" key={column} scope="col" className="bw-line-number">{t(column)}</th>)}
+            <th role="columnheader" scope="col"><span className="sr-only">{t("prices")}</span></th>
+          </tr></thead>
+          <tbody role="rowgroup">{items.map(({ item, kind, unit, price }) => {
+            const values = [
+              item.quantity.toLocaleString() + (unit ? ` ${unit}` : ""),
+              formatAmount(price),
+              formatAmount(item.amount),
+              formatAmount(item.printCost ?? null),
+              formatAmount(item.printCost == null || item.amount == null ? null : item.amount - item.printCost),
+            ];
+            const historyQuery = new URLSearchParams({ q: item.description });
+            return <tr role="row" key={item.id} data-testid="billing-detail-line" data-layout-group>
+              <th role="rowheader" scope="row" className="bw-line-title"><strong>{item.description}</strong><small>{t(kind)}</small></th>
+              {columns.map((column, index) => <td role="cell" key={column} className="bw-line-number">
+                <span className="bw-line-label" aria-hidden="true">{t(column)}</span>
+                <span className="bw-line-value">{values[index]}</span>
+              </td>)}
+              <td role="cell" className="bw-line-history"><Link className="bw-text-link" href={`${BILLING}/price-history?${historyQuery}`}>{t("prices")}</Link></td>
+            </tr>;
+          })}</tbody>
+        </table>}
       </DetailSection>
       <DetailSection title={t("timeline")}>
         <ol className="bw-timeline" data-layout-group>
           {timelineEntries("created", [{ date: project.createdAt || project.date, actor: project.createdBy }])}
-          {timelineEntries("delivered", items.filter(({ item }) => item.deliveredAt || item.deliveredBy).map(({ item }) => ({ date: item.deliveredAt ?? null, actor: item.deliveredBy ?? null })))}
+          {timelineEntries("delivered", deliveries, view.workComplete || deliveries.length > 0)}
           {timelineEntries("billed", [...invoices.filter((entry) => !entry.cancelled), ...issueRecords.map((entry) => ({ date: entry.issuedAt, actor: entry.issuedBy }))])}
           {timelineEntries("paid", payments.filter((entry) => !entry.voided))}
         </ol>

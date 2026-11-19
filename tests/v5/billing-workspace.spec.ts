@@ -20,12 +20,12 @@ const exampleInvoice: TaxInvoiceRecord = {
   exchangeRate: 4100, exchangeRateSource: "MANUAL", exchangeRateEffectiveDate: null, totalKhr: 506172834900,
 };
 
-async function addHistory(page: Page, includeLayoutInvoice = false) {
+async function addHistory(page: Page, includeLayoutInvoice = false, edit?: (snapshot: Snapshot) => void) {
   if (process.env.V5_EXPECT_HISTORY === "1") {
     const response = await page.request.get("/api/state");
     expect(response.ok()).toBe(true);
     expect(((await response.json()).data.legacyProjects as { project: { id: string } }[]).map(({ project }) => project.id)).toContain(archiveId);
-    if (!includeLayoutInvoice) return;
+    if (!includeLayoutInvoice && !edit) return;
   }
   await page.route("**/api/state", async (route) => {
     const response = await route.fetch();
@@ -37,6 +37,7 @@ async function addHistory(page: Page, includeLayoutInvoice = false) {
         : entry);
       payload.data.taxInvoices = [...(payload.data.taxInvoices ?? []), exampleInvoice];
     }
+    edit?.(payload.data);
     await route.fulfill({ response, json: payload });
   });
 }
@@ -46,7 +47,7 @@ test("design archive, global search, project details and price comparison share 
   await page.goto("/office-v5");
   await page.getByRole("link", { name: "Design", exact: true }).click();
   await expect(page).toHaveURL(/kind=design/);
-  await page.getByRole("link", { name: "Archive", exact: true }).click();
+  await page.getByRole("link", { name: "Work complete", exact: true }).click();
   await expect(page).toHaveURL(/status=completed/);
   const search = page.getByTestId("billing-project-search");
   await search.fill("ＡＲＣＨＩＶＥ    Brochure");
@@ -85,7 +86,7 @@ test("design archive, global search, project details and price comparison share 
   await page.getByLabel("Sort by").selectOption("highest");
   const rows = page.getByTestId("billing-project-row");
   await expect(rows.first()).toContainText(archiveName);
-  await page.locator(".bw-filter-extra summary").click();
+  await page.locator(".bw-filter-toggle").click();
   await page.getByLabel("Max. amount (USD)", { exact: true }).fill("500");
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText("Archive Brochure earlier edition");
@@ -104,6 +105,61 @@ test("the balance-due filter also includes completed projects", async ({ page })
   await expect(page).toHaveURL(/status=unpaid/);
   await expect(row.locator(".bw-project-badges .bw-badge")).toHaveText(["Work complete", "Partially paid"]);
   await expect(page.getByTestId("billing-project-row").filter({ hasText: "Archive Brochure earlier edition" })).toHaveCount(0);
+});
+
+test("drafts, USD list amounts and customer pricing aliases remain separate from billing records", async ({ page }) => {
+  const owner = fixtureProjects.find(({ project }) => project.id === archiveId)!;
+  const alias = fixtureProjects.find(({ project }) => project.id === "p-older-billed")!;
+  const liveItem = planV3Import(workspaceFixture()).collections.billingItems.find((item) => item.projectId === "p-progress")!;
+  const first = { id: "price-alias-a", name: "Ringer Hut", active: true, createdAt: owner.project.createdAt };
+  const second = { ...first, id: "price-alias-b", name: "Ringerhut(Cambodia) CO.,Ltd" };
+  await addHistory(page, false, (snapshot) => {
+    const base = { ...owner.project, clientId: first.id };
+    const current = { ...base, id: "amount-preview", name: "Active estimate" };
+    const draft = { ...base, id: "empty-draft", name: "Unfinished sample" };
+    snapshot.clients = [...snapshot.clients, first, second];
+    snapshot.projects = [...snapshot.projects, current, draft];
+    snapshot.billingItems = [...snapshot.billingItems, { ...liveItem, id: "amount-line",
+      projectId: current.id, invoiceId: null, amount: 20, quantity: 20 }];
+    snapshot.exchangeRate = { id: "layout-rate", currencyPair: "USD/KHR", rate: 4000,
+      source: "NBC", effectiveDate: "2026-09-29", fetchedAt: "2026-09-29T00:00:00Z" };
+    snapshot.legacyProjects = [
+      { ...owner, client: first, project: base },
+      { ...alias, client: second, project: { ...alias.project, clientId: second.id, name: "A previous contract" } },
+      { ...alias, client: second, project: { ...alias.project, id: "zero-reference", clientId: second.id, name: "Zero value reference" },
+        items: alias.items.map((item) => ({ ...item, id: `zero-${item.id}`, projectId: "zero-reference", amount: 0 })) },
+    ];
+  });
+
+  await page.goto("/office-v5/projects");
+  const list = page.getByTestId("billing-projects");
+  const heading = list.locator(".bw-heading");
+  await expect(heading.getByRole("link", { name: "Invoices", exact: true })).toHaveAttribute("href", "/office-v5/tax-invoices");
+  const rows = list.getByTestId("billing-project-row");
+  await expect(rows.filter({ hasText: "Unfinished sample" })).toHaveCount(0);
+  const amount = rows.filter({ hasText: "Active estimate" }).locator(".bw-project-amount");
+  await expect(amount).toHaveText("$20.00");
+  await expect(amount).toHaveAttribute("title", "Est. 80,000 ៛");
+  await list.getByRole("link", { name: "Drafts", exact: true }).click();
+  await expect(heading.getByRole("link", { name: "Invoices", exact: true })).toHaveAttribute("href", "/office-v5/tax-invoices");
+  await expect(rows.filter({ hasText: "Unfinished sample" })).toBeVisible();
+  await expect(rows.filter({ hasText: "Active estimate" })).toHaveCount(0);
+
+  await page.goto(`/office-v5/projects/${owner.project.id}`);
+  const detail = page.getByTestId("billing-project-detail");
+  await expect(detail.getByRole("link", { name: "A previous contract" })).toBeVisible();
+  await expect(detail.getByRole("link", { name: "Zero value reference" })).toHaveCount(0);
+  await page.goto(`/office-v5/customers/${first.id}`);
+  const customer = page.getByTestId("billing-customer-detail");
+  await expect(customer.locator(".bw-project-rows").getByText("A previous contract")).toHaveCount(0);
+  await expect(customer.locator(".bw-price-rows").getByText("A previous contract")).toBeVisible();
+  await page.goto(`/office-v5/price-history?client=${first.id}`);
+  await expect(page.locator(".bw-price-rows").getByText("A previous contract")).toBeVisible();
+  await page.goto("/office-v5/customers");
+  await page.getByText("Customer merge candidates", { exact: true }).click();
+  const candidates = page.locator(".bw-customer-candidates");
+  await expect(candidates.getByRole("link", { name: first.name, exact: true })).toBeVisible();
+  await expect(candidates.getByRole("link", { name: second.name, exact: true })).toBeVisible();
 });
 
 async function layoutIssues(page: Page) {
@@ -131,15 +187,69 @@ async function layoutIssues(page: Page) {
         }
       }
     }
-    for (const el of document.querySelectorAll<HTMLElement>(".bw-main :is(a, button, strong, small, dd, h1, h2, label, .bw-note, .bw-filter-help, .bw-badge), .bw-header button")) {
+    for (const el of document.querySelectorAll<HTMLElement>(".bw-main :is(a, button, strong, small, dd, h1, h2, label, .bw-note, .bw-filter-help, .bw-badge, .bw-line-value), .bw-header button")) {
       if (!visible(el) || el.closest(".truncate, .sr-only") || getComputedStyle(el).display === "inline") continue;
       if (el.scrollWidth > el.clientWidth + tolerance && el.clientWidth > 0) issues.push(`${describe(el)} text or control overflow`);
     }
-    for (const value of document.querySelectorAll(".bw-line-numbers dd")) {
+    for (const value of document.querySelectorAll(".bw-line-value, .bw-project-amount .bw-money > span")) {
       if (!value.textContent?.startsWith("$") || !visible(value)) continue;
       const range = document.createRange();
       range.selectNodeContents(value);
-      if (range.getClientRects().length > 1) issues.push("money wraps inside a line item");
+      if (range.getClientRects().length > 1) {
+        issues.push(`USD wraps in ${describe(value)} (${Math.round(value.getBoundingClientRect().width)}px, ${value.textContent?.length} characters)`);
+      }
+    }
+    const positions = (el: Element) => {
+      const bounds = el.getBoundingClientRect();
+      return { left: bounds.left, right: bounds.right, center: (bounds.top + bounds.bottom) / 2 };
+    };
+    const textRight = (el: Element) => {
+      const text = document.createRange();
+      text.selectNodeContents(el);
+      return text.getBoundingClientRect().right;
+    };
+    const aligned = (values: number[]) => values.length < 2 || Math.max(...values) - Math.min(...values) <= 2;
+    for (const list of document.querySelectorAll(".bw-project-rows")) {
+      const rows = Array.from(list.querySelectorAll(".bw-project-row")).filter(visible);
+      for (const selector of [".bw-project-name", ".bw-project-kinds", ".bw-project-badges", ".bw-project-date"]) {
+        const edges = rows.map((row) => positions(row.querySelector(selector)!));
+        if (!aligned(edges.map((edge) => edge.left))) issues.push(`misaligned ${selector} columns`);
+      }
+      if (!aligned(rows.map((row) => textRight(row.querySelector(".bw-project-amount .bw-money > span")!)))) {
+        issues.push("project amounts have different right edges");
+      }
+      for (const row of rows) {
+        const wide = getComputedStyle(row).gridTemplateAreas.includes('"name kinds');
+        const groups = wide ? [Array.from(row.children)] : [Array.from(row.children).filter((child) =>
+          child.matches(".bw-project-kinds, .bw-project-badges, .bw-project-date")), Array.from(row.children).filter((child) =>
+          child.matches(".bw-project-name, .bw-project-amount"))];
+        for (const group of groups) {
+          if (!aligned(group.filter((child) => child.getBoundingClientRect().height > 0).map((child) => positions(child).center))) {
+            issues.push("project row fields have different vertical centers");
+          }
+        }
+        for (const group of row.querySelectorAll(".bw-project-badges, .bw-project-kinds")) {
+          const badges = Array.from(group.children).map(positions);
+          const onSameLine = badges.length === 2 && badges[0].right <= badges[1].left;
+          if (onSameLine && !aligned(badges.map(({ center }) => center))) issues.push("badges have different vertical centers");
+        }
+      }
+    }
+    const metricRows = new Map<number, number[]>();
+    for (const metric of document.querySelectorAll(".bw-metric")) {
+      const row = Math.round(metric.getBoundingClientRect().top);
+      const counts = metricRows.get(row) ?? [];
+      counts.push(positions(metric.querySelector("strong")!).center);
+      metricRows.set(row, counts);
+    }
+    if ([...metricRows.values()].some((centers) => !aligned(centers))) issues.push("home counts are vertically misaligned");
+    for (const table of document.querySelectorAll(".bw-lines")) {
+      const rows = Array.from(table.querySelectorAll("tbody tr")).filter(visible);
+      const columns = rows[0]?.querySelectorAll(".bw-line-number").length ?? 0;
+      for (let i = 0; i < columns; i += 1) {
+        const values = rows.map((row) => textRight(row.querySelectorAll(".bw-line-value")[i]));
+        if (!aligned(values)) issues.push("line item numbers have different right edges");
+      }
     }
     return [...new Set(issues)];
   });
@@ -187,15 +297,47 @@ test("Billing layout has no overlaps at 1440 and 375 in JA, EN and KH, light and
             await expect(row.locator(".bw-project-badges [data-status=completed]")).toHaveText(work);
             await expect(row.locator(".bw-project-badges [data-status=partial]")).toHaveText(payment);
           }
-          if (name === "projects") await page.locator(".bw-filter-extra summary").click();
+
           if (name === "detail") await expect(page.locator(".bw-note")).toHaveText(note);
           if (name === "invoice detail") await expect(page.getByTestId("v5-print")).toHaveText(print);
           await page.evaluate(() => document.fonts.ready);
           expect(await layoutIssues(page), `${name} / ${width} / ${locale} / ${theme}`).toEqual([]);
+          if (name === "home") {
+            const contrast = await page.evaluate(() => {
+              const styles = getComputedStyle(document.body);
+              const luminance = (token: string) => {
+                const value = styles.getPropertyValue(token).trim().slice(1);
+                const hex = value.length === 3 ? [...value].map((char) => char.repeat(2)).join("") : value;
+                return [0.2126, 0.7152, 0.0722].reduce((total, weight, index) => {
+                  const channel = parseInt(hex.slice(index * 2, index * 2 + 2), 16) / 255;
+                  return total + weight * (channel <= .04045 ? channel / 12.92 : ((channel + .055) / 1.055) ** 2.4);
+                }, 0);
+              };
+              return [
+                ["--c-text", "--c-bg"], ["--bw-ink", "--c-panel"], ["--c-muted", "--c-fill"],
+                ["--bw-action", "--bw-selected"], ["--c-on-accent", "--bw-brand"], ["--c-danger", "--c-panel"],
+              ].map(([foreground, background]) => {
+                const [dark, light] = [luminance(foreground), luminance(background)].sort((a, b) => a - b);
+                return (light + .05) / (dark + .05);
+              });
+            });
+            for (const ratio of contrast) expect(ratio).toBeGreaterThanOrEqual(4.5);
+          }
           const dir = process.env.V5_WORKSPACE_SHOTS;
-          if (dir && ((locale === "en" && theme === "light" && width === 1440 && ["home", "detail", "prices"].includes(name))
-            || (locale === "kh" && theme === "dark" && width === 375 && name === "detail")
+          if (name === "projects") {
+            await page.locator(".bw-filter-toggle").click();
+            expect(await layoutIssues(page), `expanded filters / ${width} / ${locale} / ${theme}`).toEqual([]);
+            if (dir && theme === "light" && (width === 1440 && locale === "en" || width === 375 && locale === "ja")) {
+              mkdirSync(dir, { recursive: true });
+              await page.screenshot({ path: join(dir, `projects-expanded-${width}-${locale}-${theme}.jpg`), type: "jpeg", quality: 83 });
+            }
+            await page.locator(".bw-filter-toggle").click();
+            await page.mouse.move(0, 0);
+          }
+          if (dir && ((locale === "en" && theme === "light" && width === 1440 && ["home", "projects", "detail", "prices"].includes(name))
+            || (locale === "kh" && theme === "dark" && width === 375 && ["detail", "home"].includes(name))
             || (locale === "ja" && theme === "light" && width === 375 && name === "projects"))) {
+
             mkdirSync(dir, { recursive: true });
             await page.screenshot({ path: join(dir, `${name}-${width}-${locale}-${theme}.jpg`), type: "jpeg", quality: 83, fullPage: name === "detail" });
           }
