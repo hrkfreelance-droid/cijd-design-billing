@@ -1,44 +1,275 @@
 {
   "version": "DAISHIN デザインルール v1 (2026-11-20)",
   "colors": {
-    "light": {"bg":"#f5f6f7","surface":"#ffffff","soft":"#f0f2f4","line":"#e3e6ea","lineStrong":"#cfd4da","fg":"#15181c","muted":"#68707b","faint":"#9aa1aa","accent":"#2b56c6","accentSoft":"#e8eefb","onAccent":"#ffffff","ok":"#1f7a4d","warn":"#9a5b00","bad":"#b42b2b"},
-    "dark":  {"bg":"#0f1012","surface":"#17191c","soft":"#1e2125","line":"#2a2e33","lineStrong":"#3a3f46","fg":"#eceef1","muted":"#9aa1ab","faint":"#6b727c","accent":"#7d9cff","accentSoft":"#1d2741","onAccent":"#0f1012","ok":"#5fc48f","warn":"#e0a54a","bad":"#f08080"}
+    "light": {
+      "bg": "#f5f6f7",
+      "surface": "#ffffff",
+      "soft": "#f0f2f4",
+      "line": "#e3e6ea",
+      "lineStrong": "#cfd4da",
+      "fg": "#15181c",
+      "muted": "#68707b",
+      "faint": "#9aa1aa",
+      "accent": "#2b56c6",
+      "accentSoft": "#e8eefb",
+      "onAccent": "#ffffff",
+      "ok": "#1f7a4d",
+      "warn": "#9a5b00",
+      "bad": "#b42b2b"
+    },
+    "dark": {
+      "bg": "#0f1012",
+      "surface": "#17191c",
+      "soft": "#1e2125",
+      "line": "#2a2e33",
+      "lineStrong": "#3a3f46",
+      "fg": "#eceef1",
+      "muted": "#9aa1ab",
+      "faint": "#6b727c",
+      "accent": "#7d9cff",
+      "accentSoft": "#1d2741",
+      "onAccent": "#0f1012",
+      "ok": "#5fc48f",
+      "warn": "#e0a54a",
+      "bad": "#f08080"
+    }
   },
-  "fontSizes": [20, 18, 13.5, 13, 12.5, 12, 11.5],
-  "fontWeights": [400, 500, 600],
-  "spacing": [0, 2, 4, 6, 8, 10, 12, 14, 16, 20, 22, 24],
-  "checks": [
-    {"sel": ".bw-header-inner", "prop": "height", "px": 52},
-    {"sel": ".df-tabs", "prop": "column-gap", "px": 22},
-    {"sel": ".df-tabs [aria-selected=true]", "prop": "border-bottom-width", "px": 2},
-    {"sel": ".df-tabs [aria-selected=true]", "prop": "padding-top", "px": 9},
-    {"sel": ".df-ctl", "prop": "height", "px": 32},
-    {"sel": ".df-list", "prop": "width", "px": 360},
-    {"sel": ".df-grid", "prop": "column-gap", "px": 16},
-    {"sel": ".df-row", "prop": "padding-left", "px": 12},
-    {"sel": ".df-row", "prop": "padding-right", "px": 12},
-    {"sel": ".df-row-open", "prop": "padding-top", "px": 12},
-    {"sel": ".df-row-open", "prop": "padding-bottom", "px": 12},
-    {"sel": ".df-row", "prop": "border-top-left-radius", "px": 10},
-    {"sel": ".df-group", "prop": "row-gap", "px": 2},
-    {"sel": ".df-row-name", "prop": "font-size", "px": 13.5},
-    {"sel": ".df-row-meta", "prop": "font-size", "px": 12.5},
-    {"sel": ".df-panel", "prop": "border-top-left-radius", "px": 14},
-    {"sel": ".df-p-head", "prop": "padding-left", "px": 24},
-    {"sel": ".df-p-head", "prop": "padding-top", "px": 16},
-    {"sel": ".df-p-head h2", "prop": "font-size", "px": 20},
-    {"sel": ".df-tools", "prop": "padding-left", "px": 24},
-    {"sel": ".df-sec-h", "prop": "padding-left", "px": 24},
-    {"sel": ".df-items", "prop": "padding-left", "px": 24},
-    {"sel": ".df-table td", "prop": "padding-top", "px": 10},
-    {"sel": ".df-table th", "prop": "font-size", "px": 11.5},
-    {"sel": ".df-totals", "prop": "padding-left", "px": 24},
-    {"sel": ".df-foot", "prop": "padding-left", "px": 24},
-    {"sel": ".df-foot .df-primary", "prop": "height", "px": 38},
-    {"sel": ".df-foot .df-primary", "prop": "border-top-left-radius", "px": 9},
-    {"sel": ".df-head .df-primary", "prop": "height", "px": 34},
-    {"sel": ".df-btn", "prop": "height", "px": 28},
-    {"sel": ".bw-shell .bw-icon", "prop": "height", "px": 32}
+  "fontSizes": [
+    20,
+    18,
+    13.5,
+    13,
+    12.5,
+    12,
+    11.5
   ],
-  "alignTop": [".df-list > :first-child", ".df-panel"]
+  "fontWeights": [
+    400,
+    500,
+    600
+  ],
+  "spacing": [
+    0,
+    2,
+    4,
+    6,
+    8,
+    10,
+    12,
+    14,
+    16,
+    20,
+    22,
+    24
+  ],
+  "checks": [
+    {
+      "sel": ".bw-header-inner",
+      "prop": "height",
+      "px": 52
+    },
+    {
+      "sel": ".df-tabs",
+      "prop": "column-gap",
+      "px": 22
+    },
+    {
+      "sel": ".df-tabs [aria-selected=true]",
+      "prop": "border-bottom-width",
+      "px": 2
+    },
+    {
+      "sel": ".df-tabs [aria-selected=true]",
+      "prop": "padding-top",
+      "px": 9
+    },
+    {
+      "sel": ".df-ctl",
+      "prop": "height",
+      "px": 32
+    },
+    {
+      "sel": ".df-list",
+      "prop": "width",
+      "px": 360
+    },
+    {
+      "sel": ".df-grid",
+      "prop": "column-gap",
+      "px": 16
+    },
+    {
+      "sel": ".df-row",
+      "prop": "padding-left",
+      "px": 12
+    },
+    {
+      "sel": ".df-row",
+      "prop": "padding-right",
+      "px": 12
+    },
+    {
+      "sel": ".df-row-open",
+      "prop": "padding-top",
+      "px": 12
+    },
+    {
+      "sel": ".df-row-open",
+      "prop": "padding-bottom",
+      "px": 12
+    },
+    {
+      "sel": ".df-row",
+      "prop": "border-top-left-radius",
+      "px": 10
+    },
+    {
+      "sel": ".df-group",
+      "prop": "row-gap",
+      "px": 2
+    },
+    {
+      "sel": ".df-row-name",
+      "prop": "font-size",
+      "px": 13.5
+    },
+    {
+      "sel": ".df-row-meta",
+      "prop": "font-size",
+      "px": 12.5
+    },
+    {
+      "sel": ".df-panel",
+      "prop": "border-top-left-radius",
+      "px": 14
+    },
+    {
+      "sel": ".df-p-head",
+      "prop": "padding-left",
+      "px": 24
+    },
+    {
+      "sel": ".df-p-head",
+      "prop": "padding-top",
+      "px": 16
+    },
+    {
+      "sel": ".df-p-head h2",
+      "prop": "font-size",
+      "px": 20
+    },
+    {
+      "sel": ".df-tools",
+      "prop": "padding-left",
+      "px": 24
+    },
+    {
+      "sel": ".df-sec-h",
+      "prop": "padding-left",
+      "px": 24
+    },
+    {
+      "sel": ".df-items",
+      "prop": "padding-left",
+      "px": 24
+    },
+    {
+      "sel": ".df-table td",
+      "prop": "padding-top",
+      "px": 10
+    },
+    {
+      "sel": ".df-table th",
+      "prop": "font-size",
+      "px": 11.5
+    },
+    {
+      "sel": ".df-totals",
+      "prop": "padding-left",
+      "px": 24
+    },
+    {
+      "sel": ".df-foot",
+      "prop": "padding-left",
+      "px": 24
+    },
+    {
+      "sel": ".df-foot .df-primary",
+      "prop": "height",
+      "px": 38
+    },
+    {
+      "sel": ".df-foot .df-primary",
+      "prop": "border-top-left-radius",
+      "px": 9
+    },
+    {
+      "sel": ".df-head .df-primary",
+      "prop": "height",
+      "px": 34
+    },
+    {
+      "sel": ".df-btn",
+      "prop": "height",
+      "px": 28
+    },
+    {
+      "sel": ".bw-shell .bw-icon",
+      "prop": "height",
+      "px": 32
+    }
+  ],
+  "align": [
+    {
+      "type": "centerY",
+      "each": ".df-row .df-check",
+      "within": ".df-row",
+      "tol": 1,
+      "why": "7. チェックは行の縦の真ん中"
+    },
+    {
+      "type": "centerY",
+      "each": ".df-group-head .df-check",
+      "within": ".df-group-head",
+      "tol": 1,
+      "why": "7. まとまりの見出しのチェックも真ん中"
+    },
+    {
+      "type": "sameLeft",
+      "sels": [
+        ".df-group-head .df-check",
+        ".df-row .df-check"
+      ],
+      "tol": 0.5,
+      "why": "7. チェックの左の位置はすべての行で同じ"
+    },
+    {
+      "type": "sameLeft",
+      "sels": [
+        ".df-group-name",
+        ".df-row-name"
+      ],
+      "tol": 0.5,
+      "why": "7. 名前の書き出しはすべての行で同じ"
+    },
+    {
+      "type": "sameTop",
+      "sels": [
+        ".df-list > :first-child",
+        ".df-panel"
+      ],
+      "tol": 1,
+      "why": "6. 一覧の1行目とカードの上の端をそろえる"
+    },
+    {
+      "type": "sameRight",
+      "sels": [
+        ".df-row-side",
+        ".df-group-head > :last-child"
+      ],
+      "tol": 0.5,
+      "why": "7. 右側の列の右端をそろえる"
+    }
+  ],
+  "noOverflowX": true
 }
