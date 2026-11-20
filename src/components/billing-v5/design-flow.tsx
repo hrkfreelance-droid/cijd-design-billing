@@ -21,6 +21,10 @@ type Tab = "READY" | "IN_PROGRESS";
 /** Words used only on this screen, kept here so the shared dictionaries stay untouched. */
 const WORDS = {
   en: {
+    item: "Item",
+    total: "Total",
+    allSet: "All prices set",
+    editLines: "Edit lines",
     lead: "Set the final amounts, then move finished work to Ready to bill. Ready work is sent to Accounting from here.",
     search: "Search project, customer or item",
     allCustomers: "All customers",
@@ -47,6 +51,10 @@ const WORDS = {
     clear: "Clear",
   },
   ja: {
+    item: "品目",
+    total: "合計",
+    allSet: "すべて入力済み",
+    editLines: "明細を編集",
     lead: "金額を確定し、終わった案件を請求可能へ移します。請求可能の案件は、ここから経理へ送ります。",
     search: "案件・顧客・品目で探す",
     allCustomers: "すべての顧客",
@@ -73,6 +81,10 @@ const WORDS = {
     clear: "選択を外す",
   },
   kh: {
+    item: "មុខ",
+    total: "សរុប",
+    allSet: "បានបំពេញទាំងអស់",
+    editLines: "កែបញ្ជីមុខ",
     lead: "កំណត់ចំនួនទឹកប្រាក់ចុងក្រោយ ហើយផ្លាស់ការងារដែលរួចទៅ «រួចរាល់ចេញវិក្កយបត្រ»។ ការងាររួចរាល់ត្រូវផ្ញើទៅគណនេយ្យពីទីនេះ។",
     search: "ស្វែងរកគម្រោង អតិថិជន ឬមុខទំនិញ",
     allCustomers: "អតិថិជនទាំងអស់",
@@ -208,7 +220,6 @@ export function DesignFlow({ snapshot, sections, projectLink }: {
       <div className="df-tabs" role="tablist" aria-label={v5t("design.title")}>
         <button role="tab" type="button" aria-selected={tab === "READY"} onClick={() => { setTab("READY"); setChosen(new Set()); }} data-testid="v2-section-ready">
           {t("v2.section.ready")}<span className="df-count tnum">{sections.readyCount}</span>
-          <span className="df-tab-total tnum" data-testid="v2-page-total">{moneyExact(sections.readyTotal)}</span>
         </button>
         <button role="tab" type="button" aria-selected={tab === "IN_PROGRESS"} onClick={() => { setTab("IN_PROGRESS"); setChosen(new Set()); }} data-testid="v2-section-in-progress">
           {t("v2.section.inProgress")}<span className="df-count tnum" data-testid="v2-progress-total">{sections.inProgressCount}</span>
@@ -234,7 +245,7 @@ export function DesignFlow({ snapshot, sections, projectLink }: {
                 <div className="df-group-head" data-layout-group>
                   <Check checked={all} mixed={some && !all} onChange={() => toggleGroup(group, !all)} label={t("v2.selectClient", { name: group.client.name })} />
                   <span className="df-group-name">{group.client.name}</span>
-                  <span className="tnum">{tab === "READY" ? moneyExact(group.total) : t("v2.projects", { count: group.projects.length })}</span>
+                  <span className="tnum" data-testid={tab === "READY" ? "v2-page-total" : undefined}>{tab === "READY" ? moneyExact(group.total) : t("v2.projects", { count: group.projects.length })}</span>
                 </div>
                 {group.projects.map((project) => {
                   const pending = project.pricePendingCount > 0;
@@ -245,11 +256,11 @@ export function DesignFlow({ snapshot, sections, projectLink }: {
                       <button type="button" className="df-row-open" onClick={() => setCurrent(project.id)} aria-label={t("v2.openProject", { name: project.name })} data-testid="v2-open-project">
                         <span className="df-row-name">{project.name}</span>
                         <span className="df-row-meta tnum">
-                          {project.items.length} {w("items")} · {project.date}
-                          {reason ? <span className={pending ? "df-warn" : undefined}> · {reason}</span> : null}
+                          {project.items.length} {w("items")} · <span data-testid="v2-project-total">{project.items.length === 0 ? "—" : pending ? "—" : moneyExact(project.total)}</span>
                         </span>
-                        <span className="df-row-amt tnum" data-testid="v2-project-total">
-                          {project.items.length === 0 ? "" : pending ? "—" : moneyExact(project.total)}
+                        <span className="df-row-side">
+                          <span className="df-row-t tnum">{project.date.slice(5).replace("-", "/")}</span>
+                          <span className={`df-mark ${pending || project.items.length === 0 ? "q" : "ok"}`}><i />{reason ?? (tab === "READY" ? t("v2.section.ready") : w("allSet"))}</span>
                         </span>
                       </button>
                     </div>
@@ -351,81 +362,81 @@ function Detail({ entry, busy, projectLink, onEdit, onReady, onBack, onSend }: {
   const reason = projectReason(project, t);
   const blocked = pending || project.items.length === 0;
   const showCost = project.items.some((e) => isCostPriced(e.service));
-  const step = tab === "READY" ? 2 : 1;
+  const total = project.items.length === 0 || pending ? "—" : moneyExact(project.total);
 
   return (
     <article className="df-panel" aria-labelledby="df-title" data-testid="billing-project-detail">
       <header className="df-p-head">
         <span className="df-st">{tab === "READY" ? t("v2.section.ready") : t("v2.section.inProgress")}{reason ? ` · ${reason}` : ""}</span>
         <h2 id="df-title">{project.name}</h2>
-        <Link className="df-sub" href={`${BILLING}/customers/${encodeURIComponent(clientId)}`}>{clientName}</Link>
+        <span className="df-sub tnum">
+          <Link href={`${BILLING}/customers/${encodeURIComponent(clientId)}`}>{clientName}</Link> · {project.date}
+        </span>
         <div className="df-amt tnum">
-          <b>{project.items.length === 0 ? "—" : pending ? "—" : moneyExact(project.total)}</b>
-          {project.balance.deposit > 0 && <span>{t("v3.deposit")} {moneyExact(project.balance.deposit)} · {t("v3.remaining")} {moneyExact(project.balance.remaining)}</span>}
+          <b>{total}</b>
+          <span>{project.balance.deposit > 0 ? `${t("v3.deposit")} ${moneyExact(project.balance.deposit)}` : w("amount")}</span>
         </div>
       </header>
 
-      <dl className="df-facts">
-        <div><dt>{w("date")}</dt><dd className="tnum">{project.date}</dd></div>
-        <div><dt>{w("lines")}</dt><dd className="tnum">{project.items.length}</dd></div>
-        {showCost && <div><dt>{w("costTotal")}</dt><dd className="tnum">{moneyExact(project.costTotal)}</dd></div>}
-      </dl>
+      <div className="df-tools" data-layout-group>
+        {project.note ? <span className="df-tools-note">{project.note}</span> : <span className="df-spacer" />}
+        <button type="button" className="df-btn" onClick={onEdit} disabled={busy} data-testid="v2-modal-edit">{t("v2.edit")}</button>
+        {projectLink && <Link className="df-btn" href={projectLink(project.id)}>{w("openPage")}</Link>}
+      </div>
 
-      <section className="df-sec">
-        <h3><span>{w("lines")}</span><Link href={`${BILLING}/price-history?q=${encodeURIComponent(project.items[0]?.item.description ?? project.name)}`}>{w("priceHistory")}</Link></h3>
+      <div className="df-sec-h" data-layout-group>
+        <h3>{w("lines")} <span className="tnum">{project.items.length}</span></h3>
+        <span className="df-spacer" />
+        <Link className="df-link" href={`${BILLING}/price-history?q=${encodeURIComponent(project.items[0]?.item.description ?? project.name)}`}>{w("priceHistory")}</Link>
+        <button type="button" className="df-link" onClick={onEdit} disabled={busy}>{w("editLines")}</button>
+      </div>
+      <div className="df-items">
         {project.items.length === 0 ? <p className="df-muted">{w("noItems")}</p> : (
-          <div className="df-table-wrap">
-            <table className="df-table">
-              <thead><tr><th>{w("lines")}</th><th className="r">{w("qty")}</th><th className="r">{w("unit")}</th>{showCost && <th className="r">{t("v2.cost")}</th>}<th className="r">{w("amount")}</th></tr></thead>
-              <tbody>
-                {project.items.map((e) => {
-                  const label = serviceLabel(e.service, t);
-                  const desc = e.item.description.trim();
-                  return (
-                    <tr key={e.item.id} data-testid="v2-line-item">
-                      <td>
-                        <span className="df-line-name">{desc || label}</span>
-                        {desc && desc.toLowerCase() !== label.toLowerCase() && <small>{label}</small>}
-                      </td>
-                      <td className="r tnum">{e.item.quantity}</td>
-                      <td className="r tnum">{e.finalUnitPrice == null ? "—" : moneyExact(e.finalUnitPrice)}</td>
-                      {showCost && <td className="r tnum df-muted">{isCostPriced(e.service) ? (e.cost == null ? "—" : moneyExact(e.cost)) : ""}</td>}
-                      <td className="r tnum">{e.amount == null ? <span className="df-warn">—</span> : moneyExact(e.amount)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <table className="df-table">
+            <thead><tr><th className="df-state-col" /><th>{w("item")}</th><th className="r">{w("qty")}</th><th className="r">{w("unit")}</th>{showCost && <th className="r">{t("v2.cost")}</th>}<th className="r">{w("amount")}</th></tr></thead>
+            <tbody>
+              {project.items.map((e) => {
+                const label = serviceLabel(e.service, t);
+                const desc = e.item.description.trim();
+                const ok = e.amount != null;
+                return (
+                  <tr key={e.item.id} data-testid="v2-line-item">
+                    <td><span className={`df-state ${ok ? "ok" : "q"}`} aria-hidden>{ok ? "✓" : "?"}</span></td>
+                    <td>
+                      {desc || label}
+                      {desc && desc.toLowerCase() !== label.toLowerCase() && <span className="df-code">{label}</span>}
+                    </td>
+                    <td className="r tnum">{e.item.quantity}</td>
+                    <td className="r tnum">{e.finalUnitPrice == null ? "—" : moneyExact(e.finalUnitPrice)}</td>
+                    {showCost && <td className="r tnum df-muted">{isCostPriced(e.service) ? (e.cost == null ? "—" : moneyExact(e.cost)) : ""}</td>}
+                    <td className="r tnum">{ok ? moneyExact(e.amount) : "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         )}
-      </section>
+      </div>
+      <div className="df-totals tnum">
+        {showCost && <span>{t("v2.cost")} <b>{moneyExact(project.costTotal)}</b></span>}
+        {project.balance.deposit > 0 && <span>{t("v3.remaining")} <b>{moneyExact(project.balance.remaining)}</b></span>}
+        <span>{w("total")} <b>{total}</b></span>
+      </div>
 
-      {project.note && (
-        <section className="df-sec"><h3><span>{w("note")}</span></h3><p className="df-note">{project.note}</p></section>
-      )}
-
-      <section className="df-sec">
-        <h3><span>{w("flow")}</span></h3>
-        <ol className="df-flow">
-          {[w("fProgress"), w("fReady"), w("fAccounting"), w("fPaid")].map((label, i) => (
-            <li key={label} data-on={i < step}>{label}</li>
-          ))}
-        </ol>
-      </section>
-
-      <div className="df-act" data-testid="v2-readiness-action">
+      <div className="df-foot" data-testid="v2-readiness-action">
+        <span className={`df-checkline ${blocked ? "q" : ""}`}>
+          {blocked ? (project.items.length === 0 ? w("noItems") : t("v2.pricePendingHint")) : w("allSet")}
+        </span>
+        <span className="df-spacer" />
+        {tab === "READY" && (
+          <button type="button" className="df-ghost" onClick={onBack} disabled={busy} data-testid="v2-move-in-progress">{t("v2.moveInProgress")}</button>
+        )}
         {tab === "READY" ? (
           <button type="button" className="df-primary" disabled={busy} onClick={onSend} data-testid="v2-detail-mark-billed">{v5t("design.sendAccounting")}</button>
         ) : (
           <button type="button" className="df-primary" disabled={busy || blocked} onClick={onReady} data-testid="v2-mark-ready">{t("v2.markReady")}</button>
         )}
-        <button type="button" className="df-ghost" onClick={onEdit} disabled={busy} data-testid="v2-modal-edit">{t("v2.edit")}</button>
-        {tab === "READY" && (
-          <button type="button" className="df-ghost" onClick={onBack} disabled={busy} data-testid="v2-move-in-progress">{t("v2.moveInProgress")}</button>
-        )}
-        {projectLink && <Link className="df-ghost df-link-btn" href={projectLink(project.id)}>{w("openPage")}</Link>}
       </div>
-      {tab === "IN_PROGRESS" && blocked && <p className="df-hint">{project.items.length === 0 ? w("noItems") : t("v2.pricePendingHint")}</p>}
     </article>
   );
 }

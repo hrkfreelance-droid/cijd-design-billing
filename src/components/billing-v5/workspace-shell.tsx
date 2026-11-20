@@ -74,8 +74,8 @@ function GlobalSearch({ projects }: { projects: ProjectView[] }) {
 
   return (
     <>
-      <button className="bw-global-search" aria-label={t("search")} onClick={() => dialog.current?.showModal()} type="button">
-        <SearchIcon /><span>{t("search")}</span><kbd>⌘ K</kbd>
+      <button className="bw-icon bw-search-btn" aria-label={t("search")} title={`${t("search")} ⌘K`} onClick={() => dialog.current?.showModal()} type="button">
+        <SearchIcon />
       </button>
       <dialog ref={dialog} className="bw-search-dialog" aria-labelledby="billing-search-title">
         <div className="bw-heading" data-layout-group>
@@ -114,13 +114,15 @@ function Header({ projects }: { projects: ProjectView[] }) {
   return (
     <header className="bw-header">
       <div className="bw-header-inner" data-layout-group>
-        <Link className="bw-brand" href={BILLING} data-testid="v2-brand" aria-label={t("v2.brand")}>CIJD <span>Billing</span></Link>
+        <Link className="bw-brand" href={BILLING} data-testid="v2-brand" aria-label={t("v2.brand")}><b>CIJD</b><span>Billing</span></Link>
         <Navigation />
-        <GlobalSearch projects={projects} />
         <div className="bw-preferences" data-layout-group>
-          <select aria-label={copy("language")} className="bw-language" value={locale} onChange={(event) => setLocale(event.target.value as typeof locale)}>
-            <option value="ja">JA</option><option value="en">EN</option><option value="kh">KH</option>
-          </select>
+          <GlobalSearch projects={projects} />
+          <div className="bw-seg" role="group" aria-label={copy("language")}>
+            {(["ja", "en", "kh"] as const).map((code) => (
+              <button key={code} type="button" aria-pressed={locale === code} onClick={() => setLocale(code)}>{code.toUpperCase()}</button>
+            ))}
+          </div>
           <button className="bw-icon" type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={t("theme.toggle")}>
             {theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
