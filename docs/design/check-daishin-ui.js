@@ -3,13 +3,14 @@
 function checkDaishinUi(rule, root = document.querySelector(".bw-shell") || document.body) {
   const fails = [];
   const box = (el) => el.getBoundingClientRect();
-  for (const c of rule.checks || []) {
+  const fits = (c) => (!c.minWidth || innerWidth >= c.minWidth) && (!c.maxWidth || innerWidth <= c.maxWidth);
+  for (const c of (rule.checks || []).filter(fits)) {
     const el = document.querySelector(c.sel);
     if (!el) { fails.push(`${c.sel}: 要素がない`); continue; }
     const got = c.prop === "width" ? box(el).width : parseFloat(getComputedStyle(el).getPropertyValue(c.prop));
     if (Math.abs(got - c.px) > 0.5) fails.push(`${c.sel} ${c.prop}: ${got} ≠ ${c.px}`);
   }
-  for (const a of rule.align || []) {
+  for (const a of (rule.align || []).filter(fits)) {
     const tol = a.tol ?? 0.5;
     if (a.type === "centerY") {
       for (const el of document.querySelectorAll(a.each)) {
