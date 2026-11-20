@@ -48,52 +48,41 @@ export function InvoicesPage() {
   return <div className="bw-page" data-testid="billing-invoices"><InvoiceArea key={params.get("collection")} snapshot={snapshot} collection={params.get("collection")} /></div>;
 }
 
-const accountingViews = ["to-invoice", "invoices", "customers", "products"] as const;
-const accountingLabels = ["view.toInvoice", "view.invoices", "view.customers", "view.products"] as const;
-
 export function AccountingPage() {
   const t = useV5T();
   const { snapshot } = useData();
   const search = useSearchParams();
-  const view = accountingViews.find((option) => search.get("view") === option) ?? "to-invoice";
+  const view = search.get("view");
   if (!snapshot) return null;
-  return <div className="bw-page bw-legacy-view">
-    <WorkspaceHeading title={t("accounting.title")} />
-    <nav aria-label={t("accounting.title")} className="bw-tabs bw-filter-panel" role="tablist" data-layout-group>
-      {accountingViews.map((key, index) => (
-        <Link key={key} href={`${BILLING}/accounting${key === "to-invoice" ? "" : `?view=${key}`}`} role="tab" aria-selected={view === key}>
-          {t(accountingLabels[index])}
-        </Link>
-      ))}
-    </nav>
-    {view === "invoices" ? <InvoiceArea snapshot={snapshot} /> : view === "customers"
-      ? <CustomerMaster snapshot={snapshot} />
-      : view === "products" ? <ProductMaster snapshot={snapshot} />
-      : <AccountingBoard snapshot={snapshot} embedded />}
+  if (view === "customers") return <CustomersPage />;
+  if (view === "invoices") return <InvoicesPage />;
+  const accounting = `${BILLING}/accounting`;
+  const invoices = <Link className="bw-control" href={`${accounting}?view=invoices`}>{t("view.invoices")}</Link>;
+  if (view === "products") return <div className="bw-page">
+    <WorkspaceHeading title={t("view.products")} actions={<div className="bw-actions" data-layout-group>
+      <Link className="bw-control" href={accounting}>{t("view.toInvoice")}</Link>
+      {invoices}
+    </div>} />
+    <ProductMaster snapshot={snapshot} />
   </div>;
+  return <AccountingBoard snapshot={snapshot} actions={<div className="bw-actions" data-layout-group>
+    {invoices}
+    <Link className="bw-control" href={`${accounting}?view=products`}>{t("view.products")}</Link>
+  </div>} />;
 }
 
 export function CustomersPage() {
-  const t = useWorkspaceT();
+  const t = useV5T();
   const { snapshot } = useData();
-  const projects = useProjectViews();
-  const candidates = usePricingCustomerCandidates();
   const params = useSearchParams();
   const router = useRouter();
   if (!snapshot) return null;
-  const clientIds = new Set(snapshot.clients.map((client) => client.id));
-  const historicalClients = [...new Map(projects.filter((view) => !clientIds.has(view.project.clientId) && view.client)
-    .map((view) => [view.project.clientId, view.client]))];
-  return <div className="bw-page" data-testid="v5-customers-page">
-    <WorkspaceHeading title={t("customers")} />
-    {candidates.length > 0 && <details className="bw-card bw-customer-candidates">
-      <summary>{t("mergeCandidates")}</summary>
-      <p>{t("mergeCandidateHelp")}</p>
-      <ul>{candidates.map((group) => <li key={group[0].id}>
-        {group.map((client) => <Link key={client.id} className="bw-text-link" href={`${BILLING}/customers/${encodeURIComponent(client.id)}`}>{client.name}</Link>)}
-      </li>)}</ul>
-    </details>}
-    <CustomerMaster key={params.get("edit")} snapshot={snapshot} activityLinks legacyClients={historicalClients}
+  return <div className="px-5 pb-32 pt-6 sm:px-8 sm:pt-8" data-testid="v5-customers-page">
+    <header>
+      <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">{t("nav.customers")}</h1>
+      <p className="mt-1 text-[13.5px] text-muted">{t("customers.subtitle")}</p>
+    </header>
+    <CustomerMaster key={params.get("edit")} snapshot={snapshot}
       initialEdit={snapshot.clients.find((client) => client.id === params.get("edit"))?.id}
       onCloseEditor={params.has("edit") ? () => router.replace(`${BILLING}/customers`) : undefined}
     />

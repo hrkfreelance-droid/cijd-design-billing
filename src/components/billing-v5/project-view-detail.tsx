@@ -78,7 +78,7 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
   const addedDate = project.note?.trim().match(/^Current active project added (\d{4}-\d{2}-\d{2})$/)?.[1];
   const note = addedDate ? t("currentProjectAdded").replace("{date}", addedDate) : project.note;
   const canEdit = Boolean(!view.readOnly && pending && user && canAny(user.role, ["production:write", "billing:price:write"]));
-  const preparation = pending?.billingReadiness !== "ACCOUNTING" && canEdit;
+  const preparation = canEdit && (view.status === "ready" || view.status === "progress");
   const ready = pending?.blocker === null;
   const invoiceToPay = invoices.find((entry) => entry.tax && !entry.cancelled && entry.outstanding > 0);
   const canIssue = Boolean(view.canIssue && user && canAny(user.role, ["invoice:write", "payment:write"]));
@@ -101,10 +101,10 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
 
   function timelineEntries(label: WorkspaceKey, events: { date: string | null; actor: string | null }[], recorded = events.length > 0) {
     const values = new Set(events.map(({ date, actor }) => [date?.slice(0, 10), actor].filter(Boolean).join(" · ")).filter(Boolean));
-    return <li data-recorded={recorded}>
+    return <li data-recorded={recorded} data-layout-group>
       <strong>{t(label)}</strong>
       <span className="sr-only">{t(recorded ? "stageDone" : "stagePending")}</span>
-      <div>{[...values].map((value) => <small key={value}>{value}</small>)}</div>
+      <div>{[...values].map((value) => <small key={value} className="truncate" title={value}>{value}</small>)}</div>
     </li>;
   }
 

@@ -322,8 +322,8 @@ export function pendingProjects(snapshot: Snapshot): BoardProject[] {
 }
 
 /** Everything waiting to be billed, split by whether it can be billed yet. */
-export function billingBoard(snapshot: Snapshot): BoardSections {
-  const projects = pendingProjects(snapshot).filter((project) => project.billingReadiness !== "ACCOUNTING");
+export function billingBoard(snapshot: Snapshot, pending = pendingProjects(snapshot)): BoardSections {
+  const projects = pending.filter((project) => project.billingReadiness !== "ACCOUNTING");
   const ready = projects.filter((project) => project.blocker === null);
   const inProgress = projects.filter((project) => project.blocker !== null);
   return {

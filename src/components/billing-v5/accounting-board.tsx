@@ -25,7 +25,7 @@ import { InvoiceEditor } from "./invoice-editor";
  * Accounting is one screen: work handed off by Design, then the invoice list.
  * Status is shown on each row/invoice instead of splitting the workflow into tabs.
  */
-export function AccountingBoard({ snapshot, embedded = false }: { snapshot: Snapshot; embedded?: boolean }) {
+export function AccountingBoard({ snapshot, actions }: { snapshot: Snapshot; actions?: ReactNode }) {
   const t = useV5T();
   const eligible = useMemo(() => {
     const accountingIds = new Set(snapshot.projects.filter((project) => project.billingReadiness === "ACCOUNTING").map((project) => project.id));
@@ -41,9 +41,12 @@ export function AccountingBoard({ snapshot, embedded = false }: { snapshot: Snap
   return (
     <div className="pb-36" data-testid="v5-accounting">
       <header className="px-5 pb-2 pt-6 sm:px-8 sm:pt-8">
-        {!embedded && <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">{t("accounting.title")}</h1>}
+        <div className="flex flex-wrap items-center justify-between gap-2" data-layout-group>
+          <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">{t("accounting.title")}</h1>
+          {actions}
+        </div>
         <p className="mt-1 text-[13.5px] text-muted">{t("accounting.subtitle")}</p>
-        <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-12">
+        <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-12" data-layout-group>
           <Figure label={t("accounting.toInvoice")} strong testId="v5-to-invoice-total">{moneyExact(toInvoiceTotal)}</Figure>
           <Figure label={t("list.outstanding")} testId="v5-outstanding-total">{moneyExact(outstanding)}</Figure>
           <Figure label={t("accounting.rate")} testId="v5-rate">

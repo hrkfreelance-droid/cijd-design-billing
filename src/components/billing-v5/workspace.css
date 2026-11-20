@@ -54,7 +54,6 @@ body:has(.bw-shell, .bw-standalone) .bg-accent:disabled { background: var(--c-fi
   --bw-border: var(--c-line);
   --bw-muted: var(--c-muted);
   --bw-fg: var(--c-text);
-  --bw-header-height: 67px;
   min-height: 100dvh;
   background: var(--bw-bg);
   color: var(--bw-fg);
@@ -72,17 +71,34 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
   position: sticky;
   top: 0;
   z-index: 30;
-  display: grid;
-  grid-template-columns: 169px minmax(0, 410px) minmax(max-content, 1fr);
-  align-items: center;
-  gap: clamp(.5rem, 2.2vw, 1.75rem);
-  min-height: var(--bw-header-height);
-  padding: 8px 24px;
   border-bottom: 1px solid var(--bw-border);
   background: var(--bw-panel);
 }
-.bw-brand { display: flex; align-items: baseline; gap: .45rem; width: max-content; max-width: 100%; font-size: 1.15rem; font-weight: 700; letter-spacing: -.035em; }
-.bw-brand span { color: var(--bw-action); font-weight: 650; }
+.bw-header-inner {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 16px;
+  max-width: 960px;
+  min-height: 52px;
+  margin-inline: auto;
+  padding-inline: 32px;
+}
+.bw-brand { color: var(--bw-ink); font-size: 15px; font-weight: 650; }
+.bw-top-tabs { display: flex; align-self: stretch; gap: 18px; }
+.bw-top-tabs a {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-block: 4px;
+  border-bottom: 2px solid transparent;
+  color: var(--bw-muted);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: center;
+}
+.bw-top-tabs a:is(:hover, [aria-current]) { color: var(--bw-action); }
+.bw-top-tabs a[aria-current] { border-color: var(--bw-action); }
 .bw-preferences { display: flex; align-items: center; justify-content: end; gap: 5px; }
 .bw-icon, .bw-language, .bw-global-search, .bw-control {
   min-height: 44px;
@@ -106,33 +122,9 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 }
 .bw-global-search span { flex: 1; }
 .bw-global-search kbd { flex: none; padding: 2px 6px; border: 1px solid var(--bw-border); border-radius: 5px; font: inherit; font-size: 11px; }
-.bw-frame { display: grid; grid-template-columns: 193px minmax(0, 1fr); align-items: start; }
-.bw-side {
-  position: sticky;
-  top: var(--bw-header-height);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: calc(100dvh - var(--bw-header-height));
-  padding: 23px 12px;
-  border-right: 1px solid var(--bw-border);
-  background: var(--bw-panel);
-}
-.bw-side a, .bw-bottom a, .bw-more {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 44px;
-  padding: 8px 11px;
-  border-radius: 7px;
-  text-align: start;
-  font-weight: 600;
-  color: var(--bw-muted);
-}
-.bw-side a:is(:hover, [aria-current]), .bw-bottom :is([aria-current], [data-active]) { background: var(--bw-selected); color: var(--bw-action); }
 .bw-main, .bw-project-split > *, .bw-project-detail { min-width: 0; }
-.bw-main { max-width: 1640px; width: 100%; }
-.bw-bottom { display: none; }
+.bw-main { max-width: 1440px; width: 100%; margin-inline: auto; }
+.bw-main-classic { max-width: 960px; }
 .bw-popover-position { z-index: 70; }
 .bw-popover { display: grid; gap: 3px; max-width: min(17rem, calc(100vw - 24px)); min-width: 11rem; padding: 8px; border: 1px solid var(--c-line-strong); color: var(--c-text); background: var(--c-panel); border-radius: 10px; box-shadow: 0 10px 36px var(--c-overlay); overflow-wrap: anywhere; }
 .bw-popover :is(a, button) { display: flex; align-items: center; text-align: start; min-height: 44px; padding-inline: 10px; border-radius: 6px; }
@@ -256,16 +248,15 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 .bw-badge:is([data-status="outstanding"], [data-status="partial"], [data-status="unpaid"]) { color: var(--bw-fg); background: transparent; box-shadow: inset 0 0 0 1px var(--bw-border); }
 /* 一覧の種類は1行に収め、3つ目以降は +N にまとめる（行の高さをそろえる） */
 .bw-project-row > :is(.bw-project-kinds, .bw-project-badges) { flex-wrap: nowrap; overflow: hidden; }
+.bw-project-row .bw-badge, .bw-project-row .bw-money { white-space: nowrap; }
 @media (max-width: 720px) {
-  /* スマホ幅では状態のバッジを切らずに折り返す（文字が欠けないように） */
-  .bw-project-row > .bw-project-badges { flex-wrap: wrap; overflow: visible; }
+  .bw-project-row > :is(.bw-project-kinds, .bw-project-badges) { flex-wrap: wrap; overflow: visible; }
+  .bw-project-row .bw-badge { white-space: normal; overflow-wrap: anywhere; }
 }
-.bw-project-row .bw-badge { white-space: nowrap; }
 .bw-project-split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 6fr); align-items: start; gap: 14px; margin-top: 12px; }
 .bw-project-split .bw-project-row {
-  /* Opus 11/20：2行目は「種類＋状態」を左に詰め、日付は右端（金額の真下）にそろえる */
-  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
-  grid-template-areas: "name name name amount" "kinds status . date";
+  grid-template-columns: minmax(0, 7rem) minmax(0, 1fr) minmax(0, 8rem);
+  grid-template-areas: "name name amount" "kinds status date";
   column-gap: 8px;
 }
 .bw-project-split .bw-project-date, .bw-project-split .bw-project-amount { justify-self: end; text-align: end; }
@@ -278,64 +269,40 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 .bw-detail-section > h2 { margin-bottom: 8px; }
 .bw-detail-section .bw-state, .bw-card > .bw-state { border: 0; background: var(--bw-bg); }
 .bw-detail-section { container-type: inline-size; }
-.bw-lines { --bw-line-columns: repeat(3, minmax(0, 1fr)); display: grid; width: 100%; }
-.bw-lines[data-cost="true"] { --bw-line-columns: repeat(5, minmax(0, 1fr)); }
-.bw-lines tbody { display: grid; }
-.bw-lines tr { display: grid; grid-template-columns: var(--bw-line-columns); gap: 6px 12px; align-items: center; border-bottom: 1px solid var(--bw-border); padding: 8px 0; }
+.bw-lines { display: grid; grid-template-columns: minmax(0, 1fr) repeat(4, max-content); column-gap: 8px; width: 100%; }
+.bw-lines[data-cost="true"] { grid-template-columns: minmax(0, 1fr) repeat(6, max-content); }
+.bw-lines :is(thead, tbody, tr) { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
+.bw-lines tr { align-items: center; border-bottom: 1px solid var(--bw-border); padding: 7px 0; }
 .bw-lines tbody tr:last-child { border-bottom: 0; }
 .bw-lines :is(th, td) { min-width: 0; overflow-wrap: anywhere; }
-.bw-line-title { grid-column: 1 / -2; grid-row: 1; text-align: start; }
-.bw-line-number { display: flex; flex-direction: column; align-self: stretch; justify-content: space-between; text-align: end; }
-.bw-line-label { display: block; font-size: .75rem; color: var(--bw-muted); font-weight: 600; }
-.bw-line-value { display: block; font-size: .8125rem; font-variant-numeric: tabular-nums; font-weight: 600; }
+.bw-line-title { text-align: start; }
+.bw-line-number { text-align: end; }
+.bw-line-label { display: none; font-size: .75rem; color: var(--bw-muted); font-weight: 600; }
+.bw-line-value { display: block; font-size: .8125rem; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
 .bw-line-title small, .bw-line-history { font-size: .78rem; }
-.bw-line-history { grid-column: -2; grid-row: 1; text-align: end; }
+.bw-line-history { text-align: end; white-space: nowrap; }
 .bw-line-history a { display: inline-block; padding-block: 5px; }
 .bw-timeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
 /* Opus 11/20：点を各段の中央に置き、線は点と点の間だけ。文字は点の真下に中央そろえ */
-.bw-timeline > li { position: relative; display: grid; grid-row: span 2; grid-template-rows: subgrid; justify-items: center; text-align: center; row-gap: 2px; min-width: 0; padding-top: 16px; color: var(--bw-muted); overflow-wrap: anywhere; }
+.bw-timeline > li { position: relative; display: grid; grid-row: span 2; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; row-gap: 2px; min-width: 0; padding-top: 16px; color: var(--bw-muted); overflow-wrap: anywhere; }
+.bw-timeline > li > div { min-width: 0; max-width: 100%; }
 .bw-timeline > li::before { content: ""; position: absolute; top: 4px; left: 50%; transform: translateX(-50%); width: 9px; height: 9px; border: 1px solid var(--bw-faint); background: var(--bw-panel); border-radius: 50%; z-index: 1; }
 .bw-timeline > li:not(:last-child)::after { content: ""; position: absolute; top: 8px; left: calc(50% + 8px); right: calc(-50% + 3px); border-top: 1px solid var(--bw-border); }
 .bw-timeline > li[data-recorded="true"] { color: var(--bw-action); }
 .bw-timeline > li[data-recorded="true"]::before { border-color: var(--bw-action); background: var(--bw-action); }
 .bw-timeline strong { font-size: .83rem; }
 .bw-timeline small { font-size: .75rem; }
-@container (max-width: 565px) {
-  .bw-lines tbody tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .bw-line-title { grid-column: 1 / -1; }
-  .bw-line-history { grid-column: 2; grid-row: auto; }
-}
 .bw-records > li { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 34%); gap: 8px; align-items: start; padding: 9px 0; }
 .bw-price-rows > li { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, .6fr); gap: 10px; padding: 10px 13px; }
-.bw-price-summary, .bw-metrics, .bw-home-panels { display: grid; gap: 12px; }
+.bw-price-summary { display: grid; gap: 12px; }
 .bw-price-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 12px; }
 .bw-price-summary dt { color: var(--bw-muted); }
 .bw-price-summary dd { font-size: 1.2rem; }
 .bw-hint { margin: 12px 0 0; color: var(--bw-muted); }
-.bw-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.bw-metric { display: grid; grid-row: span 3; grid-template-rows: subgrid; align-items: start; row-gap: 4px; }
-.bw-metric[data-tone="ready"] > strong { color: var(--bw-action); }
-.bw-metric[data-tone="overdue"] > strong { color: var(--c-danger); }
-.bw-metric > span { display: flex; justify-content: space-between; gap: 4px; width: 100%; font-weight: 650; }
-.bw-metric :is(svg, small) { color: var(--bw-muted); }
-.bw-metric > strong { font-size: clamp(1.6rem, 3vw, 2.15rem); line-height: 1.25; font-variant-numeric: tabular-nums; }
-.bw-metric:hover { background: var(--bw-selected); }
-.bw-home-panels { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); margin-top: 16px; }
-.bw-home-links a { display: flex; align-items: center; justify-content: space-between; gap: 7px; min-height: 44px; padding: 5px 0; color: var(--bw-action); font-weight: 620; }
-.bw-home-links > li + li { border-top: 1px solid var(--bw-border); }
-.bw-customer-candidates { margin-bottom: 12px; }
-.bw-customer-candidates summary { cursor: pointer; color: var(--bw-action); font-weight: 650; }
-.bw-customer-candidates p { margin-block: 6px; color: var(--bw-muted); }
-.bw-customer-candidates li { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .bw-customer-detail { display: grid; gap: 12px; }
-.bw-customer-list-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, auto); align-items: stretch; gap: 8px; }
-.bw-customer-list-item .bw-control { align-self: center; }
-.bw-legacy-view { padding-inline: clamp(15px, 3vw, 42px); }
-.bw-legacy-view > div > :is(header, div) { padding-inline: 0; }
 .bw-shell #no-invoice-records, #invoice-payments { scroll-margin-top: 100px; }
 
 @media (max-width: 1079px) {
-  .bw-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bw-project-filters { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .bw-project-filters .bw-wide { grid-column: 1 / -1; }
   .bw-project-rows .bw-project-row {
@@ -344,34 +311,14 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
   }
 }
 @media (max-width: 860px) {
-  .bw-header { grid-template-columns: minmax(0, 1fr) 44px max-content; padding-inline: 12px; }
-  .bw-brand { gap: 4px; }
+  .bw-header-inner { grid-template-columns: minmax(0, 1fr) 44px max-content; gap: 0 8px; padding: 4px 20px 0; }
+  .bw-top-tabs { grid-row: 2; grid-column: 1 / -1; min-height: 40px; justify-content: space-between; gap: 8px; }
   .bw-global-search { width: 44px; justify-content: center; padding: 0; }
   .bw-global-search :is(span, kbd) { display: none; }
-  .bw-frame { display: block; }
-  .bw-side { display: none; }
-  .bw-bottom {
-    z-index: 29;
-    position: fixed;
-    bottom: 0;
-    inset-inline: 0;
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    align-items: stretch;
-    gap: 3px;
-    padding: 4px 8px max(4px, env(safe-area-inset-bottom));
-    background: var(--bw-panel);
-    border-top: 1px solid var(--bw-border);
-  }
-  .bw-bottom :is(a, .bw-more) { min-width: 0; flex-direction: column; justify-content: center; padding: 4px 2px; gap: 2px; text-align: center; font-size: .68rem; line-height: 1.35; }
-  .bw-bottom svg { width: 15px; height: 15px; }
-  .bw-page { padding-bottom: calc(79px + env(safe-area-inset-bottom)); }
   .bw-hide-with-detail { display: none; }
   .bw-project-split { display: block; margin-top: 0; }
-  .bw-shell .safe-bottom-bar { margin-bottom: calc(64px + env(safe-area-inset-bottom)); }
 }
 @media (max-width: 530px) {
-  .bw-home-panels { grid-template-columns: minmax(0, 1fr); }
   .bw-card { padding: 12px; }
   .bw-project-filters, .bw-dates { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bw-filters input { font-size: 16px; }
@@ -389,11 +336,9 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
   .bw-detail-top .bw-actions { justify-content: start; }
   .bw-detail-title { grid-template-columns: minmax(0, 1fr); }
   .bw-detail-title .bw-money { justify-self: end; }
-  .bw-customer-list-item { grid-template-columns: minmax(0, 1fr); }
-  .bw-customer-list-item .bw-control { justify-self: end; margin-bottom: 9px; }
 }
 @media print {
-  .bw-shell > :is(.bw-header, .bw-bottom), .bw-side { display: none; }
+  .bw-header { display: none; }
 }
 
 /* ===== Opus 11/20：密度の見直し（天地を詰めて見やすく） ===== */
@@ -415,34 +360,42 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 .bw-records > li { padding: 6px 0; }
 
 /* 明細：1品目を1行の表に（見出しは上に1回だけ） */
-.bw-lines { --bw-line-columns: minmax(0, 1fr) repeat(3, 6rem) 6.5rem; }
-.bw-lines[data-cost="true"] { --bw-line-columns: minmax(0, 1fr) repeat(5, 5.25rem) 6.5rem; }
-.bw-lines .bw-lines-head { display: grid; }
-.bw-lines .bw-lines-head tr { display: grid; grid-template-columns: var(--bw-line-columns); gap: 6px 12px; padding: 0 0 4px; border-bottom: 1px solid var(--bw-border); }
+.bw-lines .bw-lines-head tr { padding: 0 0 4px; }
 .bw-lines .bw-lines-head th { font-size: .72rem; font-weight: 600; color: var(--bw-muted); text-align: start; }
 .bw-lines .bw-lines-head th.bw-line-number { text-align: end; }
-.bw-lines tbody tr { padding: 7px 0; }
-.bw-lines .bw-line-title, .bw-lines .bw-line-history { grid-column: auto; grid-row: auto; }
-.bw-lines .bw-line-number { flex-direction: row; justify-content: flex-end; align-self: center; }
-.bw-lines tbody .bw-line-label { display: none; }
 .bw-line-title strong { display: block; line-height: 1.3; }
 .bw-line-title small { margin-top: 1px; }
-@container (max-width: 565px) {
-  .bw-lines tbody tr { grid-template-columns: var(--bw-line-columns); }
-  .bw-line-title { grid-column: auto; }
-}
-@container (max-width: 420px) {
-  /* とても狭いときだけ、品名の下に数字を並べる */
+@container (max-width: 720px) {
+  /* 幅が足りない場合は、品名の下に数字をそろえる。 */
+  .bw-lines, .bw-lines[data-cost="true"] { grid-template-columns: minmax(0, 1fr); }
   .bw-lines .bw-lines-head { display: none; }
-  .bw-lines tbody tr { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bw-lines tbody tr { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 8px; }
   .bw-lines .bw-line-title { grid-column: 1 / -1; }
   .bw-lines tbody .bw-line-label { display: block; }
-  .bw-lines .bw-line-number { flex-direction: column; align-items: flex-end; }
 }
 
 /* 案件の流れ：日付と担当は1行に収め、2件目以降は省略して詰める */
 .bw-timeline > li { padding-top: 15px; }
 .bw-timeline strong { font-size: .8rem; line-height: 1.25; }
-.bw-timeline small { font-size: .72rem; line-height: 1.3; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bw-timeline small { font-size: .72rem; line-height: 1.3; }
 .bw-timeline > li small + small { display: none; }
-.bw-lines .bw-line-history { text-align: end; white-space: nowrap; }
+
+/* Keep the original Design board and align the amounts across its rows. */
+[data-billing-design] > header { padding-top: 20px; }
+[data-billing-design] > header dl { margin-top: 16px; }
+[data-billing-design] section { padding-top: 26px; }
+[data-billing-design] :is([data-project-heading], [data-testid="v2-line-item"]) { align-items: center; }
+[data-billing-design] [data-project-heading] { min-height: 26px; gap: 8px; }
+[data-billing-design] [data-testid="v2-line-item"] { column-gap: 8px; }
+[data-billing-design] [data-testid="v2-line-item"] > :last-child { margin-top: 0; }
+[data-billing-design] [data-testid="v2-line-item"] > .truncate { overflow: visible; white-space: normal; overflow-wrap: anywhere; }
+[data-billing-design] [data-testid="v2-open-project"] { padding-block: 9px; }
+[data-billing-design] [data-testid="v2-project-row"] > button { align-self: start; padding-top: 0; }
+
+@media (min-width: 640px) {
+  [data-billing-design] [data-testid="v2-line-item"] { grid-template-columns: minmax(0, 1fr) 9.5rem 8rem; }
+}
+@media (max-width: 639px) {
+  [data-billing-design] > header > div > button { flex-shrink: 0; height: auto; min-height: 40px; white-space: normal; max-width: 48%; }
+  :is([data-billing-design], [data-testid="v5-accounting"]) > header dd.tnum { font-size: 16px; }
+}

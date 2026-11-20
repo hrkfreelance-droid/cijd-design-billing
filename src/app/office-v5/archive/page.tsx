@@ -1,8 +1,5 @@
-import { redirect } from "next/navigation";
+import { ProjectsWorkspace } from "@/components/billing-v5/projects-workspace";
 
-export default async function ArchivePage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  const { q } = await searchParams;
-  const params = new URLSearchParams({ status: "completed" });
-  if (q) params.set("q", q);
-  redirect(`/office-v5/projects?${params}`);
+export default function ArchivePage() {
+  return <ProjectsWorkspace archive />;
 }

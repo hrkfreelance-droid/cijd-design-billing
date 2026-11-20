@@ -1,4 +1,4 @@
-import { pendingProjects, storedFinalUnitPrice, type BoardProject } from "../billing-v2/board";
+import { isArchived, pendingProjects, storedFinalUnitPrice, type BoardProject } from "../billing-v2/board";
 import { isCostPriced, serviceForItem } from "../billing-v2/services";
 import { isHistoricalRecord, isProductionComplete } from "../derive";
 import type { BillingItem, Client, Invoice, Project, Snapshot, TaxInvoiceRecord } from "../types";
@@ -6,7 +6,7 @@ import { roundMoney } from "./calculation";
 import { customerFor, eligibleBilling, invoiceCollection, LEDGER_PAYMENT_PREFIX } from "./ontology";
 
 export const projectStatuses = ["progress", "ready", "unpaid", "completed", "all", "draft"] as const;
-export type ProjectStatus = "progress" | "ready" | "completed";
+export type ProjectStatus = "progress" | "ready" | "accounting" | "completed";
 export type ProjectCollection = "outstanding" | "partial" | "collected";
 export type WorkKind = "design" | "print" | "other";
 
@@ -105,7 +105,8 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
   const itemProjects = new Map<string, string>();
   const invoiceProjects = new Map<string, Set<string>>();
   const taxLedgerIds = new Set<string>();
-  const noInvoiceProjectIds = new Set((snapshot.noInvoiceIssues ?? []).flatMap((issue) => issue.projectIds));
+  const noInvoiceProjectIds = new Set((snapshot.noInvoiceIssues ?? [])
+    .filter((issue) => issue.status === "ISSUED").flatMap((issue) => issue.projectIds));
 
   for (const item of snapshot.billingItems.filter((entry) => !entry.deletedAt)) {
     addToIndex(itemsByProject, item.projectId, item);
@@ -217,10 +218,13 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
     const workComplete = archivedImport || items.length > 0 && items.every(
       (item) => isHistoricalRecord(item) || isProductionComplete(item),
     );
-    const status: ProjectStatus = archivedImport ? "completed"
-      : canIssue || operational?.blocker === null ? "ready"
-      : operational || !workComplete ? "progress" : "completed";
     const activeInvoices = invoices.filter((invoice) => !invoice.cancelled);
+    // Production may still say IN_PROGRESS on an old billed line. The invoice
+    // (or a recorded no-invoice settlement) determines who owns that work.
+    const billed = activeInvoices.length > 0 || items.some(isArchived) || noInvoiceProjectIds.has(project.id);
+    const status: ProjectStatus = archivedImport || billed || !operational ? "completed"
+      : operational.billingReadiness === "ACCOUNTING" || canIssue ? "accounting"
+      : operational.blocker === null ? "ready" : "progress";
     const hasOutstanding = activeInvoices.some((invoice) => invoice.outstanding > 0);
     const hasPayment = activeInvoices.some((invoice) => invoice.outstanding < invoice.usd);
     const collection: ProjectCollection | null = hasOutstanding ? (hasPayment ? "partial" : "outstanding")
@@ -240,6 +244,12 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
         ...items.map((item) => item.description), ...invoices.map((invoice) => invoice.number)].join(" ")),
     };
   });
+}
+
+export function designProjects(views: ProjectView[]): BoardProject[] {
+  return views.flatMap(({ status, pending }) =>
+    pending && (status === "ready" || status === "progress") ? [pending] : [],
+  ).sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
 }
 
 export interface PriceEntry {

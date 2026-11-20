@@ -18,7 +18,7 @@ import { useProjectViews } from "./workspace-shell";
 import { Amount, BILLING, projectHref, ProjectStatusBadges, WorkspaceHeading, WorkspaceState } from "./workspace-parts";
 import { ProjectDetailView } from "./project-view-detail";
 
-const listPath = BILLING + "/projects";
+const archiveStatuses = ["completed", "unpaid"] as const;
 const sorts = ["newest", "oldest", "highest", "lowest", "name"] as const;
 const kindOptions = ["all", "design", "print", "other"] as const;
 
@@ -57,7 +57,7 @@ export function ProjectRows({ rows, query = "", selected, selection }: {
   );
 }
 
-export function ProjectsWorkspace({ id }: { id?: string }) {
+export function ProjectsWorkspace({ id, archive = false }: { id?: string; archive?: boolean }) {
   const t = useWorkspaceT();
   const v5 = useV5T();
   const { t: common } = useI18n();
@@ -66,12 +66,17 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
   const projects = useProjectViews();
   const router = useRouter();
   const params = useSearchParams();
+  const source = params.get("source");
+  const archiveView = archive || Boolean(id && source === "archive");
+  const listPath = BILLING + (archiveView ? "/archive" : "/projects");
   const path = id ? projectHref(id) : listPath;
   const [creating, setCreating] = useState(params.get("new") === "1");
   const [selection, setSelection] = useState<{ status: string; ids: Set<string> }>({ status: "", ids: new Set() });
   const [confirming, setConfirming] = useState(false);
   const { busy, run } = useAction();
-  const status = projectStatuses.find((value) => value === params.get("status")) ?? "all";
+  const statuses = archiveView ? archiveStatuses : projectStatuses;
+  const defaultStatus = archiveView ? "completed" : "all";
+  const status = statuses.find((value) => value === params.get("status")) ?? defaultStatus;
   const kind = kindOptions.find((value) => value === params.get("kind")) ?? "all";
   const sort = sorts.find((value) => value === params.get("sort")) ?? "newest";
   const query = params.get("q") ?? "";
@@ -86,6 +91,10 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
   const clients = [...new Map(projects.filter((view) => view.client).map((view) => [view.project.clientId, view.client]))]
     .sort((a, b) => a[1].localeCompare(b[1]));
   const detail = projects.find((view) => view.project.id === id);
+
+  if (id && source === "design") {
+    return <div className="bw-page"><ProjectDetailView key={id} view={detail} closeHref={BILLING} query="source=design" /></div>;
+  }
 
   function queryWith(changes: Record<string, string>) {
     const next = new URLSearchParams(params.toString());
@@ -102,12 +111,10 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
   }
 
   const filtered = projects.filter((view) =>
-    (status === "draft" ? view.draft : !view.draft) &&
+    (status === "draft" ? view.draft : status === "progress" || !view.draft) &&
     (status === "draft" || status === "all"
-      || status === "completed" && view.workComplete
       || status === "unpaid" && (view.collection === "outstanding" || view.collection === "partial")
-      || status === "ready" && (view.status === "ready" || view.canIssue)
-      || status === "progress" && view.status === "progress") &&
+      || view.status === status) &&
     (kind === "all" || view.kinds.includes(kind as WorkKind)) &&
     (!clientId || view.project.clientId === clientId) &&
     (!from || view.project.date >= from) && (!to || view.project.date <= to) &&
@@ -154,27 +161,32 @@ export function ProjectsWorkspace({ id }: { id?: string }) {
     }
   }
 
-  const serialized = params.toString();
-  const closeHref = serialized ? `${listPath}?${serialized}` : listPath;
-  const clearParams = queryWith({ q: "", kind: "", client: "", from: "", to: "", min: "", max: "", sort: "" });
-  const title = kind === "all" ? t("projects") : t(kind);
+  const serialized = queryWith({ source: archiveView ? "archive" : "" });
+  const listQuery = queryWith({ source: "" });
+  const closeHref = listQuery ? `${listPath}?${listQuery}` : listPath;
+  const clearParams = queryWith({ q: "", kind: "", client: "", from: "", to: "", min: "", max: "", sort: "", source: "" });
+  const title = archiveView ? t("archive") : kind === "all" ? t("projects") : t(kind);
 
   return (
     <div className={`bw-page${id ? " bw-detail-open" : ""}`} data-testid="billing-projects">
       <div className={id ? "bw-project-list-header bw-hide-with-detail" : "bw-project-list-header"}>
         <WorkspaceHeading title={title} actions={
           <>
-            <Link className="bw-control" href={`${BILLING}/tax-invoices`}>{t("invoices")}</Link>
-            {user && can(user.role, "production:write") && (
+            {archiveView ? <>
+              <Link className="bw-control" href={`${BILLING}/tax-invoices?collection=paid`}>{t("paidInvoices")}</Link>
+              <Link className="bw-control" href={`${BILLING}/price-history`}>{t("prices")}</Link>
+            </> : <Link className="bw-control" href={`${BILLING}/tax-invoices`}>{t("invoices")}</Link>}
+            {!archiveView && user && can(user.role, "production:write") && (
               <Button variant="primary" onClick={() => setCreating(true)} data-testid="v2-new-project">+ {common("v2.newProject")}</Button>
             )}
           </>
         } />
         <div className="bw-filter-panel">
           <nav className="bw-tabs" aria-label={t("status")} aria-describedby={status === "completed" ? "bw-completed-help" : undefined} data-layout-group>
-            {projectStatuses.map((key) => {
-              const next = queryWith({ status: key === "all" ? "" : key });
-              return <Link key={key} href={next ? `${listPath}?${next}` : listPath} aria-current={status === key ? "page" : undefined}>{t(key === "unpaid" ? "balanceDue" : key)}</Link>;
+            {statuses.map((key) => {
+              const next = queryWith({ status: key === defaultStatus ? "" : key, source: "" });
+              const label = key === "unpaid" ? "balanceDue" : key === "completed" ? "archivedProjects" : key;
+              return <Link key={key} href={next ? `${listPath}?${next}` : listPath} aria-current={status === key ? "page" : undefined}>{t(label)}</Link>;
             })}
           </nav>
           <div className="bw-filters bw-project-filters" data-layout-group>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { api, useI18n } from "@/components/providers";
@@ -13,6 +14,7 @@ import {
   type BoardGroup,
   type BoardItem,
   type BoardProject,
+  type BoardSections,
 } from "@/lib/billing-v2/board";
 import { isCostPriced, serviceLabel } from "@/lib/billing-v2/services";
 import { moneyExact } from "@/lib/format";
@@ -31,7 +33,12 @@ type Section = "READY" | "IN_PROGRESS";
  * each one is, its final price and, for printing, its cost — so a billing
  * decision can be made from the list without opening anything.
  */
-export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot: Snapshot; accountingFlow?: boolean }) {
+export function BillingV3Board({ snapshot, accountingFlow = false, sections, projectLink }: {
+  snapshot: Snapshot;
+  accountingFlow?: boolean;
+  sections?: BoardSections;
+  projectLink?: (id: string) => string;
+}) {
   const { t } = useI18n();
   const v5t = useV5T();
   const { run, busy } = useAction();
@@ -44,7 +51,7 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
   const [confirmingBill, setConfirmingBill] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
 
-  const board = useMemo(() => billingBoard(snapshot), [snapshot]);
+  const board = useMemo(() => sections ?? billingBoard(snapshot), [sections, snapshot]);
 
   const lookup = useMemo(() => {
     const map = new Map<string, { project: BoardProject; clientName: string; section: Section }>();
@@ -135,9 +142,10 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
     <div
       className={chosen.length ? "pb-36" : "pb-16"}
       data-v3-pricing-mode="qty-unit-derived-total"
+      data-billing-design={accountingFlow ? "" : undefined}
     >
       <header className="px-5 pb-2 pt-6 sm:px-8 sm:pt-8">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4" data-layout-group>
           <div className="min-w-0">
             <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">
               {accountingFlow ? v5t("design.title") : t("v2.billing.title")}
@@ -150,11 +158,11 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
           </Button>
         </div>
 
-        <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-12">
+        <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-3 sm:flex sm:flex-wrap sm:gap-x-12" data-layout-group>
           <Figure label={t("v2.section.ready")} testId="v2-page-total" strong>
             {moneyExact(board.readyTotal)}
           </Figure>
-          <Figure label={t("v2.section.inProgress")}>
+          <Figure label={t("v2.section.inProgress")} testId="v2-progress-total">
             {t("v2.projects", { count: board.inProgressCount })}
           </Figure>
           <Figure label={t("v2.printingCostOutstanding")} testId="v2-printing-cost-outstanding">
@@ -191,6 +199,7 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
                       highlighted={highlight === project.id}
                       onToggle={() => toggle(project.id, "READY")}
                       onOpen={() => setOpenProject(project.id)}
+                      href={projectLink?.(project.id)}
                     />
                   ))}
                 </ClientGroup>
@@ -214,6 +223,7 @@ export function BillingV3Board({ snapshot, accountingFlow = false }: { snapshot:
                       highlighted={highlight === project.id}
                       onToggle={() => toggle(project.id, "IN_PROGRESS")}
                       onOpen={() => setOpenProject(project.id)}
+                      href={projectLink?.(project.id)}
                     />
                   ))}
                 </ClientGroup>
@@ -341,7 +351,7 @@ function BoardSection({
 }) {
   return (
     <section className="pt-9" data-testid={testId}>
-      <div className="flex items-baseline justify-between gap-4 pb-1">
+      <div className="flex items-baseline justify-between gap-4 pb-1" data-layout-group>
         <h2 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-muted">
           {label}
           <span className="tnum ml-2 font-normal text-faint">{count}</span>
@@ -372,7 +382,7 @@ function ClientGroup({
   const some = !!selection && group.projects.some((project) => selection.has(project.id));
   return (
     <div className="pt-3" data-testid="v2-client-group">
-      <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center border-b border-line-strong">
+      <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center border-b border-line-strong" data-layout-group>
         {onToggleAll ? (
           <RowCheckbox
             checked={all}
@@ -409,16 +419,70 @@ function ProjectRow({
   highlighted,
   onToggle,
   onOpen,
+  href,
 }: {
   project: BoardProject;
   checked: boolean;
   highlighted: boolean;
   onToggle: () => void;
   onOpen: () => void;
+  href?: string;
 }) {
   const { t } = useI18n();
   const reason = projectReason(project, t);
   const pending = project.pricePendingCount > 0;
+
+  const openProps = {
+    "aria-label": t("v2.openProject", { name: project.name }),
+    className: "group min-w-0 py-3.5 text-left",
+    "data-testid": "v2-open-project",
+  };
+  const lines = (
+    <>
+      <span className="flex items-baseline justify-between gap-4" data-layout-group data-project-heading>
+        <span className="min-w-0 text-[15px] font-medium leading-snug tracking-[-0.01em] group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">
+          {project.name}
+        </span>
+        {/* A total is only a total when every line has a price; the reason
+            line below says what is missing. */}
+        <span className="tnum shrink-0 text-[15px] font-semibold" data-testid="v2-project-total">
+          {project.items.length === 0 ? "" : pending ? <span className="font-normal text-faint">—</span> : moneyExact(project.total)}
+        </span>
+      </span>
+      {project.balance.deposit > 0 && project.items.length > 0 && (
+        <span className="tnum mt-0.5 block text-[12.5px] text-muted" data-testid="v3-project-balance">
+          {t("v3.deposit")} {moneyExact(project.balance.deposit)}
+          {" · "}
+          {project.balance.overpaid > 0 ? (
+            <span className="text-pending">
+              {t("v3.overpaid")} {moneyExact(project.balance.overpaid)}
+            </span>
+          ) : project.balance.settled && !pending ? (
+            <span className="text-paid">{t("v3.paidInFull")}</span>
+          ) : (
+            <span className="font-medium text-text">
+              {t("v3.remaining")} {moneyExact(project.balance.remaining)}
+            </span>
+          )}
+        </span>
+      )}
+      {reason && (
+        <span
+          className={`mt-0.5 block text-[12.5px] ${project.blocker === "PRICE" ? "text-pending" : "text-muted"}`}
+          data-testid="v2-project-reason"
+        >
+          {reason}
+        </span>
+      )}
+      {project.items.length > 0 && (
+        <span className="mt-1.5 block space-y-[3px]" data-testid="v2-line-item-breakdown">
+          {project.items.map((entry) => (
+            <LineItem key={entry.item.id} entry={entry} />
+          ))}
+        </span>
+      )}
+    </>
+  );
 
   return (
     <li
@@ -427,58 +491,12 @@ function ProjectRow({
       }`}
       data-project-id={project.id}
       data-testid="v2-project-row"
+      data-layout-group
     >
       <RowCheckbox checked={checked} onChange={onToggle} label={project.name} className="self-start pt-[13px]" />
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-label={t("v2.openProject", { name: project.name })}
-        className="group min-w-0 py-3.5 text-left"
-        data-testid="v2-open-project"
-      >
-        <span className="flex items-baseline justify-between gap-4">
-          <span className="min-w-0 text-[15px] font-medium leading-snug tracking-[-0.01em] group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">
-            {project.name}
-          </span>
-          {/* A total is only a total when every line has a price; the reason
-              line below says what is missing. */}
-          <span className="tnum shrink-0 text-[15px] font-semibold" data-testid="v2-project-total">
-            {project.items.length === 0 ? "" : pending ? <span className="font-normal text-faint">—</span> : moneyExact(project.total)}
-          </span>
-        </span>
-        {project.balance.deposit > 0 && project.items.length > 0 && (
-          <span className="tnum mt-0.5 block text-[12.5px] text-muted" data-testid="v3-project-balance">
-            {t("v3.deposit")} {moneyExact(project.balance.deposit)}
-            {" · "}
-            {project.balance.overpaid > 0 ? (
-              <span className="text-pending">
-                {t("v3.overpaid")} {moneyExact(project.balance.overpaid)}
-              </span>
-            ) : project.balance.settled && !pending ? (
-              <span className="text-paid">{t("v3.paidInFull")}</span>
-            ) : (
-              <span className="font-medium text-text">
-                {t("v3.remaining")} {moneyExact(project.balance.remaining)}
-              </span>
-            )}
-          </span>
-        )}
-        {reason && (
-          <span
-            className={`mt-0.5 block text-[12.5px] ${project.blocker === "PRICE" ? "text-pending" : "text-muted"}`}
-            data-testid="v2-project-reason"
-          >
-            {reason}
-          </span>
-        )}
-        {project.items.length > 0 && (
-          <span className="mt-1.5 block space-y-[3px]" data-testid="v2-line-item-breakdown">
-            {project.items.map((entry) => (
-              <LineItem key={entry.item.id} entry={entry} />
-            ))}
-          </span>
-        )}
-      </button>
+      {href
+        ? <Link href={href} {...openProps}>{lines}</Link>
+        : <button type="button" onClick={onOpen} {...openProps}>{lines}</button>}
     </li>
   );
 }
@@ -494,6 +512,7 @@ function LineItem({ entry }: { entry: BoardItem }) {
     <span
       className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-[13px] leading-5 sm:grid-cols-[minmax(0,1fr)_8rem_6.5rem]"
       data-testid="v2-line-item"
+      data-layout-group
     >
       <span className="min-w-0 truncate">
         <span className="text-muted">{label}</span>
@@ -571,7 +590,7 @@ function SelectionBar({
   return (
     <div className="animate-rise fixed inset-x-0 bottom-0 z-40" data-testid="v2-selection-actions">
       <div className="safe-bottom-bar header-surface border-t border-line backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[960px] flex-wrap items-center gap-x-4 gap-y-2.5 px-5 pt-3 sm:px-8">
+        <div className="mx-auto flex max-w-[960px] flex-wrap items-center gap-x-4 gap-y-2.5 px-5 pt-3 sm:px-8" data-layout-group>
           <div className="flex min-w-0 flex-1 items-center gap-3">
             <button
               type="button"
@@ -591,7 +610,7 @@ function SelectionBar({
             </span>
           </div>
           {hint && <p className="order-last w-full text-[12.5px] text-pending sm:order-none sm:w-auto">{hint}</p>}
-          <div className="grid w-full auto-cols-fr grid-flow-col gap-2 sm:flex sm:w-auto sm:shrink-0 [&>button]:h-auto [&>button]:min-h-10 [&>button]:min-w-0 [&>button]:py-1.5 [&>button]:leading-tight">
+          <div className="grid w-full auto-cols-fr grid-flow-col gap-2 sm:flex sm:w-auto sm:shrink-0 [&>button]:h-auto [&>button]:min-h-10 [&>button]:min-w-0 [&>button]:py-1.5 [&>button]:leading-tight" data-layout-group>
             {children}
           </div>
         </div>

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { missingHistory } from "../../scripts/v5-import/legacy-history.ts";
+import { billingBoard } from "../../src/lib/billing-v2/board.ts";
 import { buildV5Seed } from "../../src/lib/billing-v5/repository.ts";
-import { buildProjectViews, normalizeSearch, priceHistory, projectMatches, similarProjects } from "../../src/lib/billing-v5/project-view.ts";
+import { buildProjectViews, designProjects, normalizeSearch, priceHistory, projectMatches, similarProjects } from "../../src/lib/billing-v5/project-view.ts";
 import { planV3Import } from "../../src/lib/billing-v5/v3-import.ts";
 import type { Snapshot } from "../../src/lib/types.ts";
 import { archiveItem, workspaceFixture } from "../fixtures/v5-workspace-history.ts";
@@ -40,19 +41,51 @@ test("archives in V5 and missing V3 projects share the same read-only view and p
   assert.deepEqual(priceHistory(views).filter(({ name }) => normalizeSearch(name) === normalizeSearch(archiveItem)).map(({ price }) => price), [1, 1.5]);
 });
 
-test("an invoice does not mark unfinished production complete", () => {
+test("Design counts exclude issued, paid and handed-off work even with stale production flags", () => {
   const { collections } = planV3Import(workspaceFixture());
   const project = collections.projects.find(({ id }) => id === "p-progress")!;
   const item = collections.billingItems.find(({ projectId }) => projectId === project.id)!;
   const invoice = { ...collections.invoices[0], status: "ISSUED" as const };
+  const paid = { ...invoice, id: "paid", status: "PAID" as const };
+  const canceled = { ...invoice, id: "void", status: "VOID" as const };
+  const taxCustomer = { companyNameEn: "Example Studio", companyNameKm: "", addressEn: "", addressKm: "", telephone: "", vatin: "" };
+  const copy = (id: string, billingReadiness = project.billingReadiness) => ({ ...project, id, billingReadiness });
+  const line = (projectId: string, overrides: Partial<typeof item> = {}) => ({ ...item, id: `item-${projectId}`, projectId, ...overrides });
   const snapshot: Snapshot = {
     ...buildV5Seed(), ...collections, mode: "local", scope: { billing: true, production: true, payment: true },
     exchangeRate: null, exchangeRateLastCheckedAt: null,
-    projects: [project], billingItems: [{ ...item, billingStatus: "INVOICED", invoiceId: invoice.id }],
-    invoices: [invoice],
+    projects: [copy("issued"), copy("paid"), copy("tax"), copy("void"), copy("ready", "READY"), copy("handoff", "ACCOUNTING"), copy("draft")],
+    billingItems: [
+      line("issued", { billingStatus: "INVOICED", invoiceId: invoice.id }),
+      line("paid", { invoiceId: paid.id }), // Old line status never moved to PAID.
+      line("tax"),
+      line("void", { invoiceId: canceled.id }),
+      line("ready", { amount: 50 }),
+      line("handoff", { amount: 50 }),
+    ],
+    invoices: [invoice, paid, canceled],
+    taxInvoices: [{
+      id: "tax-invoice", invoiceNumber: "EXAMPLE-01", invoiceDate: "2026-09-01", issuedAt: project.createdAt,
+      issuedBy: "Example accountant", status: "ISSUED", clientId: project.clientId, projectId: "", projectIds: ["tax"], ledgerInvoiceId: "",
+      customer: taxCustomer, project: { name: "Example project", note: "" }, lines: [],
+      vatApplicable: false, vatPercent: 0, subtotalUsd: 50, vatUsd: 0, totalUsd: 50,
+      exchangeRate: 4100, exchangeRateSource: "MANUAL", exchangeRateEffectiveDate: null, totalKhr: 205000,
+    }],
   };
-  const [view] = buildProjectViews(snapshot);
-  assert.equal(view.workComplete, false);
-  assert.equal(view.status, "progress");
-  assert.equal(view.collection, "outstanding");
+  const views = buildProjectViews(snapshot);
+  assert.deepEqual(views.map(({ project, status, collection }) => [project.id, status, collection]), [
+    ["issued", "completed", "outstanding"],
+    ["paid", "completed", "collected"],
+    ["tax", "completed", "outstanding"],
+    ["void", "progress", null],
+    ["ready", "ready", null],
+    ["handoff", "accounting", null],
+    ["draft", "progress", null],
+  ]);
+  assert.equal(views[0].workComplete, false);
+  assert.equal(views.find(({ status }) => status === "accounting")?.canIssue, true);
+  const board = billingBoard(snapshot, designProjects(views));
+  assert.equal(board.readyCount, 1);
+  assert.equal(board.inProgressCount, 2);
+  assert.equal(board.readyTotal, 50);
 });

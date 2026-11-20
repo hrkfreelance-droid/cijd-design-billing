@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 
 import { Modal } from "@/components/billing-v2/modal";
@@ -11,8 +10,6 @@ import { selectableClients } from "@/lib/billing-v2/board";
 import { useV5T, type V5Key } from "@/lib/billing-v5/i18n";
 import { customerFor } from "@/lib/billing-v5/ontology";
 import { normalizeSearch } from "@/lib/billing-v5/project-view";
-import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
-import { BILLING, WorkspaceState } from "./workspace-parts";
 import { moneyExact } from "@/lib/format";
 import type { Customer, Product, Snapshot } from "@/lib/types";
 import { CustomerDocuments } from "./customer-documents";
@@ -22,15 +19,12 @@ import { normalizedTin } from "@/lib/billing-v5/patent-import";
 /* ------------------------------------------------------------- customers */
 
 /** Customer Master: every client, with the legal details invoices are addressed to. */
-export function CustomerMaster({ snapshot, activityLinks, legacyClients = [], initialEdit, onCloseEditor }: {
+export function CustomerMaster({ snapshot, initialEdit, onCloseEditor }: {
   snapshot: Snapshot;
-  activityLinks?: boolean;
-  legacyClients?: [string, string][];
   initialEdit?: string;
   onCloseEditor?: () => void;
 }) {
   const t = useV5T();
-  const copy = useWorkspaceT();
   const [query, setQuery] = useState("");
   const [editing, setEditing] = useState<string | null>(initialEdit ?? null);
   const [patent, setPatent] = useState<PatentDraft | null>(null);
@@ -45,8 +39,6 @@ export function CustomerMaster({ snapshot, activityLinks, legacyClients = [], in
   const shown = clients.filter(({ client, customer }) =>
     !needle || [client.name, customer.customerCode, customer.companyNameEn, customer.companyNameKm, customer.vatin, customer.telephone, customer.email].some((v) => normalizeSearch(v).includes(needle)),
   );
-
-  const historical = legacyClients.filter(([, name]) => normalizeSearch(name).includes(needle));
 
   const importPatent = async (file: File) => {
     setPatentError(null);
@@ -65,21 +57,21 @@ export function CustomerMaster({ snapshot, activityLinks, legacyClients = [], in
   };
 
   return (
-    <section className={activityLinks ? "" : "pt-4"} data-testid="v5-customers">
-      <div className="bw-filter-panel mb-4 flex flex-wrap gap-2" data-layout-group>
+    <section className="pt-8" data-testid="v5-customers">
+      <div className="flex flex-wrap gap-2 pb-4" data-layout-group>
         <div className="min-w-[180px] flex-1"><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("master.search")} aria-label={t("master.search")} data-testid="v5-customer-search" /></div>
         <Button variant="secondary" onClick={() => { setPatent(null); setEditing("new"); }} data-testid="v5-customer-new">+ {t("master.new")}</Button>
         <Button variant="secondary" onClick={() => patentInput.current?.click()} disabled={readingPatent} data-testid="v5-patent-import">{readingPatent ? t("patent.reading") : t("patent.import")}</Button>
         <input ref={patentInput} type="file" accept=".pdf,application/pdf" hidden data-testid="v5-patent-file" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void importPatent(file); }} />
       </div>
       {patentError && <p className="pb-3 text-[13px] text-danger" role="alert" data-testid="v5-patent-error">{t(patentError)}</p>}
-      {shown.length === 0 && historical.length === 0 ? (
-        <WorkspaceState>{t("customer.empty")}</WorkspaceState>
+      {shown.length === 0 ? (
+        <p className="border-t border-line py-6 text-[13.5px] text-muted">{t("customer.empty")}</p>
       ) : (
         <ul className="border-t border-line-strong">
           {shown.map(({ client, customer }) => (
-            <li key={client.id} className={`border-b border-line ${activityLinks ? "bw-customer-list-item" : ""}`}>
-              <button type="button" onClick={() => setEditing(client.id)} className="group grid w-full grid-cols-[minmax(0,3.8rem)_minmax(0,1fr)_minmax(0,27%)] gap-x-2 py-3 text-left" data-testid="v5-customer-row">
+            <li key={client.id} className="border-b border-line">
+              <button type="button" onClick={() => setEditing(client.id)} className="group grid w-full grid-cols-[minmax(0,3.8rem)_minmax(0,1fr)_minmax(0,27%)] gap-x-2 py-3 text-left sm:grid-cols-[4.5rem_minmax(0,1fr)_auto] sm:gap-x-3" data-testid="v5-customer-row" data-layout-group>
                 <span className="tnum text-[13px] text-faint">{customer.customerCode || "—"}</span>
                 <span className="min-w-0">
                   <span className="block truncate text-[14.5px] font-medium group-hover:underline group-hover:underline-offset-4">{client.name}</span>
@@ -92,12 +84,8 @@ export function CustomerMaster({ snapshot, activityLinks, legacyClients = [], in
                   {!client.active && <span className="block text-faint">{t("master.inactive")}</span>}
                 </span>
               </button>
-              {activityLinks && <Link className="bw-control" href={`${BILLING}/customers/${encodeURIComponent(client.id)}`} aria-label={`${client.name} · ${copy("customerHistory")}`}>{copy("customerHistory")}</Link>}
             </li>
           ))}
-          {historical.map(([id, name]) => <li key={id} className="border-b border-line py-1">
-            <Link className="bw-home-links bw-control" href={`${BILLING}/customers/${encodeURIComponent(id)}`}>{name} · {copy("imported")}</Link>
-          </li>)}
         </ul>
       )}
       {editing && <CustomerSheet snapshot={snapshot} id={editing === "new" ? null : editing} patent={patent} onClose={() => { setEditing(null); setPatent(null); onCloseEditor?.(); }} />}

@@ -96,7 +96,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await page.goto("/office-v5");
   await prefs(page, "en", "light");
   await page.reload();
-  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Home", "Projects", "Invoices", "Accounting", "Customers", "Price history"]);
+  await expect(page.getByRole("navigation", { name: "Billing" }).first().getByRole("link")).toHaveText(["Design", "Accounting", "Customers", "Archive"]);
 
   /* ------------------------------------------- imported V3 data (read only) */
   const fingerprint = async () => {
@@ -112,7 +112,6 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   if (process.env.V5_EXPECT_IMPORTED === "1") expect((await state(page)).projects.filter((p) => !p.name.startsWith("TEST")).length).toBeGreaterThan(0);
 
   /* ---------------------------------------------------------- designer */
-  await page.getByRole("link", { name: "Projects", exact: true }).click();
   await page.getByTestId("v2-new-project").click();
   const clientSelect = page.getByTestId("v2-new-project-client");
   if (!(await page.getByTestId("v2-new-client-name").isVisible())) {
@@ -121,6 +120,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await page.getByTestId("v2-new-client-name").fill(CLIENT);
   await page.getByTestId("v2-new-project-name").fill(PROJECT);
   await page.getByTestId("v2-create-project").click();
+  await page.getByRole("link", { name: `Open ${PROJECT}` }).click();
   await expect(page.getByTestId("billing-project-detail")).toContainText(PROJECT);
   const dialog = page.getByRole("dialog", { name: PROJECT });
   await page.getByTestId("billing-project-detail").getByTestId("v2-modal-edit").click();
@@ -141,9 +141,12 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   const projectDetail = page.getByTestId("billing-project-detail");
   await projectDetail.getByTestId("v2-mark-ready").click();
   await expect(projectDetail.getByTestId("v2-detail-mark-billed")).toBeVisible();
-  await projectDetail.getByTestId("v2-detail-mark-billed").click();
+  await projectDetail.getByRole("link", { name: /Close project/ }).click();
+  const ready = page.getByTestId("v2-section-ready");
+  await ready.getByRole("checkbox", { name: PROJECT, exact: true }).click();
+  await page.getByTestId("v2-mark-billed").click();
   await page.getByTestId("v2-confirm-bill-confirm").click();
-  await expect(dialog).toHaveCount(0);
+  await expect(ready.getByRole("link", { name: `Open ${PROJECT}` })).toHaveCount(0);
 
   let st = await state(page);
   const client = st.clients.find((c) => c.name === CLIENT)!;
@@ -172,7 +175,8 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await shot(page, "01-customers-en-light");
 
   /* ------------------------------------------------------- product master */
-  await page.getByRole("tab", { name: /Products/ }).click();
+  await page.getByRole("link", { name: "Accounting", exact: true }).click();
+  await page.getByRole("link", { name: "Products", exact: true }).click();
   await page.getByTestId("v5-product-new").click();
   const productSheet = page.getByTestId("v5-product-sheet");
   await productSheet.getByTestId("v5-product-description").fill(PRODUCT);
@@ -183,7 +187,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await shot(page, "02-products-en-light");
 
   /* ------------------------------------------------- select and invoice */
-  await page.getByRole("tab", { name: /To invoice/ }).click();
+  await page.getByRole("link", { name: "To invoice", exact: true }).click();
   const row = (name: string) => page.getByTestId("v5-accounting-row").filter({ hasText: name });
   await expect(row(PROJECT).getByTestId("v5-row-memo")).toContainText("Deliver by Friday");
   await row(OTHER_PROJECT).getByTestId("v5-select-project").click();
@@ -418,7 +422,7 @@ test("V5 invoice management: designer → accounting → invoice → payments �
   await expect(row(WEBSITE)).toHaveCount(0);
 
   /* ----------------------------------------------------- invoice list */
-  await page.getByRole("tab", { name: /Invoices/ }).click();
+  await page.getByRole("link", { name: "Invoices", exact: true }).click();
   await page.getByTestId("v5-invoice-search").fill(number);
   const listed = page.getByTestId("v5-issued-row").filter({ hasText: number });
   await expect(listed).toHaveCount(1);
@@ -572,7 +576,8 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
   await expect(sheet).toHaveCount(0);
 
   /* --------------------------------------------------- C. a TEST product */
-  await page.getByRole("tab", { name: /Products/ }).click();
+  await page.getByRole("link", { name: "Accounting", exact: true }).click();
+  await page.getByRole("link", { name: "Products", exact: true }).click();
   await page.getByTestId("v5-product-new").click();
   const productSheet = page.getByTestId("v5-product-sheet");
   await productSheet.getByTestId("v5-product-description").fill(PICKED);
@@ -584,7 +589,7 @@ test("V5 masters in the invoice: customer selector, codes, company documents, pr
   expect(product.productCode).toMatch(/^P\d{4}$/);
 
   /* ------------------------- A. selector → editor → issue → reopen → PDF */
-  await page.getByRole("tab", { name: /Invoices/ }).click();
+  await page.getByRole("link", { name: "Invoices", exact: true }).click();
   await page.getByTestId("v5-invoice-new").click();
   const editor = page.getByTestId("v5-invoice-editor");
   const picker = editor.getByTestId("v5-editor-customer");

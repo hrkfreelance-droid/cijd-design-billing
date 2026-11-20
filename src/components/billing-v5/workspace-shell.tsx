@@ -2,9 +2,9 @@
 
 import { Popover } from "@base-ui/react/popover";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArchiveIcon, BillIcon, ChevronDown, ClockIcon, ListIcon, MoonIcon, SearchIcon, SunIcon } from "@/components/icons";
+import { MoonIcon, SearchIcon, SunIcon } from "@/components/icons";
 import { useData, useI18n, useSession, useTheme } from "@/components/providers";
 import { canAny, homeFor } from "@/lib/auth/roles";
 import { buildProjectViews, pricingCustomerCandidates, matchesSearch, normalizeSearch, projectMatches, type ProjectView } from "@/lib/billing-v5/project-view";
@@ -12,12 +12,10 @@ import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
 import { BILLING, projectHref, WorkspaceState } from "./workspace-parts";
 
 const sections = [
-  { key: "home", suffix: "", icon: ClockIcon },
-  { key: "projects", suffix: "/projects", icon: ListIcon },
-  { key: "invoices", suffix: "/tax-invoices", icon: BillIcon },
-  { key: "accounting", suffix: "/accounting", icon: ArchiveIcon },
-  { key: "customers", suffix: "/customers", icon: ListIcon },
-  { key: "prices", suffix: "/price-history", icon: ClockIcon },
+  { key: "design", suffix: "" },
+  { key: "accounting", suffix: "/accounting" },
+  { key: "customers", suffix: "/customers" },
+  { key: "archive", suffix: "/archive" },
 ] as const;
 
 const ProjectContext = createContext<ProjectView[]>([]);
@@ -26,44 +24,20 @@ export const useProjectViews = () => useContext(ProjectContext);
 const PricingCustomerContext = createContext<ReturnType<typeof pricingCustomerCandidates>>([]);
 export const usePricingCustomerCandidates = () => useContext(PricingCustomerContext);
 
-function useBillingNavigation() {
+function Navigation() {
   const path = usePathname();
+  const source = useSearchParams().get("source");
   const t = useWorkspaceT();
-  return sections.map(({ key, suffix, icon }) => {
-    const href = BILLING + suffix;
-    return { key, href, icon, label: t(key), active: path === href || Boolean(suffix && path.startsWith(href + "/")) };
-  });
-}
-
-function Navigation({ mobile = false }: { mobile?: boolean }) {
-  const links = useBillingNavigation();
-  const t = useWorkspaceT();
-  const items = mobile ? links.slice(0, 4) : links;
+  const isProjects = path.startsWith(`${BILLING}/projects`);
+  const activeTab = path === BILLING || (isProjects && source === "design") ? "design"
+    : path.startsWith(`${BILLING}/customers`) ? "customers"
+    : path.startsWith(`${BILLING}/accounting`) || path.startsWith(`${BILLING}/tax-invoices`) ? "accounting"
+    : "archive";
   return (
-    <nav className={mobile ? "bw-bottom" : "bw-side"} aria-label={t("billingNavigation")} data-layout-group>
-      {items.map(({ href, icon: Icon, label, active }) => (
-        <Link href={href} key={href} aria-current={active ? "page" : undefined} data-layout-group>
-          <Icon /><span>{label}</span>
-        </Link>
+    <nav className="bw-top-tabs" aria-label={t("billingNavigation")} data-layout-group>
+      {sections.map(({ key, suffix }) => (
+        <Link href={BILLING + suffix} key={key} aria-current={activeTab === key ? "page" : undefined}>{t(key)}</Link>
       ))}
-      {mobile && (
-        <Popover.Root>
-          <Popover.Trigger className="bw-more" data-active={links.slice(4).some(({ active }) => active) || undefined}>
-            <ChevronDown /><span>{t("more")}</span>
-          </Popover.Trigger>
-          <Popover.Portal>
-            <Popover.Positioner side="top" align="end" sideOffset={8} className="bw-popover-position">
-              <Popover.Popup className="bw-popover">
-                {links.slice(4).map(({ href, label, active }) => (
-                  <Popover.Close key={href} render={<Link href={href} aria-current={active ? "page" : undefined} />}>
-                    {label}
-                  </Popover.Close>
-                ))}
-              </Popover.Popup>
-            </Popover.Positioner>
-          </Popover.Portal>
-        </Popover.Root>
-      )}
     </nav>
   );
 }
@@ -138,30 +112,33 @@ function Header({ projects }: { projects: ProjectView[] }) {
   const router = useRouter();
   const copy = useWorkspaceT();
   return (
-    <header className="bw-header" data-layout-group>
-      <Link className="bw-brand" href={BILLING}>CIJD <span>Billing</span></Link>
-      <GlobalSearch projects={projects} />
-      <div className="bw-preferences" data-layout-group>
-        <select aria-label={copy("language")} className="bw-language" value={locale} onChange={(event) => setLocale(event.target.value as typeof locale)}>
-          <option value="ja">JA</option><option value="en">EN</option><option value="kh">KH</option>
-        </select>
-        <button className="bw-icon" type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={t("theme.toggle")}>
-          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
-        </button>
-        {user && (
-          <Popover.Root>
-            <Popover.Trigger className="bw-icon bw-account" aria-label={user.name} data-testid="v2-account">{user.name.slice(0, 1).toUpperCase()}</Popover.Trigger>
-            <Popover.Portal>
-              <Popover.Positioner className="bw-popover-position" side="bottom" align="end" sideOffset={8}>
-                <Popover.Popup className="bw-popover">
-                  <Popover.Title>{user.name}</Popover.Title>
-                  <Popover.Description>{t(`role.${user.role}`)}</Popover.Description>
-                  <button type="button" onClick={() => void signOut().then(() => router.push("/signin"))}>{t("signin.signOut")}</button>
-                </Popover.Popup>
-              </Popover.Positioner>
-            </Popover.Portal>
-          </Popover.Root>
-        )}
+    <header className="bw-header">
+      <div className="bw-header-inner" data-layout-group>
+        <Link className="bw-brand" href={BILLING} data-testid="v2-brand">{t("v2.brand")}</Link>
+        <Navigation />
+        <GlobalSearch projects={projects} />
+        <div className="bw-preferences" data-layout-group>
+          <select aria-label={copy("language")} className="bw-language" value={locale} onChange={(event) => setLocale(event.target.value as typeof locale)}>
+            <option value="ja">JA</option><option value="en">EN</option><option value="kh">KH</option>
+          </select>
+          <button className="bw-icon" type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label={t("theme.toggle")}>
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+          </button>
+          {user && (
+            <Popover.Root>
+              <Popover.Trigger className="bw-icon bw-account" aria-label={user.name} data-testid="v2-account">{user.name.slice(0, 1).toUpperCase()}</Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Positioner className="bw-popover-position" side="bottom" align="end" sideOffset={8}>
+                  <Popover.Popup className="bw-popover">
+                    <Popover.Title>{user.name}</Popover.Title>
+                    <Popover.Description>{t(`role.${user.role}`)}</Popover.Description>
+                    <button type="button" onClick={() => void signOut().then(() => router.push("/signin"))}>{t("signin.signOut")}</button>
+                  </Popover.Popup>
+                </Popover.Positioner>
+              </Popover.Portal>
+            </Popover.Root>
+          )}
+        </div>
       </div>
     </header>
   );
@@ -184,20 +161,17 @@ export function BillingWorkspace({ children }: { children: ReactNode }) {
 
   const content = ready && allowed && snapshot ? children : <WorkspaceState mode={error ? "error" : "loading"} />;
   if (path.startsWith(`${BILLING}/tax-invoices/`)) return <main className="bw-standalone min-h-dvh bg-bg">{content}</main>;
+  const classic = [BILLING, `${BILLING}/accounting`, `${BILLING}/customers`].includes(path);
 
   return (
     <ProjectContext.Provider value={projects}>
       <PricingCustomerContext.Provider value={pricingCandidates}>
         <div className="bw-shell">
           <Header projects={projects} />
-          <div className="bw-frame">
-            <Navigation />
-            <main className="bw-main" id="billing-content">
-              {error && snapshot && <WorkspaceState mode="error" />}
-              {content}
-            </main>
-          </div>
-          <Navigation mobile />
+          <main className={classic ? "bw-main bw-main-classic" : "bw-main"} id="billing-content">
+            {error && snapshot && <WorkspaceState mode="error" />}
+            {content}
+          </main>
         </div>
       </PricingCustomerContext.Provider>
     </ProjectContext.Provider>
