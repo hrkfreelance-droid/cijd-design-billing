@@ -472,7 +472,7 @@ html[lang="km"] .bw-shell { font-family: "Inter", "Noto Sans Khmer", system-ui, 
 .df-mark.q i { background: var(--c-pending); }
 .df-warn { color: var(--c-pending); }
 .df-check { width: 22px; height: 22px; display: grid; place-items: center; flex: none; }
-.df-check span { width: 16px; height: 16px; border: 1.5px solid var(--c-line-strong); border-radius: 4px; display: grid; place-items: center; font-size: 11px; line-height: 1; color: var(--c-on-accent); }
+.df-check span { width: 16px; height: 16px; border: 1.5px solid var(--c-line-strong); border-radius: 4px; display: grid; place-items: center; font-size: 11.5px; line-height: 1; color: var(--c-on-accent); }
 .df-check[data-on="true"] span { background: var(--bw-action); border-color: var(--bw-action); }
 .df-panel { background: var(--bw-panel); border: 1px solid var(--bw-border); border-radius: 14px; min-width: 0; }
 .df-panel-empty { padding: 22px; color: var(--bw-muted); }
@@ -500,7 +500,7 @@ html[lang="km"] .bw-shell { font-family: "Inter", "Noto Sans Khmer", system-ui, 
 .df-table :is(th, td) + :is(th, td) { padding-left: 14px; }
 .df-table .r { text-align: right; white-space: nowrap; }
 .df-state-col { width: 26px; }
-.df-state { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11px; }
+.df-state { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 11.5px; }
 .df-state.ok { color: var(--c-paid); border: 1.5px solid var(--c-paid); }
 .df-state.q { color: var(--c-pending); border: 1.5px solid var(--c-pending); }
 .df-code { display: block; font-size: 11.5px; color: var(--bw-faint); }
