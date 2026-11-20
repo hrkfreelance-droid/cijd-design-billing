@@ -114,7 +114,7 @@ function Header({ projects }: { projects: ProjectView[] }) {
   return (
     <header className="bw-header">
       <div className="bw-header-inner" data-layout-group>
-        <Link className="bw-brand" href={BILLING} data-testid="v2-brand">{t("v2.brand")}</Link>
+        <Link className="bw-brand" href={BILLING} data-testid="v2-brand" aria-label={t("v2.brand")}>CIJD <span>Billing</span></Link>
         <Navigation />
         <GlobalSearch projects={projects} />
         <div className="bw-preferences" data-layout-group>
@@ -161,7 +161,7 @@ export function BillingWorkspace({ children }: { children: ReactNode }) {
 
   const content = ready && allowed && snapshot ? children : <WorkspaceState mode={error ? "error" : "loading"} />;
   if (path.startsWith(`${BILLING}/tax-invoices/`)) return <main className="bw-standalone min-h-dvh bg-bg">{content}</main>;
-  const classic = [BILLING, `${BILLING}/accounting`, `${BILLING}/customers`].includes(path);
+  const classic = [`${BILLING}/accounting`, `${BILLING}/customers`].includes(path);
 
   return (
     <ProjectContext.Provider value={projects}>
