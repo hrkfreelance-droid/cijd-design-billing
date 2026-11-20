@@ -423,7 +423,7 @@ html[lang="km"] .bw-shell { font-family: "Inter", "Noto Sans Khmer", system-ui, 
 .bw-seg { display: flex; border: 1px solid var(--bw-border); border-radius: 8px; padding: 2px; }
 .bw-seg button { padding: 3px 8px; border-radius: 6px; font-size: 12px; color: var(--bw-muted); }
 .bw-seg button[aria-pressed="true"] { background: var(--c-fill); color: var(--bw-ink); font-weight: 500; }
-.bw-shell .bw-account { width: 26px; height: 26px; min-height: 26px; border: 0; border-radius: 50%; background: var(--c-fill); color: var(--bw-ink); font-size: 11px; font-weight: 600; margin-left: 4px; }
+.bw-shell .bw-account { width: 26px; height: 26px; min-height: 26px; border: 0; border-radius: 50%; background: var(--c-fill); color: var(--bw-ink); font-size: 12px; font-weight: 600; margin-left: 4px; }
 .bw-text-link { text-decoration: none; font-weight: 500; }
 .bw-text-link:hover { text-decoration: underline; }
 .bw-card, .bw-filter-panel, .bw-project-rows, .bw-price-rows, .bw-state { border-radius: 14px; }
@@ -534,3 +534,6 @@ html[lang="km"] .bw-shell { font-family: "Inter", "Noto Sans Khmer", system-ui, 
   .df-amt { grid-column: 1; grid-row: auto; text-align: left; }
 
 }
+/* ルール v1：古い Design ボードの上書き（section の上 26・行の上下 9）を打ち消す */
+[data-billing-design] .df-list { padding-top: 0; }
+[data-billing-design] .df-row > .df-row-open { padding: 12px 0; align-self: center; }
