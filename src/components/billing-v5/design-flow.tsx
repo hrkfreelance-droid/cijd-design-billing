@@ -21,6 +21,7 @@ type Tab = "READY" | "IN_PROGRESS";
 /** Words used only on this screen, kept here so the shared dictionaries stay untouched. */
 const WORDS = {
   en: {
+    item1: "{count} item",
     item: "Item",
     total: "Total",
     allSet: "All prices set",
@@ -28,7 +29,7 @@ const WORDS = {
     lead: "Set the final amounts, then move finished work to Ready to bill. Ready work is sent to Accounting from here.",
     search: "Search project, customer or item",
     allCustomers: "All customers",
-    items: "items",
+    items: "{count} items",
     lines: "Line items",
     qty: "Qty",
     unit: "Unit",
@@ -51,6 +52,7 @@ const WORDS = {
     clear: "Clear",
   },
   ja: {
+    item1: "{count} 品目",
     item: "品目",
     total: "合計",
     allSet: "すべて入力済み",
@@ -58,7 +60,7 @@ const WORDS = {
     lead: "金額を確定し、終わった案件を請求可能へ移します。請求可能の案件は、ここから経理へ送ります。",
     search: "案件・顧客・品目で探す",
     allCustomers: "すべての顧客",
-    items: "品目",
+    items: "{count} 品目",
     lines: "明細",
     qty: "数量",
     unit: "単価",
@@ -81,6 +83,7 @@ const WORDS = {
     clear: "選択を外す",
   },
   kh: {
+    item1: "{count} មុខ",
     item: "មុខ",
     total: "សរុប",
     allSet: "បានបំពេញទាំងអស់",
@@ -88,7 +91,7 @@ const WORDS = {
     lead: "កំណត់ចំនួនទឹកប្រាក់ចុងក្រោយ ហើយផ្លាស់ការងារដែលរួចទៅ «រួចរាល់ចេញវិក្កយបត្រ»។ ការងាររួចរាល់ត្រូវផ្ញើទៅគណនេយ្យពីទីនេះ។",
     search: "ស្វែងរកគម្រោង អតិថិជន ឬមុខទំនិញ",
     allCustomers: "អតិថិជនទាំងអស់",
-    items: "មុខ",
+    items: "{count} មុខ",
     lines: "បញ្ជីមុខ",
     qty: "ចំនួន",
     unit: "តម្លៃឯកតា",
@@ -256,11 +259,11 @@ export function DesignFlow({ snapshot, sections, projectLink }: {
                       <button type="button" className="df-row-open" onClick={() => setCurrent(project.id)} aria-label={t("v2.openProject", { name: project.name })} data-testid="v2-open-project">
                         <span className="df-row-name">{project.name}</span>
                         <span className="df-row-meta tnum">
-                          {project.items.length} {w("items")} · <span data-testid="v2-project-total">{project.items.length === 0 ? "—" : pending ? "—" : moneyExact(project.total)}</span>
+                          {w(project.items.length === 1 ? "item1" : "items", { count: project.items.length })} · <span data-testid="v2-project-total">{project.items.length === 0 ? "—" : pending ? "—" : moneyExact(project.total)}</span>
                         </span>
                         <span className="df-row-side">
                           <span className="df-row-t tnum">{project.date.slice(5).replace("-", "/")}</span>
-                          <span className={`df-mark ${pending || project.items.length === 0 ? "q" : "ok"}`}><i />{reason ?? (tab === "READY" ? t("v2.section.ready") : w("allSet"))}</span>
+                          {reason && <span className={`df-mark ${pending || project.items.length === 0 ? "q" : ""}`}><i />{reason}</span>}
                         </span>
                       </button>
                     </div>
