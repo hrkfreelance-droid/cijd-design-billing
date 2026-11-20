@@ -263,9 +263,12 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 .bw-project-row .bw-badge { white-space: nowrap; }
 .bw-project-split { display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 6fr); align-items: start; gap: 14px; margin-top: 12px; }
 .bw-project-split .bw-project-row {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr) minmax(0, 8rem);
-  grid-template-areas: "name name amount" "kinds status date";
+  /* Opus 11/20：2行目は「種類＋状態」を左に詰め、日付は右端（金額の真下）にそろえる */
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  grid-template-areas: "name name name amount" "kinds status . date";
+  column-gap: 8px;
 }
+.bw-project-split .bw-project-date, .bw-project-split .bw-project-amount { justify-self: end; text-align: end; }
 .bw-project-detail { display: grid; align-content: start; gap: 12px; }
 .bw-detail-top { margin-bottom: 12px; align-items: start; }
 .bw-detail-title { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 28%); align-items: start; gap: 12px; }
@@ -289,9 +292,10 @@ html[lang="km"] .bw-shell { font-family: "Noto Sans Khmer", var(--font-sans); }
 .bw-line-history { grid-column: -2; grid-row: 1; text-align: end; }
 .bw-line-history a { display: inline-block; padding-block: 5px; }
 .bw-timeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
-.bw-timeline > li { position: relative; display: grid; grid-row: span 2; grid-template-rows: subgrid; row-gap: 2px; min-width: 0; padding-top: 13px; color: var(--bw-muted); overflow-wrap: anywhere; }
-.bw-timeline > li::before { content: ""; position: absolute; top: 4px; left: 0; width: 9px; height: 9px; border: 1px solid var(--bw-faint); background: var(--bw-panel); border-radius: 50%; }
-.bw-timeline > li:not(:last-child)::after { content: ""; position: absolute; top: 8px; left: 11px; right: -3px; border-top: 1px solid var(--bw-border); }
+/* Opus 11/20：点を各段の中央に置き、線は点と点の間だけ。文字は点の真下に中央そろえ */
+.bw-timeline > li { position: relative; display: grid; grid-row: span 2; grid-template-rows: subgrid; justify-items: center; text-align: center; row-gap: 2px; min-width: 0; padding-top: 16px; color: var(--bw-muted); overflow-wrap: anywhere; }
+.bw-timeline > li::before { content: ""; position: absolute; top: 4px; left: 50%; transform: translateX(-50%); width: 9px; height: 9px; border: 1px solid var(--bw-faint); background: var(--bw-panel); border-radius: 50%; z-index: 1; }
+.bw-timeline > li:not(:last-child)::after { content: ""; position: absolute; top: 8px; left: calc(50% + 8px); right: calc(-50% + 3px); border-top: 1px solid var(--bw-border); }
 .bw-timeline > li[data-recorded="true"] { color: var(--bw-action); }
 .bw-timeline > li[data-recorded="true"]::before { border-color: var(--bw-action); background: var(--bw-action); }
 .bw-timeline strong { font-size: .83rem; }
