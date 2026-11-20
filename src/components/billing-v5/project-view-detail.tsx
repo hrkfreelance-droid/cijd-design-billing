@@ -141,7 +141,7 @@ function ProjectDetails({ view, query, closeHref }: { view: ProjectView; query: 
 
       <DetailSection title={t("lines")}>
         {!items.length ? <WorkspaceState /> : <table role="table" className="bw-lines" aria-label={t("lines")} data-cost={hasCost}>
-          <thead role="rowgroup" className="sr-only"><tr role="row">
+          <thead role="rowgroup" className="bw-lines-head"><tr role="row">
             <th role="columnheader" scope="col">{t("item")}</th>
             {columns.map((column) => <th role="columnheader" key={column} scope="col" className="bw-line-number">{t(column)}</th>)}
             <th role="columnheader" scope="col"><span className="sr-only">{t("prices")}</span></th>
