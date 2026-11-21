@@ -21,7 +21,8 @@ export function ServicePicker({ index, customerId, projectId, disabled, onPick, 
   const input = useRef<HTMLInputElement>(null);
   const { quantity, serviceKey, unit } = priceQuery;
   const options = useMemo(() => {
-    const rows = suggestionsFor(index, customerId, projectId, query);
+    // Hide placeholder history rows such as "(unconfirmed)" with no price (Opus 11/21).
+    const rows = suggestionsFor(index, customerId, projectId, query).filter((row) => !/^\(.*\)$/.test(String(row.name ?? "").trim()) && !(row.price === 0 && !row.formatId));
     if (rows.length || !query.trim()) return rows;
     const estimate = priceEstimateFor(index, { description: query, quantity, serviceKey, unit, projectId });
     return [{ id: "new-description", name: query.trim(), description: query.trim(), serviceKey, quantity,
