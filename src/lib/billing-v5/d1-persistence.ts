@@ -53,6 +53,7 @@ const COLLECTIONS = [
   "noInvoiceIssues",
   "customers",
   "products",
+  "serviceFormats",
   "billingAllocations",
   "invoicePayments",
   "invoiceRevisions",

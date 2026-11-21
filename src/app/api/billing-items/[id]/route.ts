@@ -1,4 +1,5 @@
 import { finalModeOf, handleAs, num, readJson, str } from "@/lib/api";
+import { isV5Server } from "@/lib/billing-v5/runtime";
 import type { BillingStatus, ItemType } from "@/lib/types";
 
 export async function PATCH(
@@ -14,6 +15,7 @@ export async function PATCH(
       description: str(body.description),
       type: str(body.type) as ItemType | undefined,
       serviceType: str(body.serviceType),
+      unit: isV5Server() ? str(body.unit) : undefined,
       quantity: num(body.quantity),
       unitPrice: num(body.unitPrice),
       amount: body.amount === null ? null : num(body.amount),

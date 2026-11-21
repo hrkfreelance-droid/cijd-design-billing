@@ -28,6 +28,9 @@ import {
 import { Modal } from "@/components/billing-v2/modal";
 import { ProjectDetail, projectStatus } from "@/components/billing-v2/project-detail";
 import { saveProject } from "./save-project";
+import { useServiceSuggestions } from "@/components/billing-v5/workspace-shell";
+import { serviceProductKey, type ServiceSuggestion } from "@/lib/billing-v5/service-suggestions";
+import { withServiceSuggestion } from "./item-draft";
 
 type Confirm = "bill" | "delete" | null;
 
@@ -62,6 +65,7 @@ export function ProjectModal({
 }) {
   const { t } = useI18n();
   const v5t = useV5T();
+  const suggestionIndex = useServiceSuggestions();
   const { refresh } = useData();
   const { toast } = useToast();
   const { run, busy, describe } = useAction();
@@ -307,7 +311,7 @@ export function ProjectModal({
           )}
         </>
       ) : (
-        <div data-testid="v2-edit-mode">
+        <div data-testid="v2-edit-mode" className={accountingFlow ? "ss-editor" : undefined}>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <label className="block">
               <span className="mb-1 block text-[12px] font-medium text-muted">{t("v2.projectName")}</span>
@@ -354,6 +358,11 @@ export function ProjectModal({
                   onAddService={addService}
                   serviceTypes={serviceTypes}
                   disabled={saving}
+                  suggestions={accountingFlow && suggestionIndex ? {
+                    index: suggestionIndex, customerId: clientId, projectId: project.id,
+                    existing: new Set(drafts.filter((row) => !row.removed).map((row) => serviceProductKey({ serviceKey: row.serviceKey, description: row.description, unit: row.unit ?? "" }))),
+                    onAdd: (suggestion: ServiceSuggestion) => setDrafts((current) => [...current, withServiceSuggestion(blankDraft(), suggestion, clientId, serviceTypes)]),
+                  } : undefined}
                 />
               ))
             )}

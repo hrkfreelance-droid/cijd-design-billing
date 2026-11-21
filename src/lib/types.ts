@@ -98,6 +98,8 @@ export interface BillingItem {
    */
   serviceType?: string | null;
   quantity: number;
+  /** V5 service entry: the unit selected from a past product or format. */
+  unit?: string | null;
   unitPrice: number;
   /** quantity x unitPrice unless a custom price was entered. */
   /** NULL means no billing price has been entered; 0 is an explicit free price. */
@@ -280,6 +282,7 @@ export interface Database {
   /** V5 invoice management. */
   customers?: Customer[];
   products?: Product[];
+  serviceFormats?: ServiceFormat[];
   billingAllocations?: BillingAllocation[];
   invoicePayments?: InvoicePayment[];
   invoiceRevisions?: InvoiceRevision[];
@@ -376,6 +379,21 @@ export interface Product {
   createdAt: string;
   updatedAt: string;
   updatedBy: string;
+}
+
+/** V5 reusable service formats; saved overrides never modify historical lines. */
+export interface ServiceFormat {
+  id: string;
+  name: string;
+  description: string;
+  serviceKey: string;
+  quantity: number;
+  unit: string;
+  defaultUnitPrice: number | null;
+  active: boolean;
+  sampleCount?: number;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 /**
@@ -568,6 +586,7 @@ export interface Snapshot {
   noInvoiceIssues?: NoInvoiceIssue[];
   customers?: Customer[];
   products?: Product[];
+  serviceFormats?: ServiceFormat[];
   billingAllocations?: BillingAllocation[];
   invoicePayments?: InvoicePayment[];
   invoiceRevisions?: InvoiceRevision[];

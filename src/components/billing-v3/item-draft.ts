@@ -15,6 +15,8 @@ import {
   type ServiceKey,
 } from "@/lib/billing-v2/services";
 import type { BoardItem } from "@/lib/billing-v2/board";
+import type { ServiceSuggestion } from "@/lib/billing-v5/service-suggestions";
+import type { PriceEstimate } from "@/lib/billing-v5/service-price-estimates";
 
 type ServiceTypes = readonly { key: string; name: string; active: boolean }[];
 
@@ -55,6 +57,8 @@ export interface ItemDraft {
   serviceKey: ServiceKey;
   description: string;
   quantity: string;
+  unit?: string;
+  suggestion?: { id: string; source: "customer" | "format" | "history"; date: string | null; price: number | null; customerId: string; estimate?: PriceEstimate };
   costMode: CostInputMode;
   unitCost: string;
   totalCost: string;
@@ -105,6 +109,7 @@ export function draftFromItem(entry: BoardItem): ItemDraft {
     id: entry.item.id,
     serviceKey: entry.service.key,
     description: entry.item.description,
+    unit: entry.item.unit ?? "",
     quantity: String(quantity),
     // V3 input contract: Qty and Unit Cost are manual inputs.
     // Existing storage keeps total print cost, so derive Unit Cost once when
@@ -317,7 +322,7 @@ function recomputeCost(draft: ItemDraft, serviceTypes: ServiceTypes, quantityCha
  * price and recomputes its total — never the other way round.
  */
 export function withQuantity(draft: ItemDraft, quantity: string, serviceTypes: ServiceTypes = []): ItemDraft {
-  let next: ItemDraft = { ...draft, quantity };
+  let next: ItemDraft = { ...draft, quantity, suggestion: quantity === draft.quantity ? draft.suggestion : undefined };
   if (next.finalMode === "TOTAL" && draftFinalUnit(next) != null) next = { ...next, finalMode: "UNIT" };
   return recomputeCost(next, serviceTypes, true);
 }
@@ -371,6 +376,21 @@ export function withService(draft: ItemDraft, serviceKey: ServiceKey, serviceTyp
   return recomputeCost(next, serviceTypes);
 }
 
+/** A known candidate price is manual; an unpriced print format keeps the normal cost workflow. */
+export function withServiceSuggestion(draft: ItemDraft, suggestion: ServiceSuggestion, customerId: string, serviceTypes: ServiceTypes = []): ItemDraft {
+  const next: ItemDraft = { ...draft, serviceKey: suggestion.serviceKey, description: suggestion.description,
+    quantity: String(suggestion.quantity), unit: suggestion.unit || suggestion.estimate?.unit || "", unitCost: "", totalCost: "", markup: "", markupTouched: false,
+    finalUnitPrice: "", finalPrice: "", finalMode: suggestion.price === null && isCostPriced(serviceDefinitionForKey(suggestion.serviceKey, serviceTypes)) ? "AUTO" : "UNIT",
+    suggestion: { id: suggestion.id, source: suggestion.source, date: suggestion.date, price: suggestion.price, customerId, estimate: suggestion.estimate } };
+  return suggestion.price === null ? next : withFinalUnit(next, String(suggestion.price), serviceTypes);
+}
+
+/** Explicitly apply only a reference unit price; keep the description, quantity and costs. */
+export function withPriceEstimate(draft: ItemDraft, estimate: PriceEstimate, customerId: string, serviceTypes: ServiceTypes = []): ItemDraft {
+  return withFinalUnit({ ...draft, unit: draft.unit?.trim() ? draft.unit : estimate.unit,
+    suggestion: { id: "similar-price", source: "history", date: null, price: estimate.price, customerId, estimate } }, String(estimate.price), serviceTypes);
+}
+
 export function draftTotal(drafts: ItemDraft[]): number {
   const total = drafts
     .filter((draft) => !draft.removed)
@@ -417,6 +437,7 @@ export function draftChanged(draft: ItemDraft): boolean {
   return (
     draft.serviceKey !== before.service.key ||
     draft.description.trim() !== before.item.description ||
+    (draft.unit ?? "") !== (before.item.unit ?? "") ||
     draftQuantity(draft) !== before.item.quantity ||
     final !== before.amount ||
     (final != null && draft.finalMode !== "AUTO" && draftFinalUnit(draft) !== before.finalUnitPrice) ||

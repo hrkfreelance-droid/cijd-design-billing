@@ -207,7 +207,7 @@ export function buildProjectViews(snapshot: Snapshot): ProjectView[] {
       const service = serviceForItem(item, snapshot.serviceTypes);
       const kind: WorkKind = isCostPriced(service) || item.type === "PRINT" ? "print"
         : item.type === "DESIGN" || item.type === "RESIZE" ? "design" : "other";
-      return { item, kind, unit: lineUnits.get(item.id) ?? null, price: storedFinalUnitPrice(item) };
+      return { item, kind, unit: item.unit || lineUnits.get(item.id) || null, price: storedFinalUnitPrice(item) };
     });
     const kinds = [...new Set(lines.map(({ kind }) => kind))];
     const operational = pending.get(project.id);
@@ -276,6 +276,8 @@ export function priceHistory(projects: ProjectView[]): PriceEntry[] {
 // Only explicitly identified name variants participate in price comparisons.
 const pricingNameGroups = [
   ["Ringer Hut", "Ringerhut(Cambodia) CO.,Ltd"],
+  ["OI OCHA", "KHMER INNOVATIVE SERVICE", "KHMER INNOVATIVE SERVICE CO., LTD"],
+  ["Ootoya", "Ootoya (Cambodia) Co., Ltd", "大戸屋"],
 ];
 
 function aliasName(name: string) {

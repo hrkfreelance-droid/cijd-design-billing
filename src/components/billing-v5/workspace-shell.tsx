@@ -10,6 +10,8 @@ import { canAny, homeFor } from "@/lib/auth/roles";
 import { buildProjectViews, pricingCustomerCandidates, matchesSearch, normalizeSearch, projectMatches, type ProjectView } from "@/lib/billing-v5/project-view";
 import { useWorkspaceT } from "@/lib/billing-v5/workspace-i18n";
 import { BILLING, projectHref, WorkspaceState } from "./workspace-parts";
+import { buildSuggestionIndex, type SuggestionIndex } from "@/lib/billing-v5/service-suggestions";
+import { useSuggestionT } from "@/lib/billing-v5/suggestion-i18n";
 
 const sections = [
   { key: "design", suffix: "" },
@@ -23,6 +25,9 @@ export const useProjectViews = () => useContext(ProjectContext);
 
 const PricingCustomerContext = createContext<ReturnType<typeof pricingCustomerCandidates>>([]);
 export const usePricingCustomerCandidates = () => useContext(PricingCustomerContext);
+
+const SuggestionContext = createContext<SuggestionIndex | null>(null);
+export const useServiceSuggestions = () => useContext(SuggestionContext);
 
 function Navigation() {
   const path = usePathname();
@@ -111,6 +116,8 @@ function Header({ projects }: { projects: ProjectView[] }) {
   const { user, signOut } = useSession();
   const router = useRouter();
   const copy = useWorkspaceT();
+  const suggestionT = useSuggestionT();
+  const [accountOpen, setAccountOpen] = useState(false);
   return (
     <header className="bw-header">
       <div className="bw-header-inner" data-layout-group>
@@ -127,13 +134,14 @@ function Header({ projects }: { projects: ProjectView[] }) {
             {theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
           {user && (
-            <Popover.Root>
+            <Popover.Root open={accountOpen} onOpenChange={setAccountOpen}>
               <Popover.Trigger className="bw-icon bw-account" aria-label={user.name} data-testid="v2-account">{user.name.slice(0, 1).toUpperCase()}</Popover.Trigger>
               <Popover.Portal>
                 <Popover.Positioner className="bw-popover-position" side="bottom" align="end" sideOffset={8}>
                   <Popover.Popup className="bw-popover">
                     <Popover.Title>{user.name}</Popover.Title>
                     <Popover.Description>{t(`role.${user.role}`)}</Popover.Description>
+                    <Link href={`${BILLING}/settings/service-formats`} onClick={() => setAccountOpen(false)}>{suggestionT("manage")}</Link>
                     <button type="button" onClick={() => void signOut().then(() => router.push("/signin"))}>{t("signin.signOut")}</button>
                   </Popover.Popup>
                 </Popover.Positioner>
@@ -155,6 +163,7 @@ export function BillingWorkspace({ children }: { children: ReactNode }) {
   const projects = useMemo(() => snapshot ? buildProjectViews(snapshot) : [], [snapshot]);
 
   const pricingCandidates = useMemo(() => snapshot ? pricingCustomerCandidates(snapshot.clients, projects) : [], [snapshot, projects]);
+  const suggestions = useMemo(() => snapshot ? buildSuggestionIndex(snapshot, projects) : null, [snapshot, projects]);
 
   useEffect(() => {
     if (ready && !user) router.replace("/signin");
@@ -168,13 +177,15 @@ export function BillingWorkspace({ children }: { children: ReactNode }) {
   return (
     <ProjectContext.Provider value={projects}>
       <PricingCustomerContext.Provider value={pricingCandidates}>
-        <div className="bw-shell">
-          <Header projects={projects} />
-          <main className={classic ? "bw-main bw-main-classic" : "bw-main"} id="billing-content">
-            {error && snapshot && <WorkspaceState mode="error" />}
-            {content}
-          </main>
-        </div>
+        <SuggestionContext.Provider value={suggestions}>
+          <div className="bw-shell">
+            <Header projects={projects} />
+            <main className={classic ? "bw-main bw-main-classic" : "bw-main"} id="billing-content">
+              {error && snapshot && <WorkspaceState mode="error" />}
+              {content}
+            </main>
+          </div>
+        </SuggestionContext.Provider>
       </PricingCustomerContext.Provider>
     </ProjectContext.Provider>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { useI18n } from "@/components/providers";
 import { Button, Input, Select } from "@/components/ui";
@@ -9,6 +9,11 @@ import { effectiveMarkupPercent, formatPercent } from "@/lib/billing-v2/pricing"
 import { evaluateMoneyExpression } from "@/lib/expr";
 import { moneyExact } from "@/lib/format";
 import type { ServiceType } from "@/lib/types";
+import { ServicePicker, SuggestionSource } from "@/components/billing-v5/service-picker";
+import { ServicePriceEstimate } from "@/components/billing-v5/service-price-estimate";
+import { priceEstimateFor } from "@/lib/billing-v5/service-price-estimates";
+import { companionFor, serviceProductKey, type ServiceSuggestion, type SuggestionIndex } from "@/lib/billing-v5/service-suggestions";
+import { useSuggestionT } from "@/lib/billing-v5/suggestion-i18n";
 import {
   draftErrors,
   draftFinal,
@@ -24,6 +29,8 @@ import {
   withQuantity,
   withService,
   withUnitCost,
+  withServiceSuggestion,
+  withPriceEstimate,
   type ItemDraft,
 } from "./item-draft";
 
@@ -55,6 +62,7 @@ export function ItemEditor({
   index,
   serviceTypes = [],
   disabled = false,
+  suggestions,
 }: {
   draft: ItemDraft;
   onChange: (next: ItemDraft) => void;
@@ -65,8 +73,11 @@ export function ItemEditor({
   index: number;
   serviceTypes?: ServiceType[];
   disabled?: boolean;
+  suggestions?: { index: SuggestionIndex; customerId: string; projectId: string; existing: ReadonlySet<string>; onAdd: (suggestion: ServiceSuggestion) => void };
 }) {
   const { t } = useI18n();
+  const st = useSuggestionT();
+  const [companion, setCompanion] = useState<{ customerId: string; row: ServiceSuggestion } | null>(null);
   const [addingService, setAddingService] = useState(false);
   const [serviceName, setServiceName] = useState("");
   const [savingService, setSavingService] = useState(false);
@@ -79,6 +90,13 @@ export function ItemEditor({
   const errors = draftErrors(draft, serviceTypes);
   const manual = draftIsManual(draft, serviceTypes);
   const effective = effectiveMarkupPercent(final, totalCost);
+  const suggestionIndex = suggestions?.index;
+  const projectId = suggestions?.projectId;
+  const estimate = useMemo(() => suggestionIndex ? priceEstimateFor(suggestionIndex, {
+    description: draft.description, serviceKey: draft.serviceKey, quantity: Number(draft.quantity), unit: draft.unit ?? "", projectId,
+  }) : null, [suggestionIndex, projectId, draft.description, draft.serviceKey, draft.quantity, draft.unit]);
+  const hasSource = draft.suggestion && draft.suggestion.customerId === suggestions?.customerId &&
+    draft.suggestion.price !== null && draft.finalUnitPrice.trim() !== "" && Number(draft.finalUnitPrice) === draft.suggestion.price;
 
   if (draft.removed) {
     return (
@@ -109,7 +127,8 @@ export function ItemEditor({
       setAddingService(true);
       return;
     }
-    onChange(withService(draft, key as ServiceKey, serviceTypes));
+    onChange({ ...withService(draft, key as ServiceKey, serviceTypes), suggestion: undefined });
+    setCompanion(null);
   };
 
   const addService = async () => {
@@ -130,9 +149,20 @@ export function ItemEditor({
 
   return (
     <div className="border-b border-line py-4" data-testid="v2-item">
+      {suggestions && <div className="ss-entry">
+        <ServicePicker index={suggestions.index} customerId={suggestions.customerId} projectId={suggestions.projectId}
+          priceQuery={{ quantity: Number(draft.quantity), serviceKey: draft.serviceKey, unit: draft.unit ?? "" }}
+          disabled={disabled} testId={`v5-service-${index}`} onPick={(picked) => {
+            setAddingService(false);
+            setServiceName("");
+            onChange(withServiceSuggestion(draft, picked, suggestions.customerId, serviceTypes));
+            const row = companionFor(suggestions.index, picked, suggestions.customerId, suggestions.projectId, suggestions.existing);
+            setCompanion(row ? { customerId: suggestions.customerId, row } : null);
+          }} />
+      </div>}
       {/* What the line is. */}
       <div className="grid grid-cols-[minmax(0,1fr)_4.75rem_2.25rem] items-end gap-x-2 gap-y-2.5 sm:grid-cols-[8.5rem_minmax(0,1fr)_5rem_2.25rem]">
-        <Field label={t("v2.service")} className="col-span-2 sm:col-span-1">
+        <Field label={suggestions ? st("service") : t("v2.service")} className="col-span-2 sm:col-span-1">
           <Select
             aria-label={t("v2.service")}
             value={addingService ? NEW_SERVICE : service.key}
@@ -157,7 +187,7 @@ export function ItemEditor({
           <Input
             value={draft.description}
             placeholder={serviceLabel(service, t)}
-            onChange={(event) => onChange({ ...draft, description: event.target.value })}
+            onChange={(event) => { onChange({ ...draft, description: event.target.value, suggestion: undefined }); setCompanion(null); }}
             disabled={disabled}
             enterKeyHint="next"
             data-testid={`v2-item-description-${index}`}
@@ -175,6 +205,19 @@ export function ItemEditor({
           />
         </Field>
       </div>
+
+      {suggestions && <div className="ss-entry-meta">
+        <label className="ss-unit"><span>{st("unit")}</span><Input aria-label={st("unit")} value={draft.unit ?? ""} maxLength={50}
+          onChange={(event) => onChange({ ...draft, unit: event.target.value, suggestion: undefined })} disabled={disabled} data-testid={`v5-item-unit-${index}`} /></label>
+        <SuggestionSource suggestion={draft.suggestion} price={draft.finalUnitPrice} customerId={suggestions.customerId} />
+      </div>}
+      {suggestions && draft.description.trim() && !hasSource && (estimate ? <ServicePriceEstimate
+        estimate={estimate} disabled={disabled} testId={`v5-price-estimate-${index}`}
+        onApply={() => onChange(withPriceEstimate(draft, estimate, suggestions.customerId, serviceTypes))} />
+        : final === null && <p className="ss-source" data-testid={`v5-price-pending-${index}`}>{st("pending")}</p>)}
+      {suggestions && companion && companion.customerId === suggestions.customerId && !suggestions.existing.has(serviceProductKey(companion.row)) && <button
+        type="button" className="ss-companion" disabled={disabled} data-testid={`v5-companion-${index}`}
+        onClick={() => { suggestions.onAdd(companion.row); setCompanion(null); }}>{st("addAlso").replace("{name}", `${companion.row.description} ×${companion.row.quantity}`)}</button>}
 
       {addingService && (
         <div className="mt-2.5 flex flex-wrap items-center gap-2" data-testid="v2-new-service">
@@ -296,6 +339,7 @@ export function ItemEditor({
           costPriced={costPriced}
           effective={effective}
           canUseRecommended={costPriced && recommended != null}
+          hasEstimate={estimate !== null}
           onUnit={(value) => onChange(withFinalUnit(draft, value, serviceTypes))}
           onTotal={(value) => onChange(withFinalTotal(draft, value, serviceTypes))}
           onUseRecommended={() => onChange(withRecommended(draft, serviceTypes))}
@@ -319,6 +363,7 @@ function FinalPanel({
   costPriced,
   effective,
   canUseRecommended,
+  hasEstimate,
   onUnit,
   onTotal,
   onUseRecommended,
@@ -331,6 +376,7 @@ function FinalPanel({
   costPriced: boolean;
   effective: number | null;
   canUseRecommended: boolean;
+  hasEstimate: boolean;
   onUnit: (value: string) => void;
   onTotal: (value: string) => void;
   onUseRecommended: () => void;
@@ -364,7 +410,7 @@ function FinalPanel({
         <Field label={t("v3.total")} labelClassName={PANEL_LABEL}>
           <MoneyInput
             value={draft.finalPrice}
-            placeholder={t("v2.price.pending")}
+            placeholder={hasEstimate ? "—" : t("v2.price.pending")}
             onChange={onTotal}
             invalid={errors.has("finalPrice")}
             disabled={disabled}

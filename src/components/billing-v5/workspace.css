@@ -519,3 +519,67 @@ html[lang="km"] .bw-shell { font-family: "Inter", "Noto Sans Khmer", system-ui, 
   .df-amt { grid-column: 1; grid-row: auto; text-align: left; }
 
 }
+
+/* 480 · Service history and formats, using the DAISHIN v1 palette and type scale. */
+.ss-picker { min-width: 0; }
+.ss-label, .ss-unit > span, .ss-format-form label > span { display: block; margin-bottom: 4px; color: var(--c-muted); font-size: 11.5px; font-weight: 500; }
+.ss-search { position: relative; }
+.ss-search input { width: 100%; min-width: 0; height: 38px; padding: 0 36px 0 12px; border: 1px solid var(--c-line-strong); border-radius: 8px; background: var(--c-panel); color: var(--c-text); font: inherit; font-size: 13.5px; }
+.ss-search input:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.ss-search button { position: absolute; right: 0; top: 0; width: 36px; height: 38px; color: var(--c-muted); font-size: 18px; }
+.ss-entry { margin-bottom: 16px; }
+.ss-results { max-height: 280px; overflow-y: auto; overscroll-behavior: contain; margin-top: 6px; border: 1px solid var(--c-line); border-radius: 10px; background: var(--c-panel); }
+.ss-group { position: sticky; top: 0; padding: 8px 12px; background: var(--c-fill); color: var(--c-muted); font-size: 11.5px; font-weight: 500; z-index: 1; }
+.ss-option { padding: 10px 12px; cursor: pointer; }
+.ss-option[aria-selected="true"] { background: var(--bw-selected); }
+.ss-option-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.ss-option-title strong { min-width: 0; font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+.ss-option-title > span { flex: none; font-size: 12.5px; color: var(--c-muted); }
+.ss-option small { display: block; margin-top: 2px; color: var(--c-muted); font-size: 12px; overflow-wrap: anywhere; }
+.ss-empty { padding: 12px; color: var(--c-muted); font-size: 13px; }
+.ss-entry-meta { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-top: 12px; }
+.ss-unit { width: 104px; }
+.ss-source { color: var(--c-muted); font-size: 12px; padding-block: 8px; }
+.ss-estimate { min-width: 0; margin-top: 8px; font-size: 12.5px; overflow-wrap: anywhere; }
+.ss-entry-meta .ss-estimate { flex: 1 1 240px; }
+.ss-estimate-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.ss-estimate-apply { color: var(--c-accent); text-align: left; padding-block: 6px; }
+.ss-estimate-apply:hover { text-decoration: underline; }
+.ss-estimate-apply:focus-visible, .ss-estimate-basis summary:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.ss-estimate-apply:disabled { opacity: .5; }
+.ss-estimate-line small, .ss-estimate-basis { color: var(--c-muted); font-size: 12px; }
+.ss-estimate-basis summary { cursor: pointer; width: fit-content; padding-block: 4px; }
+.ss-estimate-basis p { max-width: 65ch; margin-block: 4px 8px; }
+.ss-estimate-basis ul { max-height: 180px; overflow-y: auto; overscroll-behavior: contain; }
+.ss-estimate-basis li { padding-block: 5px; border-top: 1px solid var(--c-line); }
+.ss-estimate-basis small { display: block; font-size: 12px; }
+.ss-companion { margin-top: 10px; padding: 6px 0; text-align: left; color: var(--c-accent); font-size: 12.5px; font-weight: 500; overflow-wrap: anywhere; }
+.ss-companion:hover { text-decoration: underline; }
+.ss-help { margin-block: 12px; color: var(--c-muted); font-size: 12.5px; }
+.ss-format-search { width: min(100%, 420px); }
+.ss-formats { border: 1px solid var(--c-line); border-radius: 14px; background: var(--c-panel); overflow: hidden; }
+.ss-formats li + li { border-top: 1px solid var(--c-line); }
+.ss-formats button { display: flex; width: 100%; gap: 16px; justify-content: space-between; align-items: center; padding: 10px 12px; text-align: left; }
+.ss-formats button:hover { background: var(--c-fill); }
+.ss-formats button > div { min-width: 0; }
+.ss-formats button > div:last-child { flex: none; text-align: right; }
+.ss-formats strong { font-size: 13.5px; font-weight: 500; }
+.ss-formats small { font-size: 12px; }
+.ss-format-form { display: grid; gap: 12px; }
+.ss-format-form .ss-active { display: flex; align-items: center; gap: 8px; }
+.ss-active > span { margin: 0; }
+.ss-editor :is(input, select) { font-size: 13.5px; }
+.ss-editor :is(label, p, h3) > span { font-size: 11.5px; }
+.ss-editor .ss-source { font-size: 12px; }
+.ss-editor .ss-option-title > span { font-size: 12.5px; }
+.ss-editor .ss-option-title strong { font-weight: 500; }
+.ss-editor .ss-search button { font-size: 18px; }
+@media (max-width: 639px) {
+  .ss-option-title { gap: 8px; }
+  .ss-formats button { gap: 8px; }
+  .ss-formats button > div:last-child { max-width: 40%; }
+}
+.ss-more { width: 100%; padding: 10px 12px; text-align: left; color: var(--c-accent); font-size: 12.5px; border-top: 1px solid var(--c-line); }
+.ss-more:hover { background: var(--c-fill); }
+.ss-page { max-width: 960px; margin-inline: auto; }
+.ss-format-form :is(input, select) { font-size: 13.5px; }

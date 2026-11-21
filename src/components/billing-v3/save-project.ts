@@ -118,7 +118,7 @@ async function createItem(
       printCost: cost ?? undefined,
       amount: followsRecommendation ? undefined : (final ?? undefined),
       // V5 stores the Final's source explicitly instead of inferring it.
-      ...(isV5Client() ? { finalMode: explicitMode(draft, serviceTypes) } : {}),
+      ...(isV5Client() ? { finalMode: explicitMode(draft, serviceTypes), unit: draft.unit ?? "" } : {}),
     },
   });
 
@@ -193,11 +193,13 @@ async function updateItem(draft: ItemDraft, serviceTypes: ServiceType[] = []): P
 
   let latest: BillingItem | null = null;
 
-  if (serviceChanged || (detailsChanged && !costPriced)) {
+  const unitChanged = isV5Client() && (draft.unit ?? "") !== (before?.item.unit ?? "");
+  if (serviceChanged || unitChanged || (detailsChanged && !costPriced)) {
     latest = await api<BillingItem>(`/api/billing-items/${id}`, {
       method: "PATCH",
       body: {
         ...(serviceChanged ? { type: service.storageType, serviceType: service.key } : {}),
+        ...(unitChanged ? { unit: draft.unit ?? "" } : {}),
         ...(detailsChanged && !costPriced ? { description, quantity } : {}),
       },
     });

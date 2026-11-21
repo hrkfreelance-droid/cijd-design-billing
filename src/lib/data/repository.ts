@@ -39,6 +39,8 @@ export interface CreateBillingItemInput {
   type?: ItemType;
   /** Service registry key; see src/lib/billing-v2/services.ts. */
   serviceType?: string;
+  /** V5 only. */
+  unit?: string;
   quantity?: number;
   unitPrice?: number;
   /** Custom price. When present it wins over quantity x unitPrice. */
@@ -58,6 +60,8 @@ export interface UpdateBillingItemInput {
   description?: string;
   type?: ItemType;
   serviceType?: string;
+  /** V5 only. */
+  unit?: string;
   quantity?: number;
   unitPrice?: number;
   amount?: number | null;

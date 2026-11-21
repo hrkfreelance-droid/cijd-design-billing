@@ -53,6 +53,7 @@ import {
   type ProductInput,
 } from "@/lib/billing-v5/invoicing";
 import { officialRateForDate } from "@/lib/billing-v5/ontology";
+import { saveServiceFormat } from "@/lib/billing-v5/service-formats";
 import { issueNoInvoice, cancelNoInvoice, deleteUninvoicedV5Project } from "@/lib/billing-v5/no-invoice";
 import {
   planTelegramTopic,
@@ -264,6 +265,7 @@ export class Store implements Repository {
             noInvoiceIssues: db.noInvoiceIssues ?? [],
             customers: db.customers ?? [],
             products: db.products ?? [],
+            serviceFormats: db.serviceFormats ?? [],
             billingAllocations: db.billingAllocations ?? [],
             invoicePayments: db.invoicePayments ?? [],
             invoiceRevisions: db.invoiceRevisions ?? [],
@@ -532,6 +534,7 @@ export class Store implements Repository {
         description,
         type,
         serviceType: input.serviceType ?? null,
+        ...(input.unit !== undefined ? { unit: input.unit.trim().slice(0, 50) } : {}),
         quantity,
         unitPrice,
         amount,
@@ -611,6 +614,7 @@ export class Store implements Repository {
       }
       if (patch.type !== undefined) item.type = patch.type;
       if (patch.serviceType !== undefined) item.serviceType = patch.serviceType;
+      if (patch.unit !== undefined) item.unit = patch.unit.trim().slice(0, 50);
       if (patch.quantity !== undefined) item.quantity = patch.quantity;
       if (patch.unitPrice !== undefined) item.unitPrice = patch.unitPrice;
       if (patch.printSize !== undefined) item.printSize = patch.printSize.trim() || null;
@@ -1413,6 +1417,10 @@ export class Store implements Repository {
 
   saveProduct(input: ProductInput) {
     return this.transaction((db) => saveProduct(db, input));
+  }
+
+  saveServiceFormat(input: Record<string, unknown>, actor: string) {
+    return this.transaction((db) => saveServiceFormat(db, input, actor));
   }
 
   issueInvoice(input: InvoiceInput) {

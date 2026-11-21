@@ -400,6 +400,57 @@
           "why": "457 A: 既存モバイルの数字の大きさを維持"
         }
       ]
+    },
+    {
+      "name": "Service suggestions / formats (480)",
+      "match": ".ss-page, .ss-editor",
+      "why": "480: 履歴候補・型の管理の新しい部品と共通ヘッダーを v1 で測る。既存の編集フォーム・帳票の表記は対象外。",
+      "checks": [
+        {
+          "sel": ".bw-header-inner",
+          "prop": "height",
+          "px": 52,
+          "minWidth": 861
+        },
+        {
+          "sel": ".bw-header-inner",
+          "prop": "height",
+          "px": 88,
+          "maxWidth": 860
+        },
+        {
+          "sel": ".ss-search input",
+          "prop": "height",
+          "px": 38,
+          "when": ".ss-editor"
+        },
+        {
+          "sel": ".ss-search input",
+          "prop": "font-size",
+          "px": 13.5,
+          "when": ".ss-editor"
+        },
+        {
+          "sel": ".ss-results",
+          "prop": "border-top-left-radius",
+          "px": 10,
+          "when": ".ss-results"
+        },
+        {
+          "sel": ".ss-formats",
+          "prop": "border-top-left-radius",
+          "px": 14,
+          "when": ".ss-page"
+        }
+      ],
+      "align": [],
+      "scanRoots": [
+        ".ss-picker",
+        ".ss-entry-meta",
+        ".ss-companion",
+        ".ss-page",
+        ".ss-format-form"
+      ]
     }
   ]
 }
