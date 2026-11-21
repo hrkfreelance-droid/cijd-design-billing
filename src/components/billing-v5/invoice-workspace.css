@@ -1,0 +1,112 @@
+/* Accounting / Invoices use the DAISHIN v1 table values. The document inside
+   Preview keeps its existing print typography and palette. */
+.bw-main-classic:has(.iv-accounting) { max-width: 1440px; }
+.iv-accounting > header { max-width: 960px; margin-inline: auto; }
+.iv-accounting-body > [data-testid="v5-section-to-invoice"] { max-width: 896px; margin-inline: auto; }
+/* Reserve the original title's metrics, including translated headers that
+   wrap, so the smaller v1 heading cannot move the existing number strip. */
+.iv-page-title { display: grid; font-size: 26px; font-weight: 600; line-height: 1.25; letter-spacing: -.022em; }
+.iv-page-title::before { content: attr(data-layout-title); visibility: hidden; grid-area: 1 / 1; }
+.iv-page-title > span { grid-area: 1 / 1; align-self: center; font-size: 20px; line-height: 1.5; letter-spacing: -.01em; }
+.iv-section-title { font-size: 13.5px; font-weight: 600; }
+.iv-accounting :is([data-testid="v5-section-to-invoice"], [data-testid="v5-no-invoice-records"]) :is(h3, [data-testid="v5-row-total"], [data-testid="v5-open-project"] > span:first-child > span, [data-testid="v5-client-group"] > div > span:last-child, [data-testid="v5-no-invoice-row"] strong, [data-testid="v5-no-invoice-row"] .truncate) { font-size: 13.5px; }
+.iv-accounting [data-testid="v5-no-invoice-row"] strong { font-weight: 600; }
+.iv-accounting :is([data-testid="v5-row-memo"], [data-testid="v5-line"] .text-text\/90) { color: var(--c-text); }
+.iv-accounting [data-testid="v5-accounting-row"]:has([aria-checked="true"]) { background: var(--c-fill-strong); }
+.iv-accounting > header dd { color: var(--c-text); }
+.bw-page:has(.bw-invoice-list) .bw-actions :is(a, button) { min-height: 32px; padding: 0 10px; font-size: 12.5px; font-weight: 500; border-radius: 8px; }
+.iv-sort { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 0; font-size: 12px; color: var(--c-muted); }
+.iv-sort select, .bw-invoice-list .bw-filter-panel :is(input, select) { min-height: 32px; height: 32px; font-size: 13px; }
+.iv-sort select { max-width: min(100%, 280px); }
+.iv-split { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 16px; }
+.iv-split[data-open="true"] { grid-template-columns: minmax(0, 1fr) minmax(360px, 38%); }
+.iv-table-scroll { min-width: 0; overflow-x: auto; border-top: 1px solid var(--c-line-strong); scrollbar-width: thin; }
+.iv-table { width: max(100%, var(--iv-table-width)); table-layout: fixed; border-collapse: collapse; color: var(--c-text); }
+.iv-table .iv-col-number { width: 210px; }
+.iv-table-accounting .iv-col-number { width: 170px; }
+.iv-table .iv-col-date { width: 110px; }
+.iv-table .iv-col-customer { width: 140px; }
+.iv-table .iv-col-usd { width: var(--iv-usd-width); }
+.iv-table .iv-col-khr { width: var(--iv-khr-width); }
+.iv-table .iv-col-status { width: 160px; }
+.iv-table th { padding: 4px 12px 6px; text-align: left; color: var(--c-faint); font-size: 11.5px; font-weight: 500; white-space: nowrap; }
+.iv-table td { padding: 10px 12px; border-top: 1px solid var(--c-line); font-size: 13.5px; line-height: 20px; vertical-align: middle; white-space: nowrap; }
+.iv-table tbody tr:not(.iv-group) { cursor: pointer; }
+.iv-table tbody tr:not(.iv-group):not([data-selected="true"]):hover { background: var(--c-fill); }
+.iv-table tbody tr[data-selected="true"] { background: var(--c-fill-strong); }
+.iv-table tr:last-child td { border-bottom: 1px solid var(--c-line); }
+.iv-table .iv-group th { padding-top: 12px; color: var(--c-muted); background: var(--c-bg); white-space: normal; overflow-wrap: anywhere; }
+.iv-invoice-number { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.iv-invoice-number button { flex: 1; min-width: 0; text-align: left; font-weight: 500; }
+.iv-invoice-number button:hover { text-decoration: underline; text-underline-offset: 4px; }
+.iv-ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iv-kind { flex: none; font-size: 11.5px; line-height: 16px; padding: 0 4px; border: 1px solid var(--c-line-strong); border-radius: 4px; color: var(--c-muted); font-weight: 500; }
+.iv-date { color: var(--c-muted); }
+.iv-table .iv-number { text-align: right; font-variant-numeric: tabular-nums; }
+.iv-table [data-cancelled="true"] .iv-total { color: var(--c-faint); text-decoration: line-through; }
+.iv-status { display: inline-flex; align-items: center; gap: 6px; color: var(--c-muted); font-size: 12.5px; white-space: nowrap; }
+.iv-dot, .iv-status i { display: inline-block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; color: var(--c-muted); }
+.iv-status[data-status="PAID"], .iv-dot[data-status="PAID"] { color: var(--c-paid); }
+.iv-status[data-status="PARTIALLY_PAID"], .iv-dot[data-status="PARTIALLY_PAID"] { color: var(--c-pending); }
+.iv-status[data-status="CANCELLED"], .iv-dot[data-status="CANCELLED"] { color: var(--c-danger); }
+.iv-status i { color: inherit; }
+.iv-detail { min-width: 0; font: 400 13.5px/1.5 "Inter", "Noto Sans JP", "Noto Sans Khmer", sans-serif; color: var(--c-text); }
+.iv-panel { position: sticky; top: 68px; max-height: calc(100dvh - 84px); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--c-line); border-radius: 14px; background: var(--c-panel); }
+.iv-detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 24px 14px; border-bottom: 1px solid var(--c-line); }
+.iv-detail-head > div { min-width: 0; flex: 1; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.iv-detail-head h2 { margin: 0; font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.iv-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 12.5px; color: var(--c-muted); overflow-wrap: anywhere; }
+.iv-detail-head .iv-summary { display: contents; }
+.iv-summary .iv-customer { flex: 1 1 96px; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.iv-summary :is(time, strong) { white-space: nowrap; }
+.iv-summary strong { font-weight: 500; color: var(--c-text); font-variant-numeric: tabular-nums; }
+.iv-button { display: inline-flex; justify-content: center; align-items: center; min-height: 28px; padding: 4px 10px; border: 1px solid var(--c-line); border-radius: 8px; background: var(--c-panel); font-size: 12.5px; line-height: 18px; font-weight: 500; color: var(--c-text); text-align: center; overflow-wrap: anywhere; }
+.iv-button:hover { border-color: var(--c-line-strong); }
+.iv-button:focus-visible, .iv-detail :focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.iv-close { width: 28px; padding: 0; flex: none; }
+.iv-tools { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 24px; border-bottom: 1px solid var(--c-line); }
+.iv-tools .iv-button { height: auto; min-width: 0; }
+.iv-tabs { display: flex; gap: 22px; padding: 0 24px; border-bottom: 1px solid var(--c-line); }
+.iv-tabs button { padding: 9px 0; border-bottom: 2px solid transparent; font-size: 13px; font-weight: 500; color: var(--c-muted); }
+.iv-tabs button[aria-selected="true"] { color: var(--c-text); border-bottom-color: var(--c-accent); }
+.iv-preview { padding: 12px 16px 16px; }
+.iv-open { display: block; width: fit-content; margin-left: auto; margin-bottom: 10px; font-size: 12px; color: var(--c-accent); }
+.iv-open:hover { text-decoration: underline; }
+.iv-document { width: 100%; min-width: 0; overflow: hidden; }
+/* Undo workspace prose styles only inside the unmodified print document. */
+.iv-document .invoice-sheet { box-shadow: none; }
+.bw-shell .iv-document :is(h2, h3) { color: #000; }
+.bw-shell .iv-document .invoice-lines tfoot th small { color: inherit; }
+.bw-shell .iv-document :is(label, h1, h2, h3, strong, small, dd, dt, p) { overflow-wrap: normal; }
+.iv-text { padding: 12px 24px 16px; }
+.iv-copy { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
+.iv-copy [role="status"] { font-size: 12px; color: var(--c-muted); }
+.iv-copy [role="status"]:empty { display: none; }
+.iv-text pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 4; font: 400 12px/1.6 ui-monospace, SFMono-Regular, Menlo, "Noto Sans Khmer", monospace; user-select: text; touch-action: pan-y; }
+.iv-preview[hidden], .iv-text[hidden] { display: none; }
+.iv-payments { padding: 16px 24px; border-top: 1px solid var(--c-line); }
+.iv-payments section > div:first-child { flex-wrap: wrap; gap: 6px 10px; }
+.iv-payments section > div:first-child h2 { font-size: 12px; }
+.iv-payments section > div:first-child > span { font-size: 12.5px; }
+.iv-payments section > div:last-of-type:not(:first-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.iv-payments section > div:last-of-type:not(:first-child) > :is(label, button, p) { grid-column: auto; min-width: 0; }
+.iv-payments section > div:last-of-type:not(:first-child) > label:nth-child(3), .iv-payments section > div:last-of-type:not(:first-child) > :is(button, p) { grid-column: 1 / -1; }
+.iv-payments input { min-height: 32px; height: 32px; font-size: 13px; }
+.iv-payments button { font-size: 12.5px; }
+.iv-payments [data-testid="v5-invoice-payment"] { grid-template-columns: 6rem minmax(0, 1fr); gap: 4px 8px; }
+.iv-payments [data-testid="v5-invoice-payment"] > span:nth-child(2) { white-space: normal; overflow-wrap: anywhere; }
+.iv-payments [data-testid="v5-invoice-payment"] > span:nth-child(3) { text-align: right; grid-column: 2; grid-row: 2; }
+.iv-payments [data-testid="v5-payment-void"] { grid-row: 2; grid-column: 1; text-align: left; }
+.iv-sheet-content { padding: 0; }
+[data-testid="v5-invoice-detail-sheet"] { border-radius: 14px 14px 0 0; box-shadow: none; font-family: "Inter", "Noto Sans JP", "Noto Sans Khmer", sans-serif; }
+[data-testid="v5-invoice-detail-sheet"] [class*="handle"] { background: var(--c-line-strong); }
+@media (max-width: 860px) {
+  .iv-split[data-open="true"] { grid-template-columns: minmax(0, 1fr); }
+  .iv-accounting-body > [data-testid="v5-section-to-invoice"] { max-width: 896px; }
+}
+@media (min-width: 640px) {
+  .iv-page-title { font-size: 30px; }
+}
+@media (max-width: 520px) {
+  .iv-detail-head, .iv-tools, .iv-tabs, .iv-text, .iv-payments { padding-inline: 16px; }
+}

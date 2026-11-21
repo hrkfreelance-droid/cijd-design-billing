@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { Modal } from "@/components/billing-v2/modal";
@@ -20,6 +19,7 @@ import { moneyExact } from "@/lib/format";
 import { compareInvoiceNumbersDesc } from "@/lib/billing-v5/invoice-number-sort";
 import type { Snapshot, TaxInvoiceKind } from "@/lib/types";
 import { InvoiceEditor } from "./invoice-editor";
+import { InvoiceWorkspace } from "./invoice-workspace";
 
 /**
  * Accounting is one screen: work handed off by Design, then the invoice list.
@@ -39,10 +39,10 @@ export function AccountingBoard({ snapshot, actions }: { snapshot: Snapshot; act
   );
 
   return (
-    <div className="pb-36" data-testid="v5-accounting">
+    <div className="iv-accounting pb-36" data-testid="v5-accounting">
       <header className="px-5 pb-2 pt-6 sm:px-8 sm:pt-8">
         <div className="flex flex-wrap items-center justify-between gap-2" data-layout-group>
-          <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.022em] sm:text-[30px]">{t("accounting.title")}</h1>
+          <h1 className="iv-page-title" data-layout-title={t("accounting.title")}><span>{t("accounting.title")}</span></h1>
           {actions}
         </div>
         <p className="mt-1 text-[13.5px] text-muted">{t("accounting.subtitle")}</p>
@@ -55,11 +55,11 @@ export function AccountingBoard({ snapshot, actions }: { snapshot: Snapshot; act
         </dl>
       </header>
 
-      <div className="px-5 sm:px-8">
+      <div className="iv-accounting-body px-5 sm:px-8">
         <ToInvoice snapshot={snapshot} eligible={eligible} />
-        <section className="pt-12" data-testid="v5-section-invoices">
+        <section className="iv-issued pt-12" data-testid="v5-section-invoices">
           <div className="border-b border-line-strong pb-2.5">
-            <h2 className="text-[16px] font-semibold tracking-[-0.012em]">{t("accounting.openInvoices")}</h2>
+            <h2 className="iv-section-title">{t("accounting.openInvoices")}</h2>
           </div>
           <OpenInvoiceProjects snapshot={snapshot} />
           <NoInvoiceRecords snapshot={snapshot} />
@@ -86,153 +86,35 @@ function OpenInvoiceProjects({ snapshot }: { snapshot: Snapshot }) {
   const t = useV5T();
   const [sortMode, setSortMode] = useState<"number" | "customer">("number");
 
-  const groups = useMemo(() => {
-    const byClient = new Map<string, {
-      clientName: string;
-      rows: {
-        invoice: NonNullable<Snapshot["taxInvoices"]>[number];
-        clientName: string;
-        projectName: string;
-        paid: number;
-        outstanding: number;
-        status: "UNPAID" | "PARTIALLY_PAID" | "PAID";
-      }[];
-    }>();
+  const invoices = useMemo(() => (snapshot.taxInvoices ?? [])
+    .filter((invoice) => {
+      const client = snapshot.clients.find((entry) => entry.id === invoice.clientId)?.name ?? invoice.customer.companyNameEn;
+      return invoice.status === "ISSUED" && !invoice.invoiceNumber.startsWith("TEST") &&
+        !/^TEST\b/i.test(client.trim()) && invoiceCollection(snapshot, invoice).status !== "PAID";
+    })
+    .sort((a, b) => {
+      if (sortMode === "customer") {
+        const customer = (id: string, fallback: string) => snapshot.clients.find((entry) => entry.id === id)?.name ?? fallback;
+        const order = customer(a.clientId, a.customer.companyNameEn).localeCompare(customer(b.clientId, b.customer.companyNameEn));
+        if (order) return order;
+      }
+      return compareInvoiceNumbersDesc(a.invoiceNumber, b.invoiceNumber) || b.invoiceDate.localeCompare(a.invoiceDate) ||
+        (snapshot.clients.find((entry) => entry.id === a.clientId)?.name ?? a.customer.companyNameEn)
+          .localeCompare(snapshot.clients.find((entry) => entry.id === b.clientId)?.name ?? b.customer.companyNameEn);
+    }), [snapshot, sortMode]);
 
-    for (const invoice of snapshot.taxInvoices ?? []) {
-      if (invoice.status !== "ISSUED" || invoice.invoiceNumber.startsWith("TEST")) continue;
-      const clientName = snapshot.clients.find((client) => client.id === invoice.clientId)?.name ?? invoice.customer.companyNameEn;
-      if (/^TEST\b/i.test(clientName.trim())) continue;
-      const money = invoiceCollection(snapshot, invoice);
-      if (money.status === "PAID") continue;
-
-      const names = [...new Set(
-        invoice.lines
-          .map((line) => line.projectName?.trim())
-          .filter((name): name is string => !!name),
-      )];
-      const projectName = names.length
-        ? names.join(" / ")
-        : invoice.project.name?.trim() || invoice.invoiceNumber;
-
-      const group = byClient.get(invoice.clientId) ?? { clientName, rows: [] };
-      group.rows.push({
-        invoice,
-        clientName,
-        projectName,
-        paid: money.paidUsd,
-        outstanding: money.outstandingUsd,
-        status: money.status,
-      });
-      byClient.set(invoice.clientId, group);
-    }
-
-    return [...byClient.values()]
-      .map((group) => ({
-        ...group,
-        rows: group.rows.sort((a, b) =>
-          compareInvoiceNumbersDesc(a.invoice.invoiceNumber, b.invoice.invoiceNumber) ||
-          b.invoice.invoiceDate.localeCompare(a.invoice.invoiceDate),
-        ),
-      }))
-      .sort((a, b) => a.clientName.localeCompare(b.clientName));
-  }, [snapshot]);
-
-  if (groups.length === 0) {
-    return <p className="border-t border-line py-6 text-[13.5px] text-muted">{t("accounting.issuedEmpty")}</p>;
-  }
-
-  const visibleGroups = sortMode === "customer"
-    ? groups
-    : [{
-      clientName: "",
-      rows: groups.flatMap((group) => group.rows).sort((a, b) =>
-        compareInvoiceNumbersDesc(a.invoice.invoiceNumber, b.invoice.invoiceNumber) ||
-        b.invoice.invoiceDate.localeCompare(a.invoice.invoiceDate) ||
-        a.clientName.localeCompare(b.clientName),
-      ),
-    }];
-
-  return (
-    <div data-testid="v5-open-invoice-projects">
-      <div className="flex flex-wrap items-center justify-end gap-2.5 py-3">
-        <label htmlFor="v5-issued-sort" className="text-[12px] text-muted">{t("accounting.sortLabel")}</label>
-        <Select id="v5-issued-sort" data-testid="v5-issued-sort" variant="filter"
-          className="max-w-[15rem]" value={sortMode}
-          onChange={(event) => setSortMode(event.target.value as "number" | "customer")}>
-          <option value="number">{t("accounting.sort.number")}</option>
-          <option value="customer">{t("accounting.sort.customer")}</option>
-        </Select>
-      </div>
-      {visibleGroups.map((group) => (
-        <div key={group.clientName || "all-invoices"} className="pt-3" data-testid="v5-issued-client-group">
-          {sortMode === "customer" && (
-            <div className="grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center border-b border-line-strong">
-              <span aria-hidden />
-              <h3 className="min-w-0 truncate py-2.5 text-[16px] font-semibold tracking-[-0.012em]">{group.clientName}</h3>
-              <span className="tnum shrink-0 pl-4 text-[15px] font-semibold">
-                {moneyExact(group.rows.reduce((sum, row) => sum + row.outstanding, 0))}
-              </span>
-            </div>
-          )}
-          <ul className={sortMode === "number" ? "border-t border-line-strong" : ""}>
-            {group.rows.map(({ invoice, clientName, projectName, paid, outstanding, status }) => (
-              <li
-                key={invoice.id}
-                className="grid grid-cols-[2.75rem_minmax(0,1fr)] border-b border-line"
-                data-testid="v5-issued-row"
-              >
-                <span className="flex h-11 w-11 items-start pt-[18px]" aria-hidden>
-                  <span className={`h-2.5 w-2.5 rounded-full ${status === "PARTIALLY_PAID" ? "bg-pending" : "bg-line-strong"}`} />
-                </span>
-                <Link
-                  href={`/office-v5/tax-invoices/${invoice.id}`}
-                  aria-label={t("invoice.open", { number: invoice.invoiceNumber })}
-                  className="group min-w-0 py-3.5 text-left"
-                >
-                  <span className="flex items-baseline justify-between gap-4">
-                    <span className="min-w-0 truncate text-[15px] font-medium leading-snug tracking-[-0.01em] group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">
-                      {projectName}
-                    </span>
-                    <span className="tnum shrink-0 text-[15px] font-semibold">{moneyExact(invoice.totalUsd)}</span>
-                  </span>
-                  <span className="mt-0.5 block text-[12.5px] text-muted">
-                    <span className="tnum">{invoice.invoiceNumber}</span>
-                    {sortMode === "number" && <>{" · "}{clientName}</>}
-                    {" · "}
-                    <span className="tnum">{invoice.invoiceDate}</span>
-                    {" · "}
-                    <span data-testid="v5-row-status">{t(`status.${status}` as V5Key)}</span>
-                  </span>
-                  <span className="mt-1.5 block space-y-[3px]">
-                    {invoice.lines.map((line, index) => (
-                      <span
-                        key={`${invoice.id}:${index}`}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 text-[13px] leading-5"
-                      >
-                        <span className="min-w-0 truncate text-text/90">
-                          {line.description}
-                          {line.quantity !== 1 && <span className="tnum text-faint"> ×{line.quantity}</span>}
-                        </span>
-                        <span className="tnum text-right text-muted">{moneyExact(line.amount)}</span>
-                      </span>
-                    ))}
-                  </span>
-                  <span className="tnum mt-1.5 block text-[12.5px] text-muted">
-                    {t("list.paid")} {moneyExact(paid)}
-                    {" · "}
-                    <span className="font-medium text-text" data-testid="v5-row-outstanding">
-                      {t("list.outstanding")} {moneyExact(outstanding)}
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+  if (!invoices.length) return <p className="border-t border-line py-6 text-[13.5px] text-muted">{t("accounting.issuedEmpty")}</p>;
+  return <div data-testid="v5-open-invoice-projects">
+    <div className="iv-sort">
+      <label htmlFor="v5-issued-sort">{t("accounting.sortLabel")}</label>
+      <Select id="v5-issued-sort" data-testid="v5-issued-sort" variant="filter"
+        value={sortMode} onChange={(event) => setSortMode(event.target.value as "number" | "customer")}>
+        <option value="number">{t("accounting.sort.number")}</option>
+        <option value="customer">{t("accounting.sort.customer")}</option>
+      </Select>
     </div>
-  );
+    <InvoiceWorkspace snapshot={snapshot} invoices={invoices} accounting groupByCustomer={sortMode === "customer"} />
+  </div>;
 }
 
 /* ------------------------------------------------------------ to invoice */

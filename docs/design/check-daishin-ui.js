@@ -1,14 +1,18 @@
 // DAISHIN デザインルールの数値検査。ルールの1行ごとに、ここで1つ以上の項目を測る。
 // 使い方：checkDaishinUi(rule)（rule は daishin-ui-rule.json の中身）。外れた項目を fails に返す。
 function checkDaishinUi(rule, root = document.querySelector(".bw-shell") || document.body) {
+  // A profile replaces screen-specific selectors, not the shared v1 palette,
+  // typography or overflow checks. Design continues to use the original rules.
+  const profile = (rule.profiles || []).find((p) => document.querySelector(p.match));
+  if (profile) rule = { ...rule, ...profile };
   const fails = [];
   const box = (el) => el.getBoundingClientRect();
-  const fits = (c) => (!c.minWidth || innerWidth >= c.minWidth) && (!c.maxWidth || innerWidth <= c.maxWidth);
+  const fits = (c) => (!c.minWidth || innerWidth >= c.minWidth) && (!c.maxWidth || innerWidth <= c.maxWidth) && (!c.when || document.querySelector(c.when));
   for (const c of (rule.checks || []).filter(fits)) {
     const el = document.querySelector(c.sel);
     if (!el) { fails.push(`${c.sel}: 要素がない`); continue; }
     const got = c.prop === "width" ? box(el).width : parseFloat(getComputedStyle(el).getPropertyValue(c.prop));
-    if (Math.abs(got - c.px) > 0.5) fails.push(`${c.sel} ${c.prop}: ${got} ≠ ${c.px}`);
+    if (!Number.isFinite(got) || Math.abs(got - c.px) > 0.5) fails.push(`${c.sel} ${c.prop}: ${got} ≠ ${c.px}`);
   }
   for (const a of (rule.align || []).filter(fits)) {
     const tol = a.tol ?? 0.5;
@@ -34,12 +38,16 @@ function checkDaishinUi(rule, root = document.querySelector(".bw-shell") || docu
   const sizes = new Set(rule.fontSizes.map(String)), weights = new Set(rule.fontWeights.map(String));
   const bad = new Map();
   const add = (k) => bad.set(k, (bad.get(k) || 0) + 1);
-  for (const el of root.querySelectorAll("*")) {
+  const roots = profile?.scanRoots ? profile.scanRoots.flatMap((s) => Array.from(document.querySelectorAll(s))) : [root];
+  const elements = new Set(roots.flatMap((r) => Array.from(r.querySelectorAll("*"))));
+  for (const el of elements) {
     if (!el.getClientRects().length || el.closest("svg")) continue;
+    if (rule.exclude && el.closest(rule.exclude)) continue;
     const st = getComputedStyle(el);
     if (Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim())) {
       const fs = String(parseFloat(st.fontSize));
-      if (!sizes.has(fs)) add(`ルールにない文字の大きさ ${fs}px`);
+      const exception = (rule.fontSizeExceptions || []).some((e) => fits(e) && el.matches(e.sel) && Math.abs(parseFloat(fs) - e.px) <= 0.5);
+      if (!sizes.has(fs) && !exception) add(`ルールにない文字の大きさ ${fs}px`);
       if (!weights.has(st.fontWeight)) add(`ルールにない太さ ${st.fontWeight}`);
       if (!palette.has(st.color)) add(`ルールにない文字の色 ${st.color}`);
     }

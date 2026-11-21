@@ -12,6 +12,7 @@ import "@fontsource/moul/400.css";
 import "@/components/billing-v5/tax-invoice.css";
 
 import "@/components/billing-v5/workspace.css";
+import "@/components/billing-v5/invoice-workspace.css";
 import { BillingWorkspace } from "@/components/billing-v5/workspace-shell";
 import { canAny, homeFor } from "@/lib/auth/roles";
 import { currentUser } from "@/lib/auth/session";

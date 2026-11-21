@@ -281,5 +281,125 @@
       "why": "7. 右側の列の右端をそろえる"
     }
   ],
-  "noOverflowX": true
+  "noOverflowX": true,
+  "profiles": [
+    {
+      "name": "Accounting / Invoices (457)",
+      "match": ".iv-accounting, .bw-invoice-list",
+      "why": "一覧に Design 固有の部品を要求せず、同じ v1 の表・タブ・枠の数値を測る。帳票の印刷用の色と文字は変更しない。",
+      "checks": [
+        {
+          "sel": ".bw-header-inner",
+          "prop": "height",
+          "px": 52,
+          "minWidth": 861
+        },
+        {
+          "sel": ".bw-header-inner",
+          "prop": "height",
+          "px": 88,
+          "maxWidth": 860
+        },
+        {
+          "sel": ".bw-shell .bw-icon",
+          "prop": "height",
+          "px": 32
+        },
+        {
+          "sel": ".iv-page-title > span",
+          "prop": "font-size",
+          "px": 20,
+          "when": ".iv-accounting"
+        },
+        {
+          "sel": ".iv-table td",
+          "prop": "padding-top",
+          "px": 10
+        },
+        {
+          "sel": ".iv-table td",
+          "prop": "padding-bottom",
+          "px": 10
+        },
+        {
+          "sel": ".iv-table td",
+          "prop": "font-size",
+          "px": 13.5
+        },
+        {
+          "sel": ".iv-table th",
+          "prop": "font-size",
+          "px": 11.5
+        },
+        {
+          "sel": ".iv-table [data-testid=v5-issued-row]",
+          "prop": "height",
+          "px": 41
+        },
+        {
+          "sel": ".iv-split",
+          "prop": "column-gap",
+          "px": 16
+        },
+        {
+          "sel": ".iv-tabs",
+          "prop": "column-gap",
+          "px": 22,
+          "when": ".iv-detail"
+        },
+        {
+          "sel": ".iv-tabs [aria-selected=true]",
+          "prop": "padding-top",
+          "px": 9,
+          "when": ".iv-detail"
+        },
+        {
+          "sel": ".iv-tabs [aria-selected=true]",
+          "prop": "border-bottom-width",
+          "px": 2,
+          "when": ".iv-detail"
+        },
+        {
+          "sel": ".iv-panel",
+          "prop": "border-top-left-radius",
+          "px": 14,
+          "minWidth": 861,
+          "when": ".iv-detail"
+        },
+        {
+          "sel": ".iv-detail-head",
+          "prop": "padding-left",
+          "px": 24,
+          "minWidth": 861,
+          "when": ".iv-detail"
+        }
+      ],
+      "align": [],
+      "scanRoots": [
+        ".bw-shell",
+        "[data-testid=v5-invoice-detail-sheet]"
+      ],
+      "exclude": ".v5-invoice",
+      "fontSizeExceptions": [
+        {
+          "sel": ".iv-accounting > header [data-testid=v5-to-invoice-total]",
+          "px": 22,
+          "minWidth": 640,
+          "why": "457 A: 上の数字の帯は位置・大きさを維持"
+        },
+        {
+          "sel": ".iv-accounting > header :is([data-testid=v5-outstanding-total], [data-testid=v5-rate])",
+          "px": 17,
+          "minWidth": 640,
+          "why": "457 A: 上の数字の帯は位置・大きさを維持"
+        },
+        {
+          "sel": ".iv-accounting > header dd",
+          "px": 16,
+          "maxWidth": 639,
+          "why": "457 A: 既存モバイルの数字の大きさを維持"
+        }
+      ]
+    }
+  ]
 }

@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { ConfirmDialog } from "@/components/billing-v2/confirm-dialog";
 import { api, useData, useToast } from "@/components/providers";
 import { Button, Input } from "@/components/ui";
 import { useAction } from "@/components/use-action";
 import { toCents } from "@/lib/billing-v5/calculation";
+import { invoiceActionAvailability } from "@/lib/billing-v5/invoice-action-availability";
 import { useV5T, type V5Key } from "@/lib/billing-v5/i18n";
 import { invoiceCollection, LEDGER_PAYMENT_PREFIX } from "@/lib/billing-v5/ontology";
 import { phnomPenhDate } from "@/lib/exchange-rate";
@@ -15,7 +17,7 @@ import { moneyExact } from "@/lib/format";
 import type { Snapshot, TaxInvoiceRecord } from "@/lib/types";
 import { FitA4 } from "./fit-a4";
 import { InvoiceDocument } from "./invoice-document";
-import { InvoiceEditor } from "./invoice-editor";
+import { InvoiceActions } from "./invoice-actions";
 
 /**
  * An invoice, reopened: the latest version as the document, and around it
@@ -25,12 +27,24 @@ import { InvoiceEditor } from "./invoice-editor";
 export function TaxInvoicePage({ id }: { id: string }) {
   const t = useV5T();
   const { snapshot } = useData();
-  const { toast } = useToast();
   const { run, busy } = useAction();
-  const [cancelling, setCancelling] = useState(false);
-  const [reason, setReason] = useState("");
-  const [editing, setEditing] = useState(false);
-  const [creatingFinal, setCreatingFinal] = useState(false);
+  const printRequested = useSearchParams().get("print") === "1";
+  const printed = useRef(false);
+  const printable = snapshot?.taxInvoices?.find((entry) => entry.id === id);
+
+  useEffect(() => {
+    if (!printRequested || !printable || printed.current) return;
+    let stopped = false;
+    void (async () => {
+      await document.fonts.ready;
+      await Promise.all(Array.from(document.querySelectorAll<HTMLImageElement>(".v5-print-root img"))
+        .map((image) => image.decode().catch(() => {})));
+      // FitA4 measures the loaded fonts/logo before the browser takes its page.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      if (!stopped) { printed.current = true; window.print(); }
+    })();
+    return () => { stopped = true; };
+  }, [printRequested, printable]);
 
   if (!snapshot) return <p className="px-5 pt-24 text-center text-[14px] text-muted">…</p>;
   const invoice = (snapshot.taxInvoices ?? []).find((entry) => entry.id === id);
@@ -39,31 +53,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
   const statusKey = invoice?.status === "CANCELLED" ? "status.CANCELLED" : `status.${money?.status ?? "UNPAID"}`;
   const collected = invoice?.status === "ISSUED" && money?.status === "PAID";
   const invoiceKind = invoice?.invoiceKind ?? "FULL";
-  const activeContractInvoices = invoice?.contractId
-    ? (snapshot.taxInvoices ?? []).filter((entry) => entry.contractId === invoice.contractId && entry.status === "ISSUED")
-    : [];
-  const depositLocked = (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") && activeContractInvoices.some((entry) => entry.invoiceKind === "FINAL");
-  const activeContractIds = new Set(activeContractInvoices.map((entry) => entry.id));
-  const hasContractRemainder = invoice?.contractSnapshot?.lines.some((line) => {
-    const allocated = (snapshot.billingAllocations ?? [])
-      .filter((entry) => entry.billingItemId === line.billingItemId && !entry.voidedAt && activeContractIds.has(entry.invoiceId))
-      .reduce((sum, entry) => sum + toCents(entry.amount), 0);
-    return toCents(line.amount) > allocated;
-  }) ?? false;
-  const canIssueFinal = invoice?.status === "ISSUED" && Boolean(invoice.contractId) &&
-    (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") && !depositLocked && hasContractRemainder;
-  const laterDeposit = (invoiceKind === "DEPOSIT_FIXED" || invoiceKind === "DEPOSIT_PERCENT") && activeContractInvoices.some(
-    (entry) => (entry.invoiceKind === "DEPOSIT_FIXED" || entry.invoiceKind === "DEPOSIT_PERCENT") && entry.id !== invoice?.id && (
-      entry.issuedAt.localeCompare(invoice?.issuedAt ?? "") > 0 ||
-      (entry.issuedAt === invoice?.issuedAt && entry.invoiceNumber.localeCompare(invoice?.invoiceNumber ?? "") > 0)
-    ),
-  );
-
-  const cancel = async () => {
-    const ok = await run(() => api(`/api/v5/tax-invoices/${id}/cancel`, { method: "POST", body: { reason } }));
-    setCancelling(false);
-    if (ok) toast(t("invoice.cancelled"));
-  };
+  const { depositLocked, laterDeposit } = invoice ? invoiceActionAvailability(snapshot, invoice) : { depositLocked: false, laterDeposit: false };
 
   return (
     <div className="pb-16">
@@ -84,19 +74,7 @@ export function TaxInvoicePage({ id }: { id: string }) {
           )}
           {invoice && (
             <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2" data-layout-group>
-              {canIssueFinal && (
-                <Button variant="secondary" size="sm" onClick={() => setCreatingFinal(true)} data-testid="v5-issue-final">
-                  {t("invoice.issueFinal")}
-                </Button>
-              )}
-              {invoice.status === "ISSUED" && !depositLocked && !laterDeposit && (
-                <>
-                  <Button variant="quiet" size="sm" onClick={() => setCancelling(true)} data-testid="v5-invoice-cancel">{t("invoice.cancel")}</Button>
-                  <Button variant="secondary" size="sm" onClick={() => setEditing(true)} data-testid="v5-invoice-edit">{t("detail.edit")}</Button>
-
-                </>
-              )}
-              <Button variant="primary" onClick={() => window.print()} data-testid="v5-print">{t("invoice.print")}</Button>
+              <InvoiceActions invoice={invoice} snapshot={snapshot} />
             </div>
           )}
         </div>
@@ -130,35 +108,6 @@ export function TaxInvoicePage({ id }: { id: string }) {
           </div>
         </>
       )}
-
-      {editing && invoice && <InvoiceEditor mode="edit" snapshot={snapshot} invoice={invoice} onClose={() => setEditing(false)} />}
-      {creatingFinal && invoice?.contractId && invoice.contractSnapshot && (
-        <InvoiceEditor
-          mode="create" snapshot={snapshot} customerId={invoice.clientId}
-          billingItemIds={invoice.contractSnapshot.lines.map((line) => line.billingItemId)}
-          initialKind="FINAL" initialContractId={invoice.contractId}
-          onClose={() => setCreatingFinal(false)}
-        />
-      )}
-      <ConfirmDialog
-        open={cancelling}
-        onClose={() => setCancelling(false)}
-        onConfirm={() => void cancel()}
-        busy={busy || !reason.trim()}
-        tone="destructive"
-        title={t("invoice.cancelTitle")}
-        message={
-          <>
-            <span className="block">{t("invoice.cancelBody")}</span>
-            <label className="mt-3 block">
-              <span className="mb-1 block text-[12px] font-medium text-muted">{t("invoice.cancelReason")}</span>
-              <Input value={reason} onChange={(event) => setReason(event.target.value)} data-testid="v5-cancel-reason" />
-            </label>
-          </>
-        }
-        confirmLabel={t("invoice.cancel")}
-        testId="v5-confirm-cancel"
-      />
     </div>
   );
 }
@@ -175,7 +124,7 @@ function Panel({ title, testId, children, aside, id }: { title: string; testId: 
   );
 }
 
-function Payments({
+export function Payments({
   invoice,
   snapshot,
   money,
