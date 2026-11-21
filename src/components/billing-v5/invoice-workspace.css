@@ -1,8 +1,8 @@
 /* Accounting / Invoices use the DAISHIN v1 table values. The document inside
    Preview keeps its existing print typography and palette. */
 .bw-main-classic:has(.iv-accounting) { max-width: 1440px; }
-.iv-accounting > header { max-width: 960px; margin-inline: auto; }
-.iv-accounting-body > [data-testid="v5-section-to-invoice"] { max-width: 896px; margin-inline: auto; }
+/* Header, waiting section and the table share one left edge (Opus 11/21). */
+
 /* Reserve the original title's metrics, including translated headers that
    wrap, so the smaller v1 heading cannot move the existing number strip. */
 .iv-page-title { display: grid; font-size: 26px; font-weight: 600; line-height: 1.25; letter-spacing: -.022em; }
@@ -102,7 +102,7 @@
 [data-testid="v5-invoice-detail-sheet"] [class*="handle"] { background: var(--c-line-strong); }
 @media (max-width: 860px) {
   .iv-split[data-open="true"] { grid-template-columns: minmax(0, 1fr); }
-  .iv-accounting-body > [data-testid="v5-section-to-invoice"] { max-width: 896px; }
+
 }
 @media (min-width: 640px) {
   .iv-page-title { font-size: 30px; }
